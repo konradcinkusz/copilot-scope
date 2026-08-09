@@ -14,16 +14,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: xu-cheng/latex-action@v4
+      - name: Build quality measurement framework
+        uses: xu-cheng/latex-action@v4
         with:
           root_file: quality_measurement_framework.tex
           working_directory: research/articles
-      - name: Rename PDF
-        run: mv research/articles/quality_measurement_framework.pdf CopilotScope_Quality_Framework.pdf
+      - name: Build thesis topics
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: thesis_topics.tex
+          working_directory: research/articles
+      - name: Rename PDFs
+        run: |
+          mv research/articles/quality_measurement_framework.pdf CopilotScope_Quality_Framework.pdf
+          mv research/articles/thesis_topics.pdf CopilotScope_Thesis_Topics.pdf
       - uses: actions/upload-artifact@v7
         with:
-          name: CopilotScope_Quality_Framework
-          path: CopilotScope_Quality_Framework.pdf
+          name: CopilotScope_Research_PDFs
+          path: |
+            CopilotScope_Quality_Framework.pdf
+            CopilotScope_Thesis_Topics.pdf
 
   release:
     runs-on: ubuntu-latest
@@ -31,7 +41,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: CopilotScope_Quality_Framework
+          name: CopilotScope_Research_PDFs
       - uses: softprops/action-gh-release@v3
         with:
-          files: CopilotScope_Quality_Framework.pdf
+          files: |
+            CopilotScope_Quality_Framework.pdf
+            CopilotScope_Thesis_Topics.pdf

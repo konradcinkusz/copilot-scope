@@ -1,5 +1,11 @@
 # Dziesięć propozycji prac badawczych — pomiar jakości sesji AI-asystenta
 
+> **Wersja do przedstawienia studentom:** [`research/articles/thesis_topics.tex`](articles/thesis_topics.tex)
+> — te same dziesięć tematów sformatowane jako karty prac dyplomowych, **jedna strona A4 na temat**,
+> z proponowanym poziomem (inżynierska / magisterska), kryterium akceptacji i punktem wejścia w kodzie.
+> PDF (`CopilotScope_Thesis_Topics.pdf`) buduje się razem z artykułem i jest dołączany do każdego
+> wydania. Ten plik pozostaje wersją roboczą — dłuższą, bez ograniczenia jednej strony.
+
 > Ten dokument bierze dziesięć algorytmów/koncepcji pomiaru jakości sesji z
 > [`docs/ANALYSIS.md`](../docs/ANALYSIS.md) §8 (i tabeli w README) i dla każdego formułuje
 > samodzielną propozycję pracy badawczej — coś, co przyszły inżynier lub stażysta może wziąć

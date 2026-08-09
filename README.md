@@ -230,7 +230,14 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
 
-Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only algorithms (#1–#3, plus the deep variants of #9/#10) are *not* `IInsightAnalyzer`s — that interface is synchronous and local-only, while a judge call is an async network call to Azure — so they live in the separate, opt-in `CopilotScope.JudgeAgent` service instead (`POST /api/sessions/{id}/judge`, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md)). A local-only deployment simply never runs that service, so those five algorithms stay unavailable rather than erroring. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only analyzers (#1–#3, plus the deep variants of #9/#10) implement the same `IInsightAnalyzer` interface but call out to the Azure AI Foundry judge agent; they register only when the collector is deployed with judge configuration enabled, so a local-only setup shows them as "no-data" with a `"requires cloud deployment"` note rather than an error. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+
+Each of the ten is also written up as a **standalone thesis topic** — one A4 page
+per topic with scope, methodology, acceptance criteria and a code entry point, split
+between BSc- and MSc-level work: `research/articles/thesis_topics.tex` (Polish; the
+`CopilotScope_Thesis_Topics.pdf` build is attached to every release). The numbering
+matches the table above.
+
 ## Deployment options
 
 | Mode | Command | Containers |
