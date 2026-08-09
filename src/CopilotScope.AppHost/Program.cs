@@ -36,4 +36,12 @@ builder.AddProject<Projects.CopilotScope_AgentForge>("agentforge")
     .WaitFor(collector)
     .WithExternalHttpEndpoints();
 
+// ---------------------------------------------------------------- judgeagent
+// Opt-in, cloud-only — see docs/JUDGE_AGENT.md. Without Azure AI credentials, judge calls
+// return a clear "not configured" error rather than doing anything silently.
+builder.AddProject<Projects.CopilotScope_JudgeAgent>("judgeagent")
+    .WithReference(collector)
+    .WaitFor(collector)
+    .WithExternalHttpEndpoints();
+
 builder.Build().Run();

@@ -87,6 +87,7 @@ is the best developer". Goodhart's law applies to this repo too.
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
 | `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
+| `src/CopilotScope.JudgeAgent` | Opt-in, cloud-only session quality judge — G-Eval, SPUR, RAGAS, deep frustration classification, task-completion detection via Azure AI Foundry + Microsoft Agent Framework, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
 
 ## Quick start — no clone, just pull
 
@@ -218,16 +219,16 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 
 | # | Algorithm | Status | Local | Cloud | Where |
 |---|---|---|---|---|---|
-| 1 | LLM-as-a-Judge (G-Eval) | ❌ not implemented | ❌ | ✅ planned | needs the cloud judge agent (Azure AI Foundry) — model access, prompt budget, per-user auth |
-| 2 | SPUR (learned satisfaction rubrics) | ❌ not implemented | ❌ | ✅ planned | needs the judge agent to run the learned rubric and labelled sessions for calibration |
-| 3 | RAG component metrics (RAGAS) | ❌ not implemented | ❌ | ✅ planned | needs the judge agent plus captured retrieval context; only meaningful for retrieval-based Copilot flows |
+| 1 | LLM-as-a-Judge (G-Eval) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — `POST /api/sessions/{id}/judge`, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) |
+| 2 | SPUR (learned satisfaction rubrics) | ✅ **implemented**, zero-shot (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — directional until CopilotScope collects labelled SAT/DSAT sessions to calibrate against |
+| 3 | RAG component metrics (RAGAS) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — only meaningful for retrieval-based Copilot flows; `no-data` until the Collector captures retrieval context |
 | 4 | Edit Survival Analysis | ✅ **full** | ✅ | ✅ | `EditSurvivalAnalyzer` — four-gram & no-revert split (0.4/0.6); also feeds the *acceptance* component |
 | 5 | Acceptance-weighted throughput | ✅ **full** | ✅ | ✅ | `ThroughputAnalyzer` — accepted LOC/turn, LOC per 1k output tokens, rejection-discounted |
 | 6 | Turn-level Friction & Repair (TFRA) | ✅ **full** | ✅ | ✅ | `SegmentAnalyzer` (Turn analysis panel) + *friction* component in the composite |
 | 7 | Latency-utility model | ✅ **full** | ✅ | ✅ | `LatencyUtilityAnalyzer` — per-sample utility curve, >2 s / >8 s risk buckets; simplified form also as the *latency* component |
 | 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
-| 9 | Frustration classification | ✅ **simplified** (local) · 🔜 **deep** (cloud) | ✅ heuristic | 🔜 planned | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: deep classifier via the judge agent (sarcasm-aware, context-grounded), promoted into the composite once validated |
-| 10 | Task-completion detection | ❌ not implemented | ⚠️ partial | ✅ planned | Local partial: hooks for external completion signals (build/test exit codes) via the ingest API. Cloud full: judge agent reasons about "did the user's ask get resolved" from transcript + tool outcomes |
+| 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
+| 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
 
 Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only analyzers (#1–#3, plus the deep variants of #9/#10) implement the same `IInsightAnalyzer` interface but call out to the Azure AI Foundry judge agent; they register only when the collector is deployed with judge configuration enabled, so a local-only setup shows them as "no-data" with a `"requires cloud deployment"` note rather than an error. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
 
