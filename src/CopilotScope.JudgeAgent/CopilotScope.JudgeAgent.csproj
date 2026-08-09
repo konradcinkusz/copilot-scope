@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CopilotScope.JudgeAgent</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reuses SessionDetailDto/TranscriptEntry and the InsightReport/InsightMetric shape directly
+         so judge results can never drift from what the Collector already serves and can be
+         consumed the same way local IInsightAnalyzer output is. -->
+    <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Versions verified on nuget.org 2026-08-08 (see docs/AGENTFORGE.md / docs/JUDGE_AGENT.md) —
+         this space moves fast, re-verify before bumping. Microsoft Agent Framework wraps the
+         Azure OpenAI-compatible client as an AIAgent; Azure AI Foundry model deployments are
+         reached through that same endpoint shape. -->
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.17.0" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <!-- Provides ChatClient.AsIChatClient(), the adapter from the OpenAI SDK's client to the
+         Microsoft.Extensions.AI.IChatClient that Microsoft.Agents.AI's AsAIAgent() extends. -->
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CopilotScope.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded (not CopyToOutputDirectory) so it loads correctly regardless of the host
+         process's base directory — including when CopilotScope.Tests references this project. -->
+    <EmbeddedResource Include="Agents\JudgeSystemPromptTemplate.txt" />
+  </ItemGroup>
+
+</Project>

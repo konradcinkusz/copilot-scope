@@ -37,6 +37,8 @@ jobs:
             dockerfile: Dockerfile.dashboard
           - image: copilotscope-agentforge
             dockerfile: Dockerfile.agentforge
+          - image: copilotscope-judgeagent
+            dockerfile: Dockerfile.judgeagent
     steps:
       - name: Checkout
         uses: actions/checkout@v4

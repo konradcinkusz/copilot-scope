@@ -52,5 +52,18 @@ services:
       - collector
     restart: unless-stopped
 
+  # Opt-in, cloud-only — see docs/JUDGE_AGENT.md before enabling for a team. Without Azure AI
+  # credentials this serves no judge traffic — /api/sessions/{id}/judge returns a clear
+  # "not configured" error until you supply your own config.
+  judgeagent:
+    image: ghcr.io/konradcinkusz/copilotscope-judgeagent:latest
+    ports:
+      - "5400:8080"
+    environment:
+      CopilotScope__JudgeAgent__CollectorBaseUrl: "http://collector:4318"
+    depends_on:
+      - collector
+    restart: unless-stopped
+
 volumes:
   copilotscope-pgdata:
