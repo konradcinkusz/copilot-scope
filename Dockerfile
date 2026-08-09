@@ -15,7 +15,7 @@ COPY nuget.config .
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 RUN dotnet publish src/CopilotScope.Collector -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 
