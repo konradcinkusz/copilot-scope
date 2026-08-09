@@ -19,3 +19,13 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # The .NET base images are pinned to the projects' target framework: a major
+    # bump of aspnet/sdk without retargeting every csproj produces images that
+    # build fine and then fail to start, because roll-forward does not cross a
+    # major version. Patch and minor updates are still welcome; a major one is a
+    # deliberate migration, not a dependency update.
+    ignore:
+      - dependency-name: "mcr.microsoft.com/dotnet/aspnet"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "mcr.microsoft.com/dotnet/sdk"
+        update-types: ["version-update:semver-major"]
