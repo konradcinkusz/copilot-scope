@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CopilotScope — Od telemetrii do agenta (AgentForge)</title>
+<meta name="description" content="Diagram, opis procesu i dziesięć propozycji prac badawczych za AgentForge — sprowidencjonowanym agentem na bazie konsensualnej telemetrii sesji.">
+<style>
+/* ── tokens (shared with index.html) ──────────────────────────────────── */
+:root {
+  --bg:      #07111d;
+  --surf:    #0d1a2f;
+  --surf2:   #132035;
+  --border:  #1e3050;
+  --text:    #e6edf3;
+  --dim:     #8b9eb5;
+  --amber:   #f59e0b;
+  --amber2:  #d97706;
+  --blue:    #3b82f6;
+  --green:   #3fb950;
+  --red:     #f85149;
+  --teal:    #22d3ee;
+  --mono: 'Cascadia Code','JetBrains Mono',Consolas,'Courier New',monospace;
+  --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light) { :root {
+  --bg:#f0f6fc; --surf:#ffffff; --surf2:#f6f8fa; --border:#d0d7de;
+  --text:#1f2328; --dim:#636c76;
+  --amber:#b45309; --amber2:#92400e; --blue:#0969da; --green:#1a7f37;
+  --red:#cf222e; --teal:#0891b2;
+}}
+:root[data-theme="dark"] {
+  --bg:#07111d; --surf:#0d1a2f; --surf2:#132035; --border:#1e3050;
+  --text:#e6edf3; --dim:#8b9eb5;
+  --amber:#f59e0b; --amber2:#d97706; --blue:#3b82f6; --green:#3fb950;
+  --red:#f85149; --teal:#22d3ee;
+}
+:root[data-theme="light"] {
+  --bg:#f0f6fc; --surf:#ffffff; --surf2:#f6f8fa; --border:#d0d7de;
+  --text:#1f2328; --dim:#636c76;
+  --amber:#b45309; --amber2:#92400e; --blue:#0969da; --green:#1a7f37;
+  --red:#cf222e; --teal:#0891b2;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--amber);text-decoration:none}
+a:hover{text-decoration:underline}
+img,svg{display:block}
+code{font-family:var(--mono);font-size:.92em;background:var(--surf2);padding:2px 6px;border-radius:4px;color:var(--amber)}
+
+/* ── nav (identical to index.html) ────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:100;
+  display:flex;align-items:center;gap:16px;
+  padding:0 24px;height:56px;
+  background:color-mix(in srgb,var(--bg) 85%,transparent);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.nav-logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;color:var(--text);text-decoration:none}
+.nav-logo svg{width:28px;height:28px;flex-shrink:0}
+.nav-logo .brand-accent{color:var(--amber)}
+.nav-links{display:flex;align-items:center;gap:4px;margin-left:auto}
+.nav-links a{padding:6px 12px;border-radius:6px;font-size:13px;color:var(--dim);transition:color .15s,background .15s}
+.nav-links a:hover{color:var(--text);background:var(--surf2);text-decoration:none}
+.nav-links a[aria-current="page"]{color:var(--amber);background:var(--surf2)}
+.nav-cta{background:var(--amber);color:#07111d!important;font-weight:600;padding:6px 14px;border-radius:6px;font-size:13px;transition:opacity .15s}
+.nav-cta:hover{opacity:.88;text-decoration:none!important}
+@media(max-width:640px){.nav-links a:not(.nav-cta){display:none}}
+
+/* ── page header ───────────────────────────────────────────────────────── */
+.pagehead{padding:56px 24px 40px;max-width:880px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--amber);margin-bottom:12px}
+.pagehead h1{font-size:clamp(1.9rem,4.5vw,2.6rem);font-weight:800;letter-spacing:-1px;line-height:1.15;margin-bottom:16px;text-wrap:balance}
+.pagehead .dek{color:var(--dim);font-size:1.02rem;line-height:1.7;max-width:66ch}
+.lang-note{
+  margin-top:18px;padding:10px 14px;background:var(--surf);border:1px solid var(--border);
+  border-radius:8px;font-size:12.5px;color:var(--dim);max-width:66ch;
+}
+.meta-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.meta-row span{font-family:var(--mono);font-size:11px;color:var(--dim);background:var(--surf);border:1px solid var(--border);border-radius:99px;padding:3px 11px}
+
+/* ── section shell ─────────────────────────────────────────────────────── */
+.section{padding:48px 24px}
+.section-inner{max-width:880px;margin:0 auto}
+.section-label{font-family:var(--mono);font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--amber);margin-bottom:10px}
+.section h2{font-size:clamp(1.3rem,3vw,1.7rem);font-weight:700;letter-spacing:-.4px;margin-bottom:14px;text-wrap:balance}
+.section p.lede{color:var(--dim);max-width:66ch;line-height:1.75;margin-bottom:8px}
+hr.divider{border:none;border-top:1px solid var(--border);margin:0}
+
+/* ── diagram ───────────────────────────────────────────────────────────── */
+.diagram-card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:24px;overflow-x:auto}
+.diagram-card svg{width:100%;height:auto;min-width:640px}
+figcaption{font-size:12.5px;color:var(--dim);margin-top:12px;max-width:68ch}
+
+/* ── numbered steps ────────────────────────────────────────────────────── */
+ol.steps{list-style:none;counter-reset:step;margin-top:20px}
+ol.steps li{counter-increment:step;position:relative;padding:16px 0 16px 46px;border-top:1px solid var(--border)}
+ol.steps li:last-child{border-bottom:1px solid var(--border)}
+ol.steps li::before{
+  content:counter(step);position:absolute;left:0;top:16px;
+  font-family:var(--mono);font-size:12px;color:var(--amber);
+  width:28px;height:28px;border:1px solid var(--border);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:var(--surf2);
+}
+ol.steps b{display:block;margin-bottom:3px;font-size:14px}
+ol.steps .body{color:var(--dim);font-size:13.5px;line-height:1.6}
+
+/* ── analogy table (reuses site table language) ───────────────────────── */
+.table-wrap{overflow-x:auto;margin-top:22px;border:1px solid var(--border);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:680px}
+th{font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);text-align:left;padding:10px 16px;border-bottom:2px solid var(--border);background:var(--surf);white-space:nowrap;font-weight:600}
+td{padding:11px 16px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surf2)}
+td.dim-strong{color:var(--text);font-weight:600;white-space:nowrap}
+
+.callout{
+  margin-top:22px;padding:18px 20px;border-left:3px solid var(--red);
+  background:color-mix(in srgb,var(--red) 10%,var(--surf));
+  border-radius:0 10px 10px 0;font-size:14px;color:var(--text);line-height:1.65;
+}
+.callout b{display:block;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:1.2px;color:var(--red);margin-bottom:8px}
+
+/* ── research cards ───────────────────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:24px}
+@media(max-width:640px){.cards{grid-template-columns:1fr}}
+.card{background:var(--surf);border:1px solid var(--border);border-left:3px solid var(--accent,var(--blue));border-radius:10px;padding:16px 18px;transition:border-color .2s,transform .2s}
+.card:hover{transform:translateY(-2px)}
+.card-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
+.card-num{font-family:var(--mono);color:var(--dim);font-size:11px}
+.pill{font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;padding:2px 9px;border-radius:99px;white-space:nowrap;font-family:var(--mono)}
+.pill-done{background:color-mix(in srgb,var(--green) 15%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 35%,transparent)}
+.pill-todo{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent)}
+.card h3{font-size:14px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.card p{font-size:13px;color:var(--dim);line-height:1.6;margin-bottom:10px}
+.card .q{font-size:12.5px;color:var(--text);background:var(--surf2);border:1px dashed var(--border);border-radius:8px;padding:8px 10px}
+.card .q b{display:block;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--teal);margin-bottom:3px}
+
+/* ── footer (identical to index.html) ─────────────────────────────────── */
+footer{padding:40px 24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.footer-brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:var(--text)}
+.footer-brand svg{width:22px;height:22px}
+.footer-links{display:flex;gap:20px;flex-wrap:wrap}
+.footer-links a{font-size:13px;color:var(--dim)}
+.footer-links a:hover{color:var(--text)}
+.footer-copy{font-size:12px;color:var(--dim);width:100%}
+@media(max-width:500px){nav{padding:0 16px}.section{padding:36px 16px}.pagehead{padding:40px 16px 32px}}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html" class="nav-logo">
+    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="scbgn" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f1923"/><stop offset="100%" stop-color="#1a2d3f"/>
+        </linearGradient>
+        <linearGradient id="scaccn" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="50" fill="url(#scbgn)"/>
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.55"/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke="#f59e0b" stroke-width="0.6" opacity="0.25"/>
+      <line x1="8" y1="50" x2="92" y2="50" stroke="#f59e0b" stroke-width="0.6" opacity="0.3"/>
+      <line x1="50" y1="8" x2="50" y2="92" stroke="#f59e0b" stroke-width="0.6" opacity="0.3"/>
+      <line x1="50" y1="8"  x2="50" y2="12.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="92" y1="50" x2="87.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="50" y1="92" x2="50" y2="87.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="8"  y1="50" x2="12.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <polyline points="8,50 36,50 38,57 42,22 46,62 50,50 92,50"
+        fill="none" stroke="url(#scaccn)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="2" fill="#f59e0b" opacity="0.65"/>
+    </svg>
+    Copilot<span class="brand-accent">Scope</span>
+  </a>
+  <div class="nav-links">
+    <a href="index.html">Home</a>
+    <a href="TUTORIAL.html">Docs</a>
+    <a href="agent-workflow.html" aria-current="page">Agent Workflow</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases">Releases</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf">Research</a>
+    <a href="https://github.com/konradcinkusz/copilotscope" class="btn-secondary" style="padding:5px 12px;font-size:13px;border:1px solid var(--border);border-radius:6px">GitHub</a>
+  </div>
+</nav>
+
+<header class="pagehead">
+  <div class="eyebrow">CopilotScope · AgentForge</div>
+  <h1>Od telemetrii do agenta</h1>
+  <p class="dek">
+    Jak dane z sesji AI-asystenta (Copilot, Claude Code, Cursor) stają się — za jawną zgodą —
+    sprowidencjonowanym agentem stylizowanym na konkretną osobę. Z analogią do znanego problemu
+    z innej dziedziny i dziesięcioma tematami badawczymi do dalszej pracy.
+  </p>
+  <div class="lang-note">
+    Ta strona jest po polsku, zgodnie z konwencją <code>docs/ANALYSIS.md</code> — projektowe
+    uzasadnienia zostają w języku, w którym powstały. English summary: this page diagrams the
+    telemetry→persona-agent pipeline (<code>CopilotScope.AgentForge</code>) and draws an analogy
+    to collecting warehouse-worker operational data to train a robot, plus ten follow-up research
+    proposals. Source: <code>docs/AGENT_PROVISIONING_WORKFLOW.md</code>,
+    <code>research/RESEARCH_PROPOSALS.md</code>.
+  </div>
+  <div class="meta-row">
+    <span>docs/AGENT_PROVISIONING_WORKFLOW.md</span>
+    <span>docs/AGENTFORGE.md</span>
+    <span>research/RESEARCH_PROPOSALS.md</span>
+  </div>
+</header>
+
+<hr class="divider">
+
+<section class="section" id="diagram">
+  <div class="section-inner">
+    <p class="section-label">01 — Mechanizm</p>
+    <h2>Diagram workflowu</h2>
+    <p class="lede">Trzy strefy odpowiedzialności: telemetria bez tożsamości, jawna bramka zgody
+    poza systemem, i provisioning agenta, który nigdy nie modyfikuje wag modelu.</p>
+
+    <div class="diagram-card">
+      <svg viewBox="0 0 940 660" role="img" aria-label="Diagram: cztery emitery telemetrii wysyłają OTLP do Collectora, który zapisuje sesje bez tożsamości w Postgresie; PersonaCohort to ręczna bramka zgody wiążąca personę z listą sesji; PersonaProfileBuilder czyta tylko te sesje i buduje profil; profil trafia do system promptu jako grounding w kontekście, bez fine-tuningu; Microsoft Agent Framework z Azure AI Foundry provisionuje agenta; agent serwuje czat zawsze oznaczony jako symulacja; DELETE czyści agenta natychmiast, usunięcie cohortu z konfiguracji wycofuje trwale.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g font-family="Cascadia Code,Consolas,monospace" font-size="12" color="var(--dim)">
+          <rect x="20" y="16" width="180" height="40" rx="8" fill="none" stroke="currentColor" opacity="0.6"/>
+          <text x="110" y="40" text-anchor="middle" fill="var(--text)">VS Code Copilot</text>
+
+          <rect x="220" y="16" width="180" height="40" rx="8" fill="none" stroke="currentColor" opacity="0.6"/>
+          <text x="310" y="40" text-anchor="middle" fill="var(--text)">Copilot CLI</text>
+
+          <rect x="420" y="16" width="180" height="40" rx="8" fill="none" stroke="currentColor" opacity="0.6"/>
+          <text x="510" y="40" text-anchor="middle" fill="var(--text)">Claude Code / Cowork</text>
+
+          <rect x="620" y="16" width="180" height="40" rx="8" fill="none" stroke="currentColor" opacity="0.6"/>
+          <text x="710" y="40" text-anchor="middle" fill="var(--text)">Cursor</text>
+        </g>
+
+        <g stroke="var(--dim)" opacity="0.55">
+          <line x1="110" y1="56" x2="380" y2="110" marker-end="url(#arrow)"/>
+          <line x1="310" y1="56" x2="390" y2="110" marker-end="url(#arrow)"/>
+          <line x1="510" y1="56" x2="440" y2="110" marker-end="url(#arrow)"/>
+          <line x1="710" y1="56" x2="470" y2="110" marker-end="url(#arrow)"/>
+        </g>
+        <text x="470" y="95" text-anchor="middle" font-size="11" fill="var(--dim)">OTLP/HTTP :4318</text>
+
+        <rect x="130" y="112" width="500" height="76" rx="10" fill="color-mix(in srgb,var(--blue) 14%,var(--surf2))" stroke="var(--blue)"/>
+        <text x="150" y="136" font-size="13" font-weight="600" fill="var(--text)">Collector</text>
+        <text x="150" y="156" font-size="11.5" fill="var(--dim)">OTLP ingest → quality engine → sessions w Postgresie</text>
+        <text x="150" y="174" font-size="11" fill="var(--dim)">klucz: conversation.id — bez identyfikatora osoby</text>
+
+        <line x1="380" y1="188" x2="380" y2="230" stroke="var(--dim)" opacity="0.55" marker-end="url(#arrow)"/>
+
+        <rect x="130" y="232" width="500" height="80" rx="10" fill="color-mix(in srgb,var(--red) 12%,var(--surf2))" stroke="var(--red)"/>
+        <text x="150" y="256" font-size="13" font-weight="600" fill="var(--text)">PersonaCohort — bramka zgody</text>
+        <text x="150" y="276" font-size="11.5" fill="var(--dim)">PersonaId · ConsentGrantedBy · ConsentDate · ręczna lista SessionIds</text>
+        <text x="150" y="294" font-size="11" fill="var(--dim)">brak ścieżki inferencji z telemetrii do tożsamości</text>
+
+        <line x1="380" y1="312" x2="380" y2="354" stroke="var(--dim)" opacity="0.55" marker-end="url(#arrow)"/>
+
+        <rect x="130" y="356" width="500" height="66" rx="10" fill="color-mix(in srgb,var(--amber) 14%,var(--surf2))" stroke="var(--amber)"/>
+        <text x="150" y="380" font-size="13" font-weight="600" fill="var(--text)">PersonaProfileBuilder</text>
+        <text x="150" y="400" font-size="11.5" fill="var(--dim)">czyta wyłącznie sesje z cohortu → avg score, narzędzia, ograniczone exemplary</text>
+
+        <line x1="380" y1="422" x2="380" y2="464" stroke="var(--dim)" opacity="0.55" marker-end="url(#arrow)"/>
+
+        <rect x="130" y="466" width="500" height="66" rx="10" fill="color-mix(in srgb,var(--amber) 14%,var(--surf2))" stroke="var(--amber)"/>
+        <text x="150" y="490" font-size="13" font-weight="600" fill="var(--text)">System prompt — grounding</text>
+        <text x="150" y="510" font-size="11.5" fill="var(--dim)">kontekst w prompt, bez fine-tuningu wag modelu</text>
+
+        <line x1="380" y1="532" x2="380" y2="574" stroke="var(--dim)" opacity="0.55" marker-end="url(#arrow)"/>
+
+        <rect x="130" y="576" width="500" height="52" rx="26" fill="color-mix(in srgb,var(--blue) 16%,var(--surf2))" stroke="var(--blue)" stroke-width="1.5"/>
+        <text x="380" y="608" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--text)">Agent sprowidencjonowany (Azure AI Foundry + MS Agent Framework)</text>
+
+        <line x1="630" y1="602" x2="700" y2="602" stroke="var(--dim)" opacity="0.55" marker-end="url(#arrow)"/>
+        <rect x="702" y="546" width="216" height="112" rx="10" fill="color-mix(in srgb,var(--green) 12%,var(--surf2))" stroke="var(--green)"/>
+        <text x="722" y="570" font-size="12.5" font-weight="600" fill="var(--text)">Serwowanie</text>
+        <text x="722" y="589" font-size="11" fill="var(--dim)">POST /personas/{id}/chat</text>
+        <text x="722" y="605" font-size="11" fill="var(--dim)">"simulated": true — zawsze</text>
+        <text x="722" y="628" font-size="11.5" font-weight="600" fill="var(--text)">Wycofanie zgody</text>
+        <text x="722" y="644" font-size="10.5" fill="var(--dim)">DELETE → 409 natychmiast</text>
+        <text x="722" y="658" font-size="10.5" fill="var(--dim)">usuń cohort + restart → trwale</text>
+      </svg>
+      <figcaption>Kolor koduje strefę odpowiedzialności: niebieski = infrastruktura Collectora i sam agent (bez tożsamości), czerwony = bramka zgody, bursztynowy = provisioning (grounding, nie trening), zielony = serwowanie i wycofanie.</figcaption>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<section class="section" id="proces">
+  <div class="section-inner">
+    <p class="section-label">02 — Krok po kroku</p>
+    <h2>Opis procesu</h2>
+    <ol class="steps">
+      <li><b>Telemetria bez tożsamości.</b><span class="body">Cztery agnostyczne emitery wysyłają OTLP na jeden endpoint. Collector agreguje to w sesje kluczowane przez <code>conversation.id</code>, nie przez osobę — ten krok działa identycznie, niezależnie od tego, czy ktokolwiek kiedykolwiek uruchomi provisioning agenta.</span></li>
+      <li><b>Bramka zgody, poza telemetrią.</b><span class="body">Jedyne wejście do modelu jednej osoby to <code>PersonaCohort</code> — ręcznie wypisany rekord konfiguracyjny z listą <code>SessionIds</code>, kto wyraził zgodę i kiedy. Bez wpisu nie ma danych dla danej persony; to nie „domyślnie wyłączone", to brak ścieżki kodu.</span></li>
+      <li><b>Budowa profilu.</b><span class="body"><code>PersonaProfileBuilder</code> czyta wyłącznie sesje z cohortu przez istniejące API i składa profil: średni quality score, najczęstsze narzędzia, ograniczony zestaw exemplarów transkryptu.</span></li>
+      <li><b>Grounding, nie fine-tuning.</b><span class="body">Profil trafia do system promptu. Styl agenta pochodzi z kontekstu, nie z gradientu — kluczowa decyzja, która sprawia, że wycofanie zgody jest odwracalne w praktyce.</span></li>
+      <li><b>Provisioning.</b><span class="body">System prompt + model w Azure AI Foundry łączą się przez Microsoft Agent Framework; wynik jest cache'owany w pamięci procesu.</span></li>
+      <li><b>Serwowanie z etykietą.</b><span class="body">Każda odpowiedź niesie <code>"simulated": true</code> zapisane na sztywno w DTO — agent nigdy nie ma prawa przedstawiać się jako dana osoba.</span></li>
+      <li><b>Wycofanie, dwupoziomowe.</b><span class="body"><code>DELETE</code> czyści agenta z pamięci natychmiast (poziom operacyjny). Usunięcie <code>PersonaCohort</code> z konfiguracji i restart to poziom trwały — profilu nie da się odtworzyć w ogóle.</span></li>
+    </ol>
+  </div>
+</section>
+
+<hr class="divider">
+
+<section class="section" id="analogia">
+  <div class="section-inner">
+    <p class="section-label">03 — Ten sam kształt problemu, inna domena</p>
+    <h2>Analogia: dane pracownika magazynu → robot</h2>
+    <p class="lede">Zbieranie telemetrii dewelopera, żeby sprowidencjonować agenta, i zbieranie
+    danych operacyjnych pracownika magazynu, żeby wytrenować robota, to nie luźne podobieństwo —
+    to ta sama struktura decyzji, tylko inna domena.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Wymiar</th><th>Telemetria dewelopera → AgentForge</th><th>Dane pracownika magazynu → robot/cobot</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="dim-strong">Co się zbiera</td><td>Tury czatu, wywołania narzędzi, akceptacje edycji, TTFT, błędy</td><td>Ścieżki ruchu, czasy cykli pick/pack, punkty korekt</td></tr>
+          <tr><td class="dim-strong">Tożsamość</td><td>Brak <code>user.id</code> — sesja to nie osoba</td><td>Odznaka/terminal WMS zwykle <em>jest</em> identyfikowalny — większe ryzyko wyjściowe</td></tr>
+          <tr><td class="dim-strong">Bramka do modelu 1 osoby</td><td><code>PersonaCohort</code> — ręczna, jawna, z polami zgody</td><td>Program pilotażowy z podpisaną zgodą i wskazanym stanowiskiem</td></tr>
+          <tr><td class="dim-strong">Co robi model z danymi</td><td>Grounding w kontekście — nic nie wchodzi w wagi</td><td>Zwykle imitation learning — trajektorie <em>wchodzą</em> w wagi polityki ruchu</td></tr>
+          <tr><td class="dim-strong">Odwracalność wycofania</td><td>Wysoka — usunięcie cohortu = zero śladu</td><td>Niska, jeśli dane już weszły do treningu — wymaga retrainu</td></tr>
+          <tr><td class="dim-strong">Ryzyko Goodharta</td><td>Optymalizacja pod metrykę akceptacji zamiast pod jakość</td><td>Efekt Hawthorne'a — pracownik zmienia ruch pod obserwacją</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <b>Wniosek do zapamiętania</b>
+      Jeśli zgoda ma być odwracalna, architektura modelu musi to umożliwiać od pierwszego dnia.
+      AgentForge wybrał grounding zamiast fine-tuningu właśnie dlatego. Projekt treningu robota
+      na danych pracowników nie ma tej opcji za darmo — jeśli trajektorie trafią w wagi polityki,
+      cofnięcie zgody wymaga retrainu bez tych danych albo technik machine unlearning, a nie
+      prostego <code>DELETE</code>.
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<section class="section" id="prace">
+  <div class="section-inner">
+    <p class="section-label">04 — Dla przyszłych inżynierów</p>
+    <h2>10 propozycji prac badawczych</h2>
+    <p class="lede">Jedna praca na algorytm pomiaru jakości sesji z <code>docs/ANALYSIS.md</code> §8.
+    Sześć ma już implementację — tam praca to kalibracja i walidacja. Cztery nie mają — tam to
+    projekt i prototyp. Pełna wersja z metodologią i kryteriami sukcesu:
+    <code>research/RESEARCH_PROPOSALS.md</code>.</p>
+
+    <div class="cards">
+      <div class="card" style="--accent:var(--amber)">
+        <div class="card-top"><span class="card-num">01</span><span class="pill pill-todo">Brak implementacji</span></div>
+        <h3>LLM-as-a-Judge (G-Eval)</h3>
+        <p>Model-sędzia ocenia transkrypt wg rubryki — bogaty sygnał, ale kosztowny i podatny na bias.</p>
+        <div class="q"><b>Pytanie</b>Czy wynik da się uczynić porównywalnym ze składanym score 0–100, zamiast tworzyć drugą, niepowiązaną liczbę?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--amber)">
+        <div class="card-top"><span class="card-num">02</span><span class="pill pill-todo">Brak implementacji</span></div>
+        <h3>SPUR — uczone rubryki satysfakcji</h3>
+        <p>Model uczy się rubryk SAT/DSAT z etykietowanych sesji zamiast statycznej rubryki.</p>
+        <div class="q"><b>Pytanie</b>Ile etykietowanych sesji potrzeba, zanim SPUR generalizuje lepiej niż G-Eval na tym samym zbiorze?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--amber)">
+        <div class="card-top"><span class="card-num">03</span><span class="pill pill-todo">Brak implementacji</span></div>
+        <h3>Metryki RAG (RAGAS)</h3>
+        <p>Faithfulness / relevance / context precision — sensowne tylko dla sesji z retrievalem.</p>
+        <div class="q"><b>Pytanie</b>Jaki odsetek realnych sesji w ogóle kwalifikuje się do oceny RAGAS, zanim ktokolwiek napisze analizator?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">04</span><span class="pill pill-done">Zaimplementowany</span></div>
+        <h3>Edit Survival Analysis</h3>
+        <p>Four-gram overlap + no-revert, wagi 0.4/0.6 — działa, ale niewalidowane niezależnie.</p>
+        <div class="q"><b>Pytanie</b>Czy podział wag 0.4/0.6 jest optymalny względem realnego stanu repo tydzień po sesji?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">05</span><span class="pill pill-done">Zaimplementowany</span></div>
+        <h3>Acceptance-weighted throughput</h3>
+        <p>Zaakceptowane linie na interakcję, ważone odrzuceniami — celowo prosty proxy produktywności.</p>
+        <div class="q"><b>Pytanie</b>Czy throughput koreluje dodatnio z edit survival, czy to dwie niezależne, czasem sprzeczne osie?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">06</span><span class="pill pill-done">Zaimplementowany</span></div>
+        <h3>Turn-level Friction &amp; Repair (TFRA)</h3>
+        <p>Segmentacja sesji na tury, kary za błędy LLM/narzędzi i pętle naprawcze.</p>
+        <div class="q"><b>Pytanie</b>Czy ręcznie dobrane wagi kar (−0.35 / −0.15 / −0.10) odtwarzają intuicję inżyniera czytającego transkrypt?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">07</span><span class="pill pill-done">Zaimplementowany</span></div>
+        <h3>Latency-utility model</h3>
+        <p>TTFT mapowane na użyteczność krzywą log-linear, progi z ogólnych badań HCI.</p>
+        <div class="q"><b>Pytanie</b>Czy progi 2 s / 8 s trzymają się dla sesji agentowych, gdzie „myślenie" narzędzia jest oczekiwane?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">08</span><span class="pill pill-done">Zaimplementowany</span></div>
+        <h3>Ekonomia tokenów i cache</h3>
+        <p>Koszt per model z konfigurowalnego cennika, oszczędności prompt-cache.</p>
+        <div class="q"><b>Pytanie</b>Jak duży błąd w oszczędnościach generuje cennik nieaktualizowany od 3 miesięcy?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--green)">
+        <div class="card-top"><span class="card-num">09</span><span class="pill pill-done">Uproszczony lokalnie</span></div>
+        <h3>Klasyfikacja frustracji</h3>
+        <p>Leksykon EN/PL + Jaccard przeformułowań — świadomie zaszumiona, dlatego report-only.</p>
+        <div class="q"><b>Pytanie</b>Jaki jest rzeczywisty precision/recall heurystyki na realnym zbiorze rozmów PL i EN osobno?</div>
+      </div>
+
+      <div class="card" style="--accent:var(--amber)">
+        <div class="card-top"><span class="card-num">10</span><span class="pill pill-todo">Częściowe hooki</span></div>
+        <h3>Task-completion detection</h3>
+        <p>Najbliższe „czy praca została wykonana" — wymaga sygnałów spoza telemetrii Copilota.</p>
+        <div class="q"><b>Pytanie</b>Czy krok CI, który POST-uje wynik builda/testów na istniejący endpoint, wystarczy jako pierwszy prototyp?</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<footer>
+  <div class="footer-brand">
+    <svg width="22" height="22" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="scbgf" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0f1923"/><stop offset="100%" stop-color="#1a2d3f"/>
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="50" fill="url(#scbgf)"/>
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#f59e0b" stroke-width="1.5" opacity="0.55"/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke="#f59e0b" stroke-width="0.7" opacity="0.28"/>
+      <line x1="8" y1="50" x2="92" y2="50" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+      <line x1="50" y1="8" x2="50" y2="92" stroke="#f59e0b" stroke-width="0.7" opacity="0.3"/>
+      <line x1="50" y1="8"  x2="50" y2="12.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="92" y1="50" x2="87.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="50" y1="92" x2="50" y2="87.5" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <line x1="8"  y1="50" x2="12.5" y2="50" stroke="#f59e0b" stroke-width="2" opacity="0.7"/>
+      <polyline points="8,50 36,50 38,57 42,22 46,62 50,50 92,50"
+        fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="2" fill="#f59e0b" opacity="0.65"/>
+    </svg>
+    CopilotScope
+  </div>
+  <div class="footer-links">
+    <a href="index.html">Home</a>
+    <a href="https://github.com/konradcinkusz/copilotscope">GitHub</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/blob/master/docs/AGENT_PROVISIONING_WORKFLOW.md">Markdown source</a>
+    <a href="https://github.com/konradcinkusz/copilotscope/blob/master/research/RESEARCH_PROPOSALS.md">Research proposals</a>
+  </div>
+  <p class="footer-copy">MIT License · Sibling project: <a href="https://github.com/konradcinkusz/agenthelm" style="color:var(--teal)">AgentHelm</a></p>
+</footer>
+
+</body>
+</html>

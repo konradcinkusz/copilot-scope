@@ -424,6 +424,10 @@ flowchart TB
 - Ingest accepts OTLP/HTTP protobuf only (Copilot's default); JSON gets a 415
   with a configuration hint. Compressed bodies are decompressed transparently.
 - Architecture analysis with diagrams (in Polish): `docs/ANALYSIS.md`.
+- Telemetry → persona-agent provisioning workflow, with diagram and the warehouse-worker/robot
+  training analogy (in Polish): `docs/AGENT_PROVISIONING_WORKFLOW.md`.
+- Ten research-paper proposals, one per evaluation algorithm above, for engineers picking up the
+  next round of work: `research/RESEARCH_PROPOSALS.md`.
 
 ## License
 
