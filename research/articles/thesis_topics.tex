@@ -1,0 +1,854 @@
+% ============================================================
+%  CopilotScope — Tematy prac dyplomowych
+%  Dziesięć tematów prac inżynierskich i magisterskich
+%  wyprowadzonych z dziesięciu algorytmów oceny jakości sesji
+%  opisanych w quality_measurement_framework.tex, docs/ANALYSIS.md §8
+%  i w tabeli "Algorithm status" na stronie projektu.
+%
+%  Kompilacja: pdflatex thesis_topics.tex  (dwukrotnie)
+% ============================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[polish]{babel}
+\usepackage{lmodern}
+\usepackage[margin=1.9cm,top=1.7cm,bottom=1.6cm,headsep=0.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{framed}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{url}
+
+% \kod{...} — ścieżki/identyfikatory czcionką maszynową, łamane po / _ . - :
+% (bez dzielenia wyrazów), żeby długie ścieżki nie wychodziły poza margines.
+\urlstyle{tt}
+\def\UrlBreaks{\do\/\do\_\do\.\do\-\do\:\do\=\do\,}
+\newcommand{\kod}{\begingroup\urlstyle{tt}\Url}
+
+\definecolor{csblue}{HTML}{3C3489}
+\definecolor{csrule}{HTML}{5F5E5A}
+\definecolor{shadecolor}{HTML}{EEEDFE}
+\definecolor{csgrey}{HTML}{4A4A48}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=csblue,
+  urlcolor=csblue,
+  pdftitle={CopilotScope — tematy prac dyplomowych},
+  pdfauthor={CopilotScope Project},
+}
+
+\setlist[itemize]{leftmargin=1.1em,topsep=1pt,itemsep=0.5pt,parsep=0pt}
+\setlength{\parskip}{3pt}
+\setlength{\emergencystretch}{3em}   % ostatnia deska ratunku dla wierszy ze ścieżkami
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\footnotesize\color{csgrey}CopilotScope — tematy prac dyplomowych}
+\fancyhead[R]{\footnotesize\color{csgrey}\thepage}
+
+% ---- makra układu tematu ----
+
+% \temat{numer}{tytuł}{poziom}{metryczka}
+\newcommand{\temat}[4]{%
+  \clearpage
+  \noindent{\footnotesize\color{csblue}\textsc{Temat #1}\hfill\textsc{#3}}\\[-0.5em]
+  \noindent\textcolor{csblue}{\rule{\linewidth}{1.2pt}}\\[0.1em]
+  {\large\bfseries #2\par}
+  \vspace{0.15em}
+  \noindent{\footnotesize\color{csgrey}#4\par}
+  \vspace{0.1em}
+  \noindent\textcolor{csrule}{\rule{\linewidth}{0.4pt}}
+  \vspace{-0.2em}
+}
+
+% \blok{nagłówek} — śródtytuł biegnący w linii
+\newcommand{\blok}[1]{\vspace{0.2em}\noindent{\bfseries\color{csblue}#1}\par\nopagebreak}
+
+% streszczenie w ramce
+\newenvironment{streszczenie}%
+  {\vspace{-0.7em}\begin{shaded}\noindent\textbf{Streszczenie.\ }}%
+  {\end{shaded}\vspace{-0.5em}}
+
+\title{%
+  \textbf{CopilotScope --- tematy prac dyplomowych}\\[0.4em]
+  \large Dziesięć propozycji prac inżynierskich i magisterskich\\
+  z obszaru pomiaru jakości sesji asystenta programistycznego
+}
+\author{Projekt CopilotScope}
+\date{Sierpień 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\vspace{-1em}
+
+\section*{Skąd wzięło się tych dziesięć tematów}
+\addcontentsline{toc}{section}{Skąd wzięło się tych dziesięć tematów}
+
+CopilotScope zbiera telemetrię OpenTelemetry z asystentów programistycznych
+(GitHub Copilot w~VS~Code, Copilot CLI, Claude Code) i wylicza z~niej złożoną
+ocenę jakości sesji w~skali 0--100. Przegląd \emph{dziesięciu} podejść do oceny
+jakości rozmowy --- ten sam zestaw, który strona projektu pokazuje w~tabeli
+\textit{Algorithm status}, a~\texttt{docs/ANALYSIS.md} §8 rozwija w~formie
+przeglądu literatury --- stanowi mapę tego obszaru. Formalne definicje
+zaimplementowanych algorytmów (wzory, dowody własności, przykłady liczbowe)
+znajdują się w~artykule
+\textit{CopilotScope Quality Measurement Framework}
+(\texttt{research/articles/quality\_measurement\_framework.tex}), a~ich
+odtworzenia w~Pythonie --- w~notatnikach \texttt{research/0X\_*.ipynb}.
+
+Każdy z~dziesięciu algorytmów zamieniono tutaj na \textbf{samodzielny temat pracy
+dyplomowej}: jedna strona A4, z~tytułem, streszczeniem, celem, zakresem prac,
+metodyką, mierzalnym kryterium akceptacji i~punktem wejścia w~kodzie. Numeracja
+jest zgodna z~tabelą \textit{Evaluation algorithms --- implementation status}
+w~\texttt{README.md} oraz z~§8a w~\texttt{docs/ANALYSIS.md}, żeby odwołania
+między dokumentami się nie rozjeżdżały.
+
+\textbf{Sześć z~dziesięciu algorytmów ma już działającą implementację}
+w~katalogu \texttt{Collector/Quality/} --- tam praca dyplomowa polega na
+\emph{walidacji i~kalibracji} tego, co dziś działa na ręcznie dobranych
+parametrach. \textbf{Cztery nie mają implementacji} --- tam praca polega na
+\emph{projekcie i~prototypie}. Jedno i~drugie jest pełnoprawnym tematem; drugie
+jest tylko bardziej efektowne, a~pierwsze zwykle bardziej potrzebne.
+
+\begin{table}[h!]
+\centering
+\small
+\caption{Mapa tematów: algorytm $\rightarrow$ temat $\rightarrow$ poziom pracy.}
+\begin{tabular}{@{}clll@{}}
+\toprule
+\# & Algorytm & Stan implementacji & Proponowany poziom \\
+\midrule
+1  & LLM-as-a-Judge (G-Eval)          & nie zaimplementowany   & magisterska \\
+2  & SPUR --- wyuczone rubryki SAT/DSAT & nie zaimplementowany  & magisterska \\
+3  & Metryki komponentowe RAG (RAGAS) & nie zaimplementowany   & inżynierska \\
+4  & Edit Survival Analysis           & w pełni                & inżynierska \\
+5  & Acceptance-weighted throughput   & w pełni                & inżynierska \\
+6  & TFRA --- tarcie i naprawy per tura & w pełni              & magisterska \\
+7  & Latency-utility model            & w pełni                & inżynierska \\
+8  & Ekonomia tokenów i cache         & w pełni                & inżynierska \\
+9  & Klasyfikacja frustracji          & uproszczony (report-only) & magisterska \\
+10 & Task-completion detection        & częściowe hooki        & inżynierska \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\blok{Co jest wspólne dla wszystkich dziesięciu}
+\begin{itemize}
+  \item \textbf{Dane.} \texttt{tools/CopilotScope.Seeder -{}- demo} generuje sesje
+        trzech person (\emph{clean}, \emph{error-prone}, \emph{frustrated}) oraz
+        zestaw długich, scenariuszowych rozmów (\textit{Redis rate limiter},
+        \textit{RDS Postgres upgrade} i~inne). To punkt startowy każdej pracy;
+        sesje z~realnego użycia repozytorium (dogfooding) są cenniejsze, ale
+        trzeba je najpierw zebrać.
+  \item \textbf{Punkt wejścia w~kodzie.} Interfejs \texttt{IInsightAnalyzer}
+        w~\texttt{Quality/Insights.cs}: nowy algorytm to jedna klasa plus jedna
+        rejestracja w~kontenerze DI --- zero pracy w~interfejsie użytkownika,
+        bo panel \textit{Insights} renderuje raporty generycznie.
+  \item \textbf{Trzy zasady projektowe, których praca nie powinna łamać po
+        cichu} (artykuł, §Introduction): \emph{telemetry-only} (bez sędziego LLM
+        w~momencie scoringu), \emph{wyjaśnialność z~konstrukcji} (każdy wynik
+        rozkłada się na nazwane składowe z~powodami), \emph{świadomość pewności}
+        (brak danych to \texttt{confidence}~=~0, nie fałszywa neutralna ocena).
+        Temat, który tę zasadę narusza --- jak \#1 czy \#2 --- musi to nazwać
+        wprost i~uzasadnić, a~nie przemycić.
+  \item \textbf{Granica etyczna.} CopilotScope świadomie nie przechowuje
+        tożsamości osoby przy sesji. Żadna z~tych prac nie ma prowadzić do oceny
+        \emph{ludzi} --- przedmiotem pomiaru jest jakość sesji z~asystentem, nie
+        wydajność programisty (patrz sekcja \textit{How not to use CopilotScope}
+        w~\texttt{README.md}).
+\end{itemize}
+
+\blok{Uwaga o poziomie pracy}
+Podział na inżynierską i~magisterską jest propozycją, nie wyrocznią. Kryterium
+przyjęte tutaj: \emph{magisterska} tam, gdzie sednem jest zaprojektowanie
+eksperymentu z~udziałem ludzi (anotacja, miary zgodności) albo wyuczenie modelu
+i~wykazanie przewagi nad baseline'em; \emph{inżynierska} tam, gdzie sednem jest
+zbudowanie działającego narzędzia i~zmierzenie nim czegoś konkretnego. Każdy
+temat inżynierski da się podnieść do magisterskiego, rozszerzając część badawczą
+--- w~opisach zaznaczono, którędy.
+
+% ============================================================
+\temat{1}{Ocena jakości sesji asystenta programistycznego przez model-sędziego:
+projekt rubryki G-Eval i~jej walidacja względem ocen ludzkich}
+{Praca magisterska}
+{Algorytm \#1 --- LLM-as-a-Judge (G-Eval) \quad·\quad stan: nie zaimplementowany \quad·\quad wymaga agenta-sędziego (Azure AI Foundry)}
+
+\begin{streszczenie}
+Model-sędzia ocenia transkrypt sesji względem jawnej rubryki --- poprawność,
+kompletność, styl komunikacji --- i~zwraca wynik, który ma być
+\emph{porównywalny} ze składanym wskaźnikiem 0--100 wyliczanym dziś wyłącznie
+z~telemetrii. Praca nie odpowiada na pytanie „czy G-Eval działa'' (to technika
+ugruntowana), tylko na trudniejsze: czy da się go wpiąć w~system, którego
+zasadą projektową jest \emph{telemetry-only}, bez zerwania tej zasady --- i~po
+jakim koszcie tokenowym przestaje się to opłacać.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Sześć algorytmów w~CopilotScope działa na samych metadanych: nie czyta treści
+promptów, nie wywołuje modelu, nie wychodzi do sieci. To świadomy wybór, ale ma
+cenę --- żaden z~nich nie ocenia, czy odpowiedź asystenta była
+\emph{merytorycznie dobra}. G-Eval to najbogatszy dostępny sygnał jakościowy
+i~zarazem najdroższy oraz najbardziej podatny na bias. Architektura docelowa
+(agent-sędzia w~Azure AI Foundry) jest zaprojektowana; brakuje rubryki i~dowodu,
+że jej wyniki są warte swojej ceny.
+
+\blok{Cel pracy}
+Zaprojektować rubrykę G-Eval odwzorowaną na komponenty istniejącego silnika
+jakości, zaimplementować ją jako analizator dostępny wyłącznie w~wariancie
+chmurowym, i~zmierzyć --- względem etykiet ludzkich --- czy jej ocena jest
+trafniejsza niż obecny wskaźnik telemetryczny, oraz ile to kosztuje.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Rubryka G-Eval odwzorowana na sześć komponentów silnika v2
+        (\emph{reliability}, \emph{acceptance}, \emph{friction}, \emph{latency},
+        \emph{feedback}, \emph{efficiency}) --- tak, by wynik dało się zestawić
+        z~istniejącym score'em, a~nie dołożyć jako kolejną, niepowiązaną liczbę.
+  \item Implementacja \texttt{IInsightAnalyzer} w~trybie „cloud-only'': lokalnie
+        raportuje status \emph{no data}, nigdy błąd.
+  \item Zbiór referencyjny 50--100 sesji (Seeder: \emph{clean}, \emph{error-prone},
+        \emph{frustrated} + rozmowy scenariuszowe).
+  \item Etykietowanie ręczne przez co najmniej dwie osoby, z~raportem zgodności
+        międzysędziowskiej (Cohen $\kappa$) --- to jest \emph{ground truth}.
+  \item Pomiar kosztu tokenowego na sesję jako funkcji długości transkryptu,
+        z~wyznaczeniem progu opłacalności.
+  \item Raport biasu sędziego: długość odpowiedzi jako fałszywe proxy jakości,
+        bias pozycyjny, wrażliwość na sformułowanie rubryki.
+\end{itemize}
+
+\blok{Metodyka}
+G-Eval występuje jako \emph{trzeci sędzia} porównywany do etykiet ludzkich ---
+nie do istniejącego wskaźnika CopilotScope. Porównywanie modelu do liczby, którą
+ma zastąpić, mierzy zgodność dwóch narzędzi, a~nie trafność żadnego z~nich.
+
+\blok{Kryterium akceptacji}
+Korelacja rangowa (Spearman) G-Eval~$\leftrightarrow$~etykiety ludzkie wyższa niż
+korelacja obecnego wskaźnika 0--100~$\leftrightarrow$~etykiety, przy
+udokumentowanym koszcie na sesję i~opublikowanej rubryce wraz z~przykładami
+uzasadnień --- sama liczba bez rubryki jest w~tym projekcie bezużyteczna.
+
+\blok{Punkt wejścia \quad·\quad Dlaczego magisterska}
+\kod{Quality/Insights.cs} (interfejs), \kod{src/CopilotScope.AgentForge/Agents/}
+(gotowy klient Azure AI Foundry), \kod{tools/CopilotScope.Seeder}. \\
+Sednem pracy jest zaprojektowanie eksperymentu z~anotatorami i~analiza biasu,
+a~nie implementacja --- ta jest tu najmniejszą częścią.
+
+% ============================================================
+\temat{2}{Uczenie interpretowalnych rubryk satysfakcji (SPUR) z~etykietowanych
+sesji i~badanie ich transferu między asystentami}
+{Praca magisterska}
+{Algorytm \#2 --- SPUR (arXiv 2403.12388) \quad·\quad stan: nie zaimplementowany \quad·\quad wymaga zbioru etykietowanego}
+
+\begin{streszczenie}
+SPUR uczy model \emph{interpretowalnych} rubryk zadowolenia i~niezadowolenia
+(SAT/DSAT) z~oznaczonych rozmów, zamiast oceniać według rubryki napisanej
+z~góry, jak G-Eval. To stan sztuki w~szacowaniu satysfakcji użytkownika, badany
+m.in.\ na Bing Copilot --- ale wymaga własnego zbioru etykiet, którego
+CopilotScope nie ma. Praca bada, ile tych etykiet naprawdę trzeba, czy da się je
+częściowo zastąpić słabym nadzorem, i~czy wyuczona rubryka przenosi się między
+asystentami.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Temat \#1 (G-Eval) i~ten dzielą tę samą wąską gardło: brak etykiet. Różnią się
+tym, co z~nimi robią --- G-Eval używa ich \emph{do walidacji} statycznej rubryki,
+SPUR \emph{do jej wyuczenia}. Warto połączyć oba tematy w~jedną kampanię
+etykietowania zamiast prowadzić dwie. Dodatkowo CopilotScope ma już
+heurystyczny \texttt{FrustrationAnalyzer}, który --- mimo że zaszumiony ---
+może posłużyć jako słaby etykietator wstępny.
+
+\blok{Cel pracy}
+Wyuczyć rubryki SAT/DSAT na sesjach CopilotScope, zmierzyć krzywą uczenia
+względem liczby etykiet i~sprawdzić, czy rubryka wyuczona na jednym emiterze
+telemetrii zachowuje trafność na innym.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Pilotaż etykietowania $\approx$200 sesji przez zespół, który sam używa
+        CopilotScope na co dzień (dogfooding daje najwiarygodniejsze etykiety,
+        bo etykietujący rozumie kontekst pracy).
+  \item Wariant \emph{weak supervision}: \texttt{FrustrationAnalyzer} (algorytm \#9)
+        jako wstępny, zaszumiony etykietator --- z~pomiarem, ile ręcznej pracy
+        realnie oszczędza i~jaki bias wnosi.
+  \item Krzywa uczenia: trafność SPUR w~funkcji liczby etykiet, z~wyznaczeniem
+        punktu, od którego SPUR przebija statyczną rubrykę G-Eval na tym samym
+        zbiorze walidacyjnym.
+  \item Test transferu: rubryka wyuczona na sesjach VS~Code, oceniana na sesjach
+        Copilot CLI i~Claude Code (trzy różne dialekty telemetrii, ten sam
+        kolektor) oraz na innym repozytorium.
+  \item Porównanie kosztu inferencji SPUR vs G-Eval --- SPUR nie wozi pełnej
+        rubryki w~każdym promptcie, więc powinien być tańszy; trzeba to pokazać
+        liczbami, a~nie założyć.
+\end{itemize}
+
+\blok{Metodyka}
+Wspólny zbiór walidacyjny z~tematem \#1, żeby porównanie SPUR vs G-Eval było
+uczciwe. Podział train/valid po \emph{sesjach}, nie po turach --- tury z~jednej
+sesji są skorelowane i~wyciekłyby między zbiorami.
+
+\blok{Kryterium akceptacji}
+SPUR osiąga trafność nie gorszą niż G-Eval przy istotnie niższym koszcie na
+inferencję, a~praca dostarcza udokumentowaną krzywą uczenia z~jasną odpowiedzią:
+\emph{ile etykiet trzeba, zanim to się zaczyna opłacać}.
+
+\blok{Ryzyko}
+Rubryka wyuczona na jednym zespole i~jednym repozytorium może nie transferować
+się nigdzie indziej. Test cross-repo jest tu obowiązkowy, a~nie opcjonalny ---
+bez niego praca dowodzi tylko, że model nauczył się jednego zespołu.
+
+\blok{Punkt wejścia}
+\kod{Quality/FrustrationAnalyzer.cs} (słaby etykietator),
+\kod{src/CopilotScope.AgentForge/}, \kod{research/07_frustration_analyzer.ipynb}.
+
+% ============================================================
+\temat{3}{Wykrywanie sesji opartych o retrieval w~telemetrii OTel GenAI jako
+warunek wstępny metryk RAGAS}
+{Praca inżynierska}
+{Algorytm \#3 --- metryki komponentowe RAG (RAGAS) \quad·\quad stan: nie zaimplementowany \quad·\quad praca przygotowawcza}
+
+\begin{streszczenie}
+Metryki RAGAS --- \emph{faithfulness}, \emph{answer relevance},
+\emph{context precision} --- mają sens wyłącznie wtedy, gdy sesja rzeczywiście
+wykonuje retrieval: przeszukuje dokumentację repozytorium albo bazę wiedzy przed
+odpowiedzią. Obecna telemetria CopilotScope w~ogóle nie odróżnia sesji
+z~retrievalem od czysto generatywnej. Praca odpowiada na pytanie, które trzeba
+zadać \emph{przed} napisaniem pierwszej linijki analizatora RAGAS: ile sesji
+w~ogóle się do niego kwalifikuje?
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+RAGAS ma najmocniejsze zaplecze akademickie z~całej dziesiątki i~właśnie dlatego
+jest najłatwiejszy do przecenienia. Dobre zaplecze teoretyczne nie oznacza
+dopasowania do tego, co faktycznie robią sesje Copilota. Jeżeli okaże się, że
+kwalifikuje się 5\% sesji, to jest to wynik --- oszczędza projektowi
+zbudowania analizatora, który nigdy nie ma danych.
+
+\blok{Cel pracy}
+Ustalić, czy istniejące spany \texttt{execute\_tool} niosą wystarczający sygnał,
+by rozpoznać retrieval bez nowej instrumentacji po stronie klienta, zmierzyć
+odsetek kwalifikujących się sesji i~wydać rekomendację \emph{idź / nie idź}
+popartą danymi.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Klasyfikator wywołań narzędzi na podstawie atrybutu
+        \texttt{gen\_ai.tool.name}: retrieval (\texttt{search}, \texttt{grep},
+        \texttt{read\_file}, \texttt{fetch}) kontra działanie
+        (\texttt{run\_tests}, \texttt{execute\_command}, \texttt{edit\_file}) ---
+        z~jawną listą przypadków niejednoznacznych.
+  \item Pomiar: odsetek sesji z~co najmniej jednym wywołaniem sklasyfikowanym
+        jako retrieval, osobno dla zbioru z~Seedera i~dla realnych sesji pracy
+        nad repozytorium.
+  \item Propozycja minimalnego atrybutu, który usunąłby heurystykę --- np.
+        \kod{gen_ai.tool.category=retrieval} --- sformułowana jako
+        \textbf{rozszerzenie konwencji semantycznych OTel GenAI}, a~nie prywatny
+        atrybut CopilotScope. Prywatny atrybut rozwiązuje problem w~jednym
+        narzędziu; propozycja do konwencji rozwiązuje go dla wszystkich.
+  \item Prototyp jednej metryki (\emph{context precision}) na zakwalifikowanym
+        podzbiorze --- dowód wykonalności, nie produkcyjny analizator.
+  \item Raport \emph{idź / nie idź} z~rekomendacją priorytetu.
+\end{itemize}
+
+\blok{Metodyka}
+Audyt danych przed implementacją. Klasyfikacja heurystyczna po nazwie narzędzia
+walidowana ręcznie na próbce 100 wywołań (z~podaniem trafności heurystyki ---
+jeśli sama heurystyka myli się w~30\% przypadków, to wynik audytu też jest
+obarczony tym błędem i~trzeba to napisać).
+
+\blok{Kryterium akceptacji}
+Liczbowa odpowiedź na pytanie „jaki odsetek sesji kwalifikuje się do oceny
+RAGAS'' wraz z~przedziałem ufności, plus jednoznaczna rekomendacja i~gotowa
+propozycja atrybutu do zgłoszenia w~specyfikacji OTel GenAI.
+
+\blok{Punkt wejścia}
+\kod{src/CopilotScope.Collector/Otlp/} (dekoder spanów),
+\kod{Domain/CopilotSession.cs}, \kod{tools/CopilotScope.Seeder}.
+
+\blok{Jak podnieść do poziomu magisterskiego}
+Zastąpić heurystykę po nazwie narzędzia klasyfikatorem uczonym na
+zaetykietowanych wywołaniach i~wykazać przewagę --- wraz z~pełną implementacją
+RAGAS na zakwalifikowanym podzbiorze.
+
+% ============================================================
+\temat{4}{Kalibracja modelu przeżywalności edycji (Edit Survival) względem
+faktycznego stanu repozytorium git}
+{Praca inżynierska}
+{Algorytm \#4 --- Edit Survival Analysis \quad·\quad stan: zaimplementowany w~pełni \quad·\quad \texttt{EditSurvivalAnalyzer}}
+
+\begin{streszczenie}
+\texttt{EditSurvivalAnalyzer} łączy dwa sygnały --- pokrycie czterogramowe
+i~brak cofnięcia edycji po 30/300~s --- wagami 0{,}4 i~0{,}6. Obie liczby
+zostały przeniesione z~telemetrii GitHuba i~nigdy nie zostały zwalidowane na
+danych CopilotScope. Praca konfrontuje wynik algorytmu z~faktem twardym
+i~sprawdzalnym: czy wygenerowany kod nadal jest w~repozytorium tydzień później.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+To najdojrzalszy z~dziesięciu algorytmów --- ma pełną implementację, notatnik
+odtwarzający wszystkie wzory (\texttt{research/03\_edit\_survival.ipynb})
+i~rozdział w~artykule wraz z~analizą wrażliwości wag. Czego nie ma, to
+niezależnego punktu odniesienia. „Kod przeżył 300~sekund'' jest proxy dla
+„kod był użyteczny''; git wie, czy przeżył naprawdę.
+
+\blok{Cel pracy}
+Zbudować narzędzie łączące edycje z~sesji z~historią git i~użyć go do
+kalibracji wag oraz okien czasowych algorytmu.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Narzędzie mapujące edycje z~sesji na fragmenty kodu w~historii git
+        (\texttt{git log}/\texttt{git blame} na plikach dotkniętych w~sesji).
+  \item Zbiór 20--30 sesji z~twardym \emph{ground truth}: czy kod przetrwał
+        w~repozytorium po 7 i~po 30 dniach.
+  \item Test wrażliwości podziału wag 0{,}4/0{,}6 na siatce wartości --- artykuł
+        (§\textit{Weight Sensitivity}) dostarcza gotowego aparatu, praca dokłada
+        do niego rzeczywiste wyniki zamiast założeń.
+  \item Weryfikacja okien 30/300~s osobno dla sesji \emph{inline} (VS~Code)
+        i~\emph{agentowych} (Claude Code, Copilot CLI) --- rytm edycji w~długiej
+        turze agentowej jest inny niż przy pojedynczej sugestii.
+  \item Analiza przypadku, którego telemetria dziś nie rozróżnia: cofnięcie
+        \emph{bo kod był zły} kontra cofnięcie \emph{bo zmienił się cel zadania}.
+        Nawet negatywny wynik („nie da się rozróżnić bez nowego sygnału'') jest
+        wartościowy, jeśli jest udokumentowany.
+  \item Rekomendacja: utrzymać wagi / przestroić / dodać sygnał.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Udokumentowana korelacja między \emph{survival score} a~przeżyciem kodu
+w~historii git, z~rekomendacją wag popartą liczbami --- oraz uczciwie
+zaraportowanym rozmiarem próbki, bo 25 sesji to nie jest dowód ogólny.
+
+\blok{Ryzyko}
+Merytorycznie niskie --- algorytm jest dobrze opisany. Główne ryzyko to
+nadinterpretacja małej próbki; praca powinna raportować przedziały ufności,
+a~nie same punktowe współczynniki korelacji.
+
+\blok{Punkt wejścia}
+\kod{Quality/Analyzers.cs} (\kod{EditSurvivalAnalyzer}),
+\kod{research/03_edit_survival.ipynb}, artykuł §\textit{Edit Survival Analysis}.
+
+\blok{Jak podnieść do poziomu magisterskiego}
+Zamienić prostą korelację na właściwy model przeżycia z~cenzurowaniem
+(Kaplan--Meier, regresja Coxa) --- edycje w~sesjach trwających krócej niż okno
+obserwacji są klasycznym przypadkiem danych cenzurowanych prawostronnie.
+
+% ============================================================
+\temat{5}{Czy przepustowość i~przeżywalność mierzą to samo? Analiza korelacyjna
+metryki produktywności i~jej odporności na prawo Goodharta}
+{Praca inżynierska}
+{Algorytm \#5 --- Acceptance-weighted throughput \quad·\quad stan: zaimplementowany w~pełni \quad·\quad \texttt{ThroughputAnalyzer}}
+
+\begin{streszczenie}
+Przepustowość liczy zaakceptowane linie kodu na turę, dyskontowane
+odrzuceniami --- prosty, celowo prosty proxy produktywności. Praca sprawdza,
+czy ta prostota szkodzi: czy wysoka przepustowość idzie w~parze z~wysoką
+przeżywalnością kodu (algorytm \#4), czy to dwie niezależne osie. Drugą częścią
+pracy jest coś, czego zwykle się nie pisze, a~tutaj jest obowiązkowe: katalog
+sposobów, na jakie tę metrykę da się zgamować.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Przepustowość nagradza \emph{dużo} zaakceptowanego kodu i~nie mówi nic o~tym,
+czy \emph{mniej} kodu --- bo trafniejszego --- nie byłoby lepszym wynikiem.
+Dokumentacja projektu nazywa ją wprost najbardziej podatną na prawo Goodharta
+metryką z~całej dziesiątki („gdy miara staje się celem, przestaje być dobrą
+miarą''). Wchodzi dziś do składanego wskaźnika z~wagą 0{,}20 w~komponencie
+\emph{acceptance} --- warto wiedzieć, czy zasłużenie.
+
+\blok{Cel pracy}
+Ustalić ilościowo relację między przepustowością a~przeżywalnością, zaproponować
+wariant metryki znormalizowany po złożoności zadania i~zbudować katalog
+scenariuszy gamingu wraz z~propozycją ich detekcji.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Wykres rozrzutu przepustowość $\times$ przeżywalność na wspólnym zbiorze
+        sesji; współczynniki Pearsona i~Spearmana wraz z~przedziałami ufności.
+  \item Analiza podzbiorów: czy korelacja zmienia znak dla pewnych klas sesji
+        (np.\ refaktoryzacja kontra pisanie nowego kodu). Ujemna korelacja
+        w~jakimkolwiek podzbiorze jest mocnym argumentem, żeby przepustowość
+        nigdy nie była samodzielnym wskaźnikiem sukcesu.
+  \item Wariant „przepustowość na jednostkę złożoności zadania'' --- normalizacja
+        po liczbie dotkniętych plików zamiast czystych linii kodu; wraz
+        z~odpowiedzią, czy telemetria w~ogóle niesie sygnał złożoności.
+  \item Wpływ stylu formatowania (automatyczny formatter kontra ręczne
+        formatowanie) na porównywalność liczby linii między repozytoriami.
+  \item Rozdział \textit{Jak tę metrykę zgamować}: co najmniej trzy
+        udokumentowane scenariusze (np.\ akceptowanie wygenerowanego kodu
+        hurtem, generowanie rozwlekłego kodu, sztuczne dzielenie tur) plus
+        propozycja sygnału wykrywającego każdy z~nich.
+  \item Rekomendacja dla wagi komponentu \emph{acceptance} w~silniku v2.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Ilościowa odpowiedź na pytanie „przepustowość i~przeżywalność mierzą to samo czy
+coś innego'', rekomendacja wagi i~rozdział o~gamingu --- praca bez tego ostatniego
+nie jest kompletna, choćby analiza statystyczna była bez zarzutu.
+
+\blok{Punkt wejścia}
+\kod{Quality/Analyzers.cs} (\kod{ThroughputAnalyzer}),
+\kod{research/04_throughput.ipynb}, \kod{Quality/QualityEngine.cs} (wagi).
+
+% ============================================================
+\temat{6}{Kalibracja modelu tarcia i~napraw na poziomie tury (TFRA) --- badanie
+anotacyjne i~uczenie wag kar z~danych}
+{Praca magisterska}
+{Algorytm \#6 --- Turn-level Friction \& Repair Analysis \quad·\quad stan: zaimplementowany w~pełni \quad·\quad \texttt{SegmentAnalyzer}}
+
+\begin{streszczenie}
+TFRA dzieli sesję na tury i~ocenia każdą z~osobna: karze błędy modelu
+($-0{,}35\times$), błędy narzędzi ($-0{,}15\times$) i~pętle naprawcze
+($-0{,}10$), a~latencję ocenia względem mediany \emph{tej samej} sesji, więc nie
+karze wolnych modeli --- tylko tury odstające. To najlepiej zaprojektowany
+algorytm z~dziesiątki, ale trzy wagi kar zostały dobrane ręcznie. Praca sprawdza,
+czy odtwarzają one intuicję inżyniera czytającego transkrypt, i~czy da się je
+wyuczyć zamiast ustawiać.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+TFRA zasila komponent \emph{friction} (waga 0{,}20) w~składanym wskaźniku oraz
+panel \textit{Turn analysis}, który wskazuje najlepszą i~najgorszą turę sesji
+\emph{wraz z~powodami}. Jest interpretowalny z~konstrukcji, co czyni go dobrym
+kandydatem do kalibracji na ludzkich ocenach: da się zestawić „algorytm ukarał
+tę turę za X'' z~„człowiek uznał tę turę za złą, bo Y''.
+
+\blok{Cel pracy}
+Zmierzyć zgodność automatycznego wyniku TFRA z~ręczną anotacją tur i~ustalić,
+czy wagi kar wyuczone z~danych biją wagi dobrane ręcznie.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Protokół anotacji: definicja etykiety („tura z~tarciem: tak/nie''
+        plus powód), instrukcja dla anotatorów, procedura rozstrzygania sporów.
+  \item Anotacja co najmniej 50 tur z~rozmów scenariuszowych dostępnych
+        w~Seederze, przez co najmniej dwóch anotatorów, z~raportem zgodności
+        ($\kappa$). Niska zgodność \emph{między ludźmi} jest wynikiem samym
+        w~sobie: wyznacza sufit, powyżej którego żaden algorytm nie ma jak wejść.
+  \item Porównanie TFRA z~anotacją: trafność, $\kappa$, oraz jakościowa analiza
+        wszystkich przypadków rozbieżnych.
+  \item Kalibracja progu „pętli naprawczej'': ile powtórzeń nieudanych wywołań
+        odróżnia realne zapętlenie agenta od normalnego cyklu debugowania
+        (spróbuj $\rightarrow$ nie działa $\rightarrow$ popraw), który wcale nie
+        świadczy o~złej sesji.
+  \item Zbadanie nieliniowości względem długości sesji: czy jedna zła tura
+        w~sesji czterdziestoturowej powinna ważyć tyle samo, co w~trzyturowej.
+  \item Wariant z~wagami wyuczonymi (optymalizacja pod zgodność z~anotacją)
+        zestawiony z~obecnymi wagami ręcznymi --- wraz z~oceną, czy zysk
+        z~uczenia jest wart utraty prostoty i~przenośności.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Zgodność (trafność albo $\kappa$) wariantu rekomendowanego z~ręczną anotacją
+powyżej progu 0{,}7, wraz z~pełną listą przypadków rozbieżnych i~ich analizą.
+Jeżeli wagi ręczne wypadną nie gorzej niż wyuczone --- to też jest wynik,
+i~to dobry: broni prostoty obecnego rozwiązania.
+
+\blok{Punkt wejścia}
+\kod{Quality/SegmentAnalyzer.cs}, \kod{research/02_tfra_segment_analyzer.ipynb},
+artykuł §\textit{Turn-level Friction \& Repair Analysis}.
+
+\blok{Dlaczego magisterska}
+Badanie anotacyjne z~kontrolą zgodności międzysędziowskiej plus uczenie
+parametrów z~danych --- techniczna część implementacji jest tu najmniej
+wymagająca.
+
+% ============================================================
+\temat{7}{Rekalibracja krzywej użyteczności opóźnienia dla sesji agentowych ---
+czy progi 2~s i~8~s obowiązują programistów?}
+{Praca inżynierska}
+{Algorytm \#7 --- Latency-utility model \quad·\quad stan: zaimplementowany w~pełni \quad·\quad \texttt{LatencyUtilityAnalyzer}}
+
+\begin{streszczenie}
+Krzywa odwzorowująca czas do pierwszego tokenu na użyteczność opiera się na
+progach z~ogólnych badań interakcji człowiek--komputer: 2~sekundy jako granica
+utrzymania uwagi, 8~sekund jako granica porzucenia. Te progi nie pochodzą od
+programistów czekających na sugestię kodu, a~już na pewno nie od użytkowników
+agentów, którzy z~założenia akceptują wielosekundowe „myślenie'' narzędzia.
+Praca konfrontuje krzywą z~niezależnym sygnałem: wykrytą frustracją użytkownika.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Komponent \emph{latency} ma wagę 0{,}15 w~składanym wskaźniku, a~pełny model
+użyteczności działa jako osobny insight z~podziałem na kubełki ryzyka. Jeśli
+progi są przeniesione z~niewłaściwej domeny, cały komponent systematycznie
+przekłamuje --- w~jedną albo w~drugą stronę, w~zależności od tego, jakiego
+asystenta używa zespół.
+
+\blok{Cel pracy}
+Ustalić empirycznie, czy progi uwagi i~porzucenia różnią się między sesjami
+\emph{inline} a~\emph{agentowymi}, i~czy krzywa powinna być bezwzględna, czy
+względna do mediany sesji.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Rozdzielenie sesji na inline (VS~Code) i~agentowe (Claude Code,
+        Copilot CLI) --- klasyfikacja \texttt{SessionKind} istnieje w~kolektorze
+        i~wymaga tylko rozszerzenia o~to rozróżnienie.
+  \item Analiza krzyżowa z~algorytmem \#9: czy \texttt{FrustrationAnalyzer}
+        wykrywa istotnie więcej sygnałów frustracji w~wiadomościach
+        \emph{bezpośrednio po} wolnych turach niż w~losowo wybranych miejscach
+        sesji. To jedyny sposób, żeby zewnętrznie zwalidować próg
+        \emph{porzucenia} bez badania z~użytkownikami.
+  \item Test efektu kontrastu: czy odbiór opóźnienia zależy od tego, jak szybka
+        była poprzednia odpowiedź w~tej samej sesji --- czyli czy krzywa
+        użyteczności powinna być względna do mediany sesji, tak jak robi to już
+        TFRA przy ocenie latencji tury.
+  \item Kalibracja progów osobno per rodzaj sesji i~per model --- artykuł
+        wskazuje kalibrację per model jako jedną z~zaplanowanych ścieżek rozwoju.
+  \item Oszacowanie, jaka część wariancji sygnału frustracji daje się wyjaśnić
+        samą latencją, a~jaka pochodzi z~innych czynników.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Rekomendacja progów osobno dla sesji inline i~agentowych, poparta liczbowym
+związkiem z~niezależnym sygnałem frustracji, oraz rozstrzygnięcie, czy krzywa ma
+pozostać bezwzględna, czy przejść na wariant względny.
+
+\blok{Ryzyko}
+Progi z~badań interakcji człowiek--komputer są dobrze ugruntowane ogólnie.
+Ryzykiem jest przestrojenie ich pod mały, niereprezentatywny zbiór sesji tego
+projektu --- praca musi jasno powiedzieć, ile sesji stoi za rekomendacją.
+
+\blok{Punkt wejścia}
+\kod{Quality/Analyzers.cs} (\kod{LatencyUtilityAnalyzer}),
+\kod{Quality/FrustrationAnalyzer.cs}, \kod{research/05_latency_utility.ipynb},
+\kod{Domain/SessionKind.cs}.
+
+% ============================================================
+\temat{8}{Wrażliwość raportowanych kosztów i~oszczędności cache na nieaktualny
+cennik --- analiza i~mechanizm kontroli świeżości}
+{Praca inżynierska}
+{Algorytm \#8 --- ekonomia tokenów i~cache \quad·\quad stan: zaimplementowany w~pełni \quad·\quad \texttt{TokenEconomicsAnalyzer}}
+
+\begin{streszczenie}
+Koszt sesji liczony jest z~cennika trzymanego w~konfiguracji
+(\texttt{CopilotScope:Pricing}). Matematyka jest poprawna i~opisana w~artykule,
+ale cała metryka opiera się na założeniu, którego nikt nie pilnuje: że cennik
+jest aktualny. Dostawcy modeli zmieniają ceny częściej, niż ktokolwiek
+aktualizuje plik konfiguracyjny. Praca mierzy, jak bardzo nieaktualny cennik
+zniekształca wnioski, i~buduje mechanizm, który o~tym ostrzega.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+To temat operacyjny, nie algorytmiczny --- i~właśnie dlatego łatwo go odkładać
+w~nieskończoność, podczas gdy jego brak po cichu psuje jedną z~sześciu w~pełni
+działających metryk. Metryka, która myli się o~40\% i~nie mówi o~tym ani słowa,
+jest gorsza od metryki, której nie ma, bo ludzie podejmują na jej podstawie
+decyzje.
+
+\blok{Cel pracy}
+Skwantyfikować wrażliwość raportowanego kosztu i~oszczędności cache na wiek
+cennika, zaimplementować ostrzeżenie o~nieaktualności i~rozstrzygnąć dwie
+otwarte kwestie definicyjne.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Przegląd historyczny cenników dwóch--trzech dostawców modeli
+        z~ostatnich 6--12 miesięcy: jak często i~o~ile zmieniały się ceny wejścia,
+        wyjścia i~odczytu z~cache.
+  \item Symulacja: o~ile procent przesuwa się raportowany koszt sesji
+        i~raportowana oszczędność z~cache, gdy cennik jest nieaktualny
+        o~3 i~o~6 miesięcy. Wynik w~formie tabeli wrażliwości.
+  \item Mechanizm „cennik nie był aktualizowany od $X$ dni'': ostrzeżenie
+        widoczne w~raporcie insightu, nie w~logach --- log przeczyta programista,
+        a~metrykę czyta menedżer.
+  \item Zbadanie porównywalności między emiterami: czy oszczędności z~cache
+        raportowane przez VS~Code i~przez Claude Code są w~ogóle porównywalne,
+        czy różne strategie cache'owania po stronie dostawców czynią porównanie
+        międzyemiterowe mylącym.
+  \item Rozstrzygnięcie definicyjne: czy „koszt na zaakceptowaną edycję''
+        powinien obejmować koszt \emph{odrzuconych} prób w~tej samej turze
+        (koszt rzeczywisty), czy tylko koszt tury udanej (koszt krańcowy).
+        Obie definicje są obronne --- praca ma wybrać jedną i~uzasadnić wybór.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Tabela wrażliwości pokazująca liczbowo skalę zniekształcenia, działające
+ostrzeżenie o~świeżości cennika w~raporcie insightu oraz jednoznaczna,
+uzasadniona rekomendacja definicji kosztu na edycję.
+
+\blok{Punkt wejścia}
+\kod{Quality/Analyzers.cs} (\kod{TokenEconomicsAnalyzer},
+\kod{PricingOptions}), \kod{appsettings.json} (sekcja
+\kod{CopilotScope:Pricing}), \kod{research/06_token_economics.ipynb}.
+
+\blok{Jak podnieść do poziomu magisterskiego}
+Rozszerzyć o~model kosztu alternatywnego: przy jakim stosunku ceny do jakości
+opłaca się przełączyć sesję na tańszy model --- z~wykorzystaniem wyników
+z~tematów \#4 i~\#5 jako miary jakości.
+
+% ============================================================
+\temat{9}{Dwujęzyczna (PL/EN) ewaluacja leksykalnego klasyfikatora frustracji
+i~warunki jego awansu do składanego wskaźnika jakości}
+{Praca magisterska}
+{Algorytm \#9 --- klasyfikacja frustracji \quad·\quad stan: uproszczony, \emph{report-only} \quad·\quad \texttt{FrustrationAnalyzer}}
+
+\begin{streszczenie}
+\texttt{FrustrationAnalyzer} łączy leksykon polsko-angielski, miarę podobieństwa
+Jaccarda do wykrywania przeformułowań i~sygnały typograficzne. Jest świadomie
+zaszumiony i~dlatego świadomie trzymany \emph{poza} składanym wskaźnikiem
+jakości --- raportuje, ale nie ocenia. Praca buduje zbiór walidacyjny, mierzy
+precyzję i~czułość osobno dla polskiego i~angielskiego, i~ustala twardy próg,
+po przekroczeniu którego sygnał wolno awansować do wskaźnika.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Dokumentacja projektu wymienia znane słabości tej heurystyki --- fałszywe
+trafienia przy negacji („\emph{no worries}'', „\emph{nice, that works}''),
+ślepotę na sarkazm, bias językowy --- ale nikt ich nie zmierzył. Ścieżka awansu
+do składanego wskaźnika prowadzi przez walidację, nie przez dopisywanie kolejnych
+reguł. Pokusa „wygląda wystarczająco dobrze, wrzućmy do score'u'' jest dokładnie
+tym, przed czym ostrzega dokumentacja.
+
+\blok{Cel pracy}
+Zmierzyć rzeczywistą precyzję i~czułość obecnej heurystyki w~obu językach,
+skatalogować jej systematyczne błędy i~sprawdzić, czy lekki klasyfikator uczony
+przebija ją na tym samym zbiorze walidacyjnym.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Korpus walidacyjny: 100+ wiadomości z~sesji persony \emph{frustrated}
+        oraz 100 z~persony \emph{clean} jako kontrola negatywna, uzupełnione
+        wiadomościami z~realnych sesji.
+  \item Etykietowanie przez co najmniej dwie osoby, z~raportem zgodności
+        ($\kappa$). Frustracja jest zjawiskiem subiektywnym --- bez miary
+        zgodności między ludźmi nie da się uczciwie ocenić algorytmu.
+  \item Macierz pomyłek \textbf{osobno dla języka polskiego i~angielskiego}.
+        Bias językowy jest podejrzewany od początku, ale niezmierzony;
+        leksykon polski jest mniejszy i~może mieć zupełnie inną charakterystykę.
+  \item Katalog błędów systematycznych z~przykładami: negacja, sarkazm, krótkie
+        entuzjastyczne zdania, wtrącenia techniczne. Udokumentowane ograniczenie
+        jest wartościowym wynikiem --- ukryte jest wadą.
+  \item Lekki klasyfikator uczony (regresja logistyczna na reprezentacjach
+        wektorowych albo mały model językowy) jako konkurent heurystyki,
+        z~porównaniem trafności i~kosztu.
+  \item Propozycja progu awansu w~formie zdania rozstrzygalnego, np.\
+        „promocja do składanego wskaźnika wymaga precyzji $\geq X$ przy czułości
+        $\geq Y$, mierzonych osobno w~każdym z~języków''.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Udokumentowany baseline (precyzja/czułość/F1) obecnej heurystyki dla obu języków
+oraz jawny, liczbowy próg awansu --- zamiast subiektywnej oceny „wygląda nieźle''.
+
+\blok{Wymiar etyczny}
+To jedyny z~dziesięciu algorytmów, który dotyka emocji człowieka wprost. Praca
+musi utrzymać zasadę \emph{report-only} dopóki walidacja nie jest jednoznaczna
+i~zawierać rozdział o~ryzyku nadużycia --- wskaźnik frustracji użyty do oceny
+\emph{ludzi}, a~nie sesji, jest dokładnie tym zastosowaniem, przed którym projekt
+się broni brakiem tożsamości w~danych.
+
+\blok{Punkt wejścia}
+\kod{Quality/FrustrationAnalyzer.cs}, \kod{research/07_frustration_analyzer.ipynb},
+artykuł §\textit{Lexical Frustration Classifier},
+\kod{tools/CopilotScope.Seeder/Personas.cs}.
+
+% ============================================================
+\temat{10}{Detekcja domknięcia zadania na podstawie zewnętrznych sygnałów CI ---
+prototyp end-to-end od sesji do dashboardu}
+{Praca inżynierska}
+{Algorytm \#10 --- task-completion detection \quad·\quad stan: nie zaimplementowany, częściowe hooki \quad·\quad wymaga sygnałów spoza telemetrii}
+
+\begin{streszczenie}
+To pytanie najbliższe temu, o~co naprawdę chodzi --- \emph{czy praca została
+wykonana} --- i~zarazem najtrudniejsze do zautomatyzowania z~całej dziesiątki.
+Telemetria asystenta sama z~siebie nie mówi, czy build przeszedł ani czy testy
+są zielone. Praca buduje najprostszą działającą ścieżkę: krok w~systemie
+ciągłej integracji wysyła wynik budowania i~testów do istniejącego API kolektora,
+a~dashboard pokazuje sesję jako domkniętą albo urwaną.
+\end{streszczenie}
+
+\blok{Kontekst i motywacja}
+Wszystkie pozostałe dziewięć algorytmów mierzą \emph{przebieg} sesji: ile było
+błędów, jak szybko odpowiadał model, ile kodu przetrwało. Żaden nie odpowiada na
+pytanie, czy zadanie zostało domknięte. Sygnału trzeba szukać poza telemetrią
+asystenta --- w~kodzie wyjścia budowania, wyniku testów i~stanie repozytorium po
+sesji. Kolektor ma już API przyjmujące dane; brakuje kroku po stronie CI
+i~komponentu, który z~tego sygnału coś wyliczy.
+
+\blok{Cel pracy}
+Zbudować i~zwalidować kompletną ścieżkę od zakończenia sesji do widocznego
+w~dashboardzie sygnału domknięcia, oraz zmierzyć, jak wiele sesji w~ogóle taki
+sygnał otrzymuje.
+
+\blok{Zakres prac}
+\begin{itemize}
+  \item Ustalenie minimalnego zestawu sygnałów wystarczającego, by odróżnić
+        „zadanie domknięte'' od „sesja się urwała'': kod wyjścia budowania,
+        wynik testów, czysty stan repozytorium po sesji.
+  \item Rozszerzenie API kolektora o~endpoint przyjmujący sygnały domknięcia
+        oraz analizator \texttt{IInsightAnalyzer}, który je interpretuje.
+  \item Krok w~GitHub Actions wysyłający po \texttt{dotnet test} ładunek
+        \kod{{sessionId, buildPassed, testsGreen}}. \textbf{Świadomie jeden
+        system CI} --- ten, którego repozytorium już używa. Projektowanie
+        uniwersalnego adaptera na wszystkie systemy CI jest tu główną pułapką
+        i~pracą, która nigdy się nie kończy.
+  \item Pomiar: jaki odsetek sesji kończy się bez żadnego zewnętrznego sygnału
+        domknięcia --- i~rzetelna odpowiedź, czy „programista po prostu przestał
+        pisać'' da się w~ogóle odróżnić od „zadanie skończone, tylko nikt tego
+        nie zaraportował'' bez sędziego LLM (temat \#1).
+  \item Walidacja przez dogfooding: 5--10 realnych sesji pracy nad tym
+        repozytorium, przeprowadzonych od zera do zielonego CI.
+  \item Prezentacja sygnału w~panelu \textit{Insights} wraz z~poprawną obsługą
+        stanu \emph{no data} --- brak sygnału nie może obniżać oceny sesji.
+\end{itemize}
+
+\blok{Kryterium akceptacji}
+Działający przykład end-to-end: sesja $\rightarrow$ pull request $\rightarrow$ CI
+$\rightarrow$ sygnał domknięcia widoczny w~dashboardzie --- zademonstrowany na
+realnych sesjach, zanim ktokolwiek zaprojektuje wariant chmurowy z~agentem-sędzią.
+
+\blok{Ryzyko}
+Największe ryzyko projektowe z~dziesięciu: łatwo zbudować rozwiązanie wymagające
+integracji z~każdym systemem CI z~osobna, które zostaje kolejnym niedokończonym
+adapterem. Zakres pracy celowo ogranicza się do jednego systemu; uogólnienie jest
+tematem na później i~tylko wtedy, gdy wariant jednosystemowy okaże się użyteczny.
+
+\blok{Punkt wejścia}
+\kod{src/CopilotScope.Collector/Program.cs} (API ingest),
+\kod{Quality/Insights.cs}, \kod{.github/workflows/ci.yml},
+\kod{src/CopilotScope.Dashboard/Components/Pages/}.
+
+% ============================================================
+\clearpage
+\section*{Dokumenty źródłowe i~dalsza lektura}
+\addcontentsline{toc}{section}{Dokumenty źródłowe i dalsza lektura}
+
+\begin{itemize}
+  \item \texttt{research/articles/quality\_measurement\_framework.tex} ---
+        formalny opis ośmiu zaimplementowanych algorytmów: definicje, wzory,
+        własności, przykłady liczbowe krok po kroku oraz analiza wrażliwości wag.
+        PDF jest dołączany do każdego wydania projektu.
+  \item \texttt{docs/ANALYSIS.md} §8 --- przegląd dziesięciu podejść do oceny
+        jakości sesji wraz z~zastrzeżeniami wobec każdego; §8a --- macierz
+        implementacji; §8b --- referencja komponentów silnika v2.
+  \item \texttt{README.md}, tabela \textit{Evaluation algorithms --- implementation
+        status} --- ten sam zestaw dziesięciu algorytmów z~podziałem na warianty
+        lokalny i~chmurowy. Ta sama numeracja obowiązuje w~niniejszym dokumencie.
+  \item \texttt{research/RESEARCH\_PROPOSALS.md} --- wcześniejsza, krótsza wersja
+        tych propozycji w~formie notatki roboczej; niniejszy dokument ją zastępuje
+        jako materiał do przedstawienia studentom.
+  \item \texttt{research/0X\_*.ipynb} --- notatniki Pythona odtwarzające każdy
+        wzór i~przykład liczbowy z~artykułu; naturalny punkt startowy dla części
+        eksperymentalnej większości tych prac.
+  \item \texttt{docs/AGENTFORGE.md} --- opis eksperymentalnej usługi agentów
+        person opartych o~sesje za zgodą; istotny kontekst dla tematów \#1 i~\#2,
+        bo tam znajduje się działający klient Azure AI Foundry.
+  \item Literatura zewnętrzna: Liu i~in., \textit{G-Eval: NLG Evaluation using
+        GPT-4 with Better Human Alignment} (2023); \textit{SPUR --- Supervised
+        Prompting for User satisfaction Rubrics}, arXiv:2403.12388;
+        Es i~in., \textit{RAGAS: Automated Evaluation of Retrieval Augmented
+        Generation} (2023); konwencje semantyczne OpenTelemetry GenAI.
+\end{itemize}
+
+\end{document}

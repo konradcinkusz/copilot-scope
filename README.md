@@ -230,6 +230,13 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 10 | Task-completion detection | ❌ not implemented | ⚠️ partial | ✅ planned | Local partial: hooks for external completion signals (build/test exit codes) via the ingest API. Cloud full: judge agent reasons about "did the user's ask get resolved" from transcript + tool outcomes |
 
 Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only analyzers (#1–#3, plus the deep variants of #9/#10) implement the same `IInsightAnalyzer` interface but call out to the Azure AI Foundry judge agent; they register only when the collector is deployed with judge configuration enabled, so a local-only setup shows them as "no-data" with a `"requires cloud deployment"` note rather than an error. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+
+Each of the ten is also written up as a **standalone thesis topic** — one A4 page
+per topic with scope, methodology, acceptance criteria and a code entry point, split
+between BSc- and MSc-level work: `research/articles/thesis_topics.tex` (Polish; the
+`CopilotScope_Thesis_Topics.pdf` build is attached to every release). The numbering
+matches the table above.
+
 ## Deployment options
 
 | Mode | Command | Containers |
