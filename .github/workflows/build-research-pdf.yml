@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release (leave empty to auto-generate for manual runs)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -44,6 +49,7 @@ jobs:
           name: CopilotScope_Research_PDFs
       - uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ github.event_name == 'push' && github.ref_name || (inputs.tag_name != '' && inputs.tag_name || format('manual-run-{0}', github.run_number)) }}
           files: |
             CopilotScope_Quality_Framework.pdf
             CopilotScope_Thesis_Topics.pdf
