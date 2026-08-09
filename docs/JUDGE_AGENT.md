@@ -1,0 +1,125 @@
+# JudgeAgent — opt-in, cloud-only session quality judge
+
+`src/CopilotScope.JudgeAgent` is an opt-in, cloud-only sibling service to the Collector. It grades
+one session at a time using LLM-graded rubrics (G-Eval, SPUR, RAGAS, deep frustration
+classification, task-completion detection) via Azure AI Foundry + Microsoft Agent Framework
+(MAF). This is the "judge agent" the main README and `docs/STRATEGY.md` have described as planned
+since before this service existed — the five algorithms in the README's "Evaluation algorithms"
+table marked `❌ not implemented` / `🔜 planned` were blocked on exactly this.
+
+## Grades sessions, never people
+
+Same hard rule as the rest of CopilotScope (see the main README's "How *not* to use
+CopilotScope" section): JudgeAgent scores **one recorded session**, not the person who ran it.
+`JudgeSystemPromptTemplate.txt` — the master rubric sent to the judge model on every call — states
+this explicitly in its role instructions and tells the model to refuse any request to rank or
+compare people. There is no per-developer view here either, and none is planned. JudgeAgent has
+no concept of "who ran this session" at all; the Collector stores no per-person identity, and
+JudgeAgent doesn't add one.
+
+## Why this is cloud-only
+
+Local analyzers (`Quality/Insights.cs`'s `IInsightAnalyzer` implementations in the Collector) run
+synchronously, in-process, on metadata the Collector already has. The five algorithms here need an
+LLM call against real transcript content, which means:
+- **Model access** — a deployed Azure AI Foundry model and the credentials to call it.
+- **A prompt/token budget** — every judge call sends up to ~40 transcript turns of prompt/response
+  text, which local-only analyzers never do.
+- **Judge-bias awareness and calibration** — see `docs/ANALYSIS.md` §8/§8a for why SPUR in
+  particular is explicitly "directional, not final" until CopilotScope collects labeled SAT/DSAT
+  session data to calibrate against.
+
+That's why this lives in its own deployable service rather than as another `IInsightAnalyzer`
+registered into the Collector's `InsightPipeline` — that interface is synchronous and local-only;
+a judge call is an async network call to Azure. A local-only deployment simply never runs this
+service, and the five algorithms it covers stay unavailable, exactly as the README's table says.
+
+## The five algorithms
+
+| # | Algorithm | What it answers |
+|---|---|---|
+| 1 | G-Eval | Correctness / completeness / style, weighted 0.5/0.3/0.2, evidence-cited per turn |
+| 2 | SPUR | P(user would rate this session SAT), from behavioral signals — zero-shot until calibration data exists |
+| 3 | RAGAS | Faithfulness / answer relevance / context precision — only when `retrievalContext` is present |
+| 4 | Deep frustration classification | Sarcasm- and context-aware upgrade over the Collector's local lexicon heuristic; stays report-only |
+| 5 | Task-completion detection | Did the user's original ask actually get resolved by session end, not just attempted |
+
+Full per-rubric instructions live in `src/CopilotScope.JudgeAgent/Agents/JudgeSystemPromptTemplate.txt`
+— that file **is** the spec; this document doesn't duplicate it.
+
+## Request flow
+
+```
+POST /api/sessions/{id}/judge
+  1. GetSessionDetailAsync(id) — the Collector's own read API (ICollectorClient), same as AgentForge
+  2. SessionJudgeContextBuilder — reshapes SessionDetailDto into a bounded judge payload
+     (transcript capped at 40 turns, keeping both ends of a longer session so the resolution
+     is never dropped; each prompt/response field capped at 4000 chars)
+  3. JudgePromptBuilder — renders JudgeSystemPromptTemplate.txt with {{SessionId}} and
+     {{LocalComponentsSummary}} filled in
+  4. IJudgeChatClient.JudgeAsync(systemPrompt, sessionPayloadJson) — Azure AI Foundry call via MAF
+  5. JudgeResponseParser — parses the model's JSON straight into InsightReport records
+     (CopilotScope.Collector.Quality), the same shape every local analyzer already produces
+  6. Response: { "results": [ ...5 InsightReport objects... ] }
+```
+
+`localComponents` in the payload (the session's already-computed reliability / acceptance /
+friction / latency / feedback / efficiency, from `SessionDetailDto.Summary.Quality.Components`) is
+passed to the judge model as *prior context*, not ground truth — the rubric explicitly instructs
+it to disagree with the local heuristic when transcript evidence says otherwise, and to say why.
+
+`completionSignals` and `retrievalContext` are defined in the payload schema but always sent as
+`null` today — the Collector has no ingest path for external build/test exit codes or captured
+retrieval context yet (see the README's evaluation-algorithms table, row 10: "local partial" only).
+When the Collector gains that ingest path, `SessionJudgeContextBuilder` is the one place that needs
+to change to start populating them.
+
+## What it doesn't do
+
+- Doesn't modify anything in `src/CopilotScope.Collector` — a strictly read-only, additive sibling
+  service, same non-invasive pattern as AgentForge.
+- Doesn't recompute or replace `QualityEngine`'s composite score — it adds cloud-only signals
+  alongside it. Promoting any of them (e.g. deep frustration) into the composite is a future,
+  separate decision made by config, not something this service does on its own.
+- Doesn't retry or cache judge calls — every `POST /judge` is a fresh model call. Add caching at
+  the caller if you're judging the same session repeatedly.
+
+## Example usage
+
+Verified locally against a real Collector seeded via `dotnet run --project tools/CopilotScope.Seeder -- quick`:
+
+```bash
+curl http://localhost:5400/api/health
+# → { "status": "ok", "azureAiConfigured": false }
+
+curl -X POST http://localhost:5400/api/sessions/seed-quick-01-golden/judge
+# Without CopilotScope:JudgeAgent:AzureAI:Endpoint/:DeploymentName configured, this returns 500
+# with a clear "JudgeAgent Azure AI is not configured" message rather than doing nothing silently
+# — verified by actually running it. With real Azure AI Foundry credentials configured:
+# → { "results": [ { "name": "LLM-as-a-Judge (G-Eval)", "algorithm": "G-Eval", "status": "ok",
+#                     "score": 0.82, "metrics": [...], "findings": [...] }, ...4 more ] }
+```
+
+Configure Azure AI Foundry (e.g. in `appsettings.Development.json` or environment variables):
+
+```json
+{
+  "CopilotScope": {
+    "JudgeAgent": {
+      "CollectorBaseUrl": "http://localhost:4318",
+      "AzureAI": {
+        "Endpoint": "https://<your-foundry-resource>.openai.azure.com",
+        "DeploymentName": "<your-model-deployment>",
+        "ApiKey": null
+      }
+    }
+  }
+}
+```
+
+`ApiKey: null` (the default) uses `DefaultAzureCredential` (managed identity / `az login`) instead
+of a key, same as AgentForge.
+
+Auth for the ingest-adjacent `/api/sessions/{id}/judge` endpoint follows the same pattern as the
+Collector and AgentForge: set `CopilotScope:JudgeAgent:Ingest:ApiKey` and send it as `x-api-key`
+(or `Authorization: Bearer <key>`); unset, the endpoint is open (dev mode).
