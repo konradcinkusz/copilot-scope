@@ -24,7 +24,7 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <!-- Provides ChatClient.AsIChatClient(), the adapter from the OpenAI SDK's client to the
          Microsoft.Extensions.AI.IChatClient that Microsoft.Agents.AI's AsAIAgent() extends. -->
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.7.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
   </ItemGroup>
 
   <ItemGroup>
