@@ -1,14 +1,15 @@
 # CopilotScope.JudgeAgent — opt-in, cloud-only session quality judge.
 # Build:  docker build -f Dockerfile.judgeagent -t copilotscope-judgeagent .
 # Run:    docker run -p 5400:8080 copilotscope-judgeagent
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# SDK 9.0 / runtime 8.0 is deliberate — see the comment in ./Dockerfile.
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY nuget.config .
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 COPY src/CopilotScope.JudgeAgent/ src/CopilotScope.JudgeAgent/
 RUN dotnet publish src/CopilotScope.JudgeAgent -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 

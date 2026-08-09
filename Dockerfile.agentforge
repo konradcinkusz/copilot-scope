@@ -1,14 +1,15 @@
 # CopilotScope.AgentForge — opt-in persona agent service.
 # Build:  docker build -f Dockerfile.agentforge -t copilotscope-agentforge .
 # Run:    docker run -p 5300:8080 copilotscope-agentforge
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+# SDK 9.0 / runtime 8.0 is deliberate — see the comment in ./Dockerfile.
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY nuget.config .
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 COPY src/CopilotScope.AgentForge/ src/CopilotScope.AgentForge/
 RUN dotnet publish src/CopilotScope.AgentForge -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
 

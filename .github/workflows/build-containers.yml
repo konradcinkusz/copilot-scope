@@ -1,15 +1,23 @@
 # Builds and publishes the CopilotScope images to GitHub Container Registry
-# when a release tag is pushed (e.g. v1.0.0). Create a release via GitHub UI —
-# that automatically creates the tag and triggers this workflow. Images:
+# when a release tag is pushed. Create a release via the GitHub UI — that
+# automatically creates the tag and triggers this workflow. Images:
 #   ghcr.io/konradcinkusz/copilotscope-collector
 #   ghcr.io/konradcinkusz/copilotscope-dashboard
+#   ghcr.io/konradcinkusz/copilotscope-agentforge
+#   ghcr.io/konradcinkusz/copilotscope-judgeagent
 #
-# Each release produces three image tags: the version (e.g. v1.0.0), major.minor
-# (e.g. v1.0) and latest. The workflow_dispatch trigger allows a manual re-run
-# from the Actions tab without pushing a new tag.
+# Tag convention: v<major>.<minor>.<patch> (a capital V is accepted and
+# normalised). Each release produces three image tags: the version (1.0.8),
+# major.minor (1.0) and latest. A tag that does not match the convention fails
+# the workflow loudly rather than publishing nothing in silence.
 #
-# Note: both packages are already public. This only matters if a *new* package
-# name is ever added here — GHCR publishes it private by default, so flip it in
+# The matrix does NOT fail fast: one broken image must not cancel the others
+# mid-push, which is how collector and dashboard ended up on different versions
+# (see the v1.0.7 run). Note the flip side — a failed run can still leave a
+# partial set published, so check every image before announcing a release.
+#
+# Note: GHCR publishes a *new* package private by default. After the first
+# successful run for a newly added image, flip it in
 # GitHub → Packages → <package> → Settings → Change visibility.
 name: build containers
 
@@ -17,6 +25,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'V*'
   workflow_dispatch:
 
 env:
@@ -29,6 +38,7 @@ jobs:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - image: copilotscope-collector
@@ -43,6 +53,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Resolves the version tags explicitly instead of relying on the
+      # metadata-action's semver parser, which only recognises a lowercase "v"
+      # prefix — `V1.0.8` silently produced no version tags at all.
+      - name: Resolve version tags
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            # Placeholders, never used: both version tags are gated on
+            # is_release, and an empty value= is not worth relying on.
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "semver=0.0.0" >> "$GITHUB_OUTPUT"
+            echo "major_minor=0.0" >> "$GITHUB_OUTPUT"
+            echo "Manual run on '${GITHUB_REF_NAME}' — publishing :latest only."
+            exit 0
+          fi
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^[vV]([0-9]+\.[0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error title=Unrecognised release tag::'${GITHUB_REF_NAME}' is not v<major>.<minor>.<patch>. No images were published. Retag the release and re-run."
+            exit 1
+          fi
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "semver=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${BASH_REMATCH[1]}.${BASH_REMATCH[2]}, ${BASH_REMATCH[1]} and latest."
+
       - name: Log in to GHCR
         uses: docker/login-action@v4
         with:
@@ -56,8 +91,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.ver.outputs.semver }},enable=${{ steps.ver.outputs.is_release == 'true' }}
+            type=raw,value=${{ steps.ver.outputs.major_minor }},enable=${{ steps.ver.outputs.is_release == 'true' }}
             type=raw,value=latest
 
       - name: Build and push

@@ -3,7 +3,12 @@ name: Build Research PDF
 on:
   push:
     tags:
+      # Both cases, for the same reason as build-containers.yml: a tag pushed as
+      # V1.0.8 matched nothing here, so that release carries no PDF assets and
+      # the README's research-paper badge (which points at
+      # releases/latest/download/...) breaks as soon as such a release is latest.
       - 'v*'
+      - 'V*'
   workflow_dispatch:
     inputs:
       tag_name:
