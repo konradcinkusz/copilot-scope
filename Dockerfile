@@ -9,7 +9,7 @@
 # CONTRIBUTING.md ("build with the 9.0 SDK; everything targets net8.0").
 # Do not let a major-version bump of either image land without retargeting the
 # projects first; Dependabot is configured to ignore those (.github/dependabot.yml).
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
