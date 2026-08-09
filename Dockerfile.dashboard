@@ -1,6 +1,6 @@
 # CopilotScope.Dashboard — frontend Blazor Server.
 # SDK 9.0 / runtime 8.0 is deliberate — see the comment in ./Dockerfile.
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
 COPY src/CopilotScope.Dashboard/ src/CopilotScope.Dashboard/
