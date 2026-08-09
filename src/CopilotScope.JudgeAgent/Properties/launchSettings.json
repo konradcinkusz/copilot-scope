@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CopilotScope.JudgeAgent": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:5400",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

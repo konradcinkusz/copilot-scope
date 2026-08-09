@@ -74,6 +74,51 @@ retrieval context yet (see the README's evaluation-algorithms table, row 10: "lo
 When the Collector gains that ingest path, `SessionJudgeContextBuilder` is the one place that needs
 to change to start populating them.
 
+## Running it
+
+JudgeAgent is a normal ASP.NET Core service — it only ever *reads* from a Collector over HTTP
+(`ICollectorClient`), so start a Collector first (any of the ways the main README describes)
+before starting JudgeAgent. Three ways to run it, same options the rest of the repo offers:
+
+**Standalone, from source** (fastest inner loop while touching JudgeAgent code):
+
+```bash
+dotnet run --project src/CopilotScope.JudgeAgent
+```
+
+`src/CopilotScope.JudgeAgent/Properties/launchSettings.json` fixes this to
+`http://localhost:5400` in the `Development` environment — no environment variables to set by
+hand. `appsettings.Development.json` points it at a Collector on `http://localhost:4318` (e.g.
+one started via `dotnet run --project src/CopilotScope.AppHost` or `dotnet run --project
+src/CopilotScope.Collector`). Verified locally: `curl http://localhost:5400/api/health` responds
+immediately after `Application started` appears in the console.
+
+**Aspire (whole stack together)**:
+
+```bash
+dotnet run --project src/CopilotScope.AppHost
+```
+
+Starts Postgres, the Collector (fixed on `:4318`), the Dashboard, AgentForge and JudgeAgent
+together, each waiting on the Collector via `.WaitFor(collector)`. JudgeAgent's URL isn't
+fixed in this mode — open the Aspire dashboard (URL printed in the console) and find the
+`judgeagent` resource there for its actual port.
+
+**Docker Compose** (closest to how the GHCR images run in production):
+
+```bash
+docker compose up --build          # builds Dockerfile.judgeagent locally, or:
+docker compose -f docker-compose.ghcr.yml up   # pulls the published image
+```
+
+Both compose files start `judgeagent` on `http://localhost:5400` alongside `postgres`,
+`collector`, `dashboard` and `agentforge` — it isn't gated behind a Compose profile, so it
+starts by default like AgentForge does. "Opt-in" here means *configuration*, not *whether the
+container runs*: without `CopilotScope__JudgeAgent__AzureAI__Endpoint` /
+`__DeploymentName` set (commented out by default in both compose files), the container is up and
+`/api/health` responds, but every `/judge` call fails with the "not configured" error below until
+you supply real Azure AI Foundry credentials.
+
 ## What it doesn't do
 
 - Doesn't modify anything in `src/CopilotScope.Collector` — a strictly read-only, additive sibling
