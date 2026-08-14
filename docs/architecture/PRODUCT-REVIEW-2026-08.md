@@ -331,10 +331,13 @@ Ordered so each step is independently shippable. **S / M** = small / medium effo
 > and most of the 93 tests). The only cheap alternative — giving the agents their own DTO
 > copies, Dashboard-style — reintroduces the drift the author deliberately engineered out.
 > This is a deliberate design trade-off worth its own focused PR, not a rushed change; the
-> agent Dockerfiles keep copying the Collector source until it lands. **11** (Dashboard +
-> real-Postgres integration + collector HTTP-layer tests) is partially addressed by the
-> live end-to-end verification of the auth gate and health endpoints, with the automated
-> WebApplicationFactory/Testcontainers suite still to follow.
+> agent Dockerfiles keep copying the Collector source until it lands. **11** landed for its
+> two cheapest, highest-value tiers: a `WebApplicationFactory` HTTP-layer suite over the real
+> collector pipeline (the auth gate, the gated `DELETE`, ingest, and the `seed-` prefix
+> enforcement) and unit tests for the Dashboard's `ChatMessageParser` — the two coverage gaps
+> the review named — taking the suite from 93 to 113 tests. The one remaining piece is the
+> real-Postgres integration test (`SessionRepository`/`PersistenceWriter` via Testcontainers),
+> left as follow-up because it needs a container the build sandbox can't reliably provide.
 
 | # | Action | Axis | Sev | Effort |
 |---|---|---|---|---|
