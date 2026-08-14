@@ -46,6 +46,22 @@ if (persistenceEnabled)
 var app = builder.Build();
 
 var ingestApiKey = app.Configuration["CopilotScope:Ingest:ApiKey"]; // null/empty → open (dev mode)
+
+// Single, constant-time key check used by every gated surface (/v1, /api, /metrics).
+// An empty configured key means dev/open mode. Keeping this in one place is what
+// lets the whole /api group be gated deny-by-default instead of endpoint-by-endpoint —
+// which is how the destructive DELETE used to sit unauthenticated.
+bool KeyAuthorized(HttpRequest request)
+{
+    if (string.IsNullOrEmpty(ingestApiKey)) return true;
+    var provided = request.Headers["x-api-key"].FirstOrDefault()
+                ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
+    if (string.IsNullOrEmpty(provided)) return false;
+    return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+        System.Text.Encoding.UTF8.GetBytes(provided),
+        System.Text.Encoding.UTF8.GetBytes(ingestApiKey));
+}
+
 var store = app.Services.GetRequiredService<SessionStore>();
 var quality = app.Services.GetRequiredService<QualityEngine>();
 var insightPipeline = app.Services.GetRequiredService<InsightPipeline>();
@@ -58,23 +74,23 @@ var persistence = app.Services.GetService<PersistenceWriter>(); // null when per
 
 var otlp = app.MapGroup("/v1");
 
+// Ingest is gated deny-by-default; the filter logs the client hint on rejection.
+otlp.AddEndpointFilter(async (ctx, next) =>
+{
+    if (!KeyAuthorized(ctx.HttpContext.Request))
+    {
+        app.Logger.LogWarning("Rejected {Path}: missing or wrong x-api-key/Authorization header " +
+            "from {RemoteIp}. Set OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=<key>\" on the client.",
+            ctx.HttpContext.Request.Path, ctx.HttpContext.Connection.RemoteIpAddress);
+        return Results.Unauthorized();
+    }
+    return await next(ctx);
+});
+
 otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Program> logger) =>
 {
     if (signal is not ("traces" or "metrics" or "logs"))
         return Results.NotFound();
-
-    if (!string.IsNullOrEmpty(ingestApiKey))
-    {
-        var provided = request.Headers["x-api-key"].FirstOrDefault()
-                    ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
-        if (provided != ingestApiKey)
-        {
-            logger.LogWarning("Rejected /v1/{Signal}: missing or wrong x-api-key/Authorization header " +
-                "from {RemoteIp}. Set OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=<key>\" on the client.",
-                signal, request.HttpContext.Connection.RemoteIpAddress);
-            return Results.Unauthorized();
-        }
-    }
 
     var contentType = request.ContentType ?? "";
     var isProtobuf = contentType.Contains("protobuf", StringComparison.OrdinalIgnoreCase);
@@ -100,9 +116,27 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     else if (contentEncoding.Contains("deflate", StringComparison.OrdinalIgnoreCase))
         body = new System.IO.Compression.DeflateStream(body, System.IO.Compression.CompressionMode.Decompress);
 
-    using var ms = new MemoryStream();
-    await body.CopyToAsync(ms);
-    var payload = ms.ToArray();
+    // Bound the *decoded* payload. Kestrel limits only the compressed request size,
+    // and gzip/deflate reach ~1000:1, so an unbounded copy of a compressed body is a
+    // memory-exhaustion (compression-bomb) vector — reachable pre-auth when no key is set.
+    const long MaxDecodedBytes = 64L * 1024 * 1024; // 64 MB ceiling on a single OTLP batch
+    byte[] payload;
+    using (var ms = new MemoryStream())
+    {
+        var buffer = new byte[81920];
+        int read;
+        while ((read = await body.ReadAsync(buffer)) > 0)
+        {
+            if (ms.Length + read > MaxDecodedBytes)
+            {
+                logger.LogWarning("Rejected /v1/{Signal}: decoded payload exceeds {Limit} bytes.", signal, MaxDecodedBytes);
+                return Results.Json(new { error = "Decoded payload exceeds the size limit." },
+                    statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
+            ms.Write(buffer, 0, read);
+        }
+        payload = ms.ToArray();
+    }
 
     var batch = new OtlpBatch();
     try
@@ -166,6 +200,16 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
 
 var api = app.MapGroup("/api");
 
+// Deny-by-default: the whole query/admin surface is gated by the ingest key when one
+// is set. Reads expose captured transcripts and DELETE is destructive, so an open key
+// must not leave them reachable. /api/health is deliberately mapped OUTSIDE this group
+// (below) so liveness probes stay unauthenticated.
+api.AddEndpointFilter(async (ctx, next) =>
+{
+    if (!KeyAuthorized(ctx.HttpContext.Request)) return Results.Unauthorized();
+    return await next(ctx);
+});
+
 api.MapGet("/sessions", (bool? includeInternal) =>
 {
     // Build per-repo quality score pools so the list can show relative rank within each repo.
@@ -227,14 +271,16 @@ api.MapGet("/overview", () => Results.Ok(DtoOverview.Build(store.All, quality)))
 // touches real captured sessions.
 const string SeedIdPrefix = "seed-";
 
-api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<Program> logger) =>
+api.MapPost("/admin/seed", async (SeedRequest req, ILogger<Program> logger) =>
 {
-    if (!string.IsNullOrEmpty(ingestApiKey))
-    {
-        var provided = request.Headers["x-api-key"].FirstOrDefault()
-                    ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
-        if (provided != ingestApiKey) return Results.Unauthorized();
-    }
+    // (Auth is handled by the /api group filter above.)
+    // Enforce the seed- prefix server-side: the "namespaced" guarantee was only a
+    // Seeder convention, so a key holder could otherwise Put over a real captured
+    // session. Refuse the whole batch if any id is out of namespace.
+    var offending = req.Sessions.Select(p => p.ToSession().Id)
+        .FirstOrDefault(id => !id.StartsWith(SeedIdPrefix, StringComparison.Ordinal));
+    if (offending is not null)
+        return Results.BadRequest(new { error = $"Seed session ids must start with '{SeedIdPrefix}'; refusing '{offending}' to avoid overwriting real sessions." });
 
     var repo = app.Services.GetService<SessionRepository>();
 
@@ -260,7 +306,9 @@ api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<
     return Results.Ok(new { seeded = req.Sessions.Count, reset = req.Reset });
 });
 
-api.MapGet("/health", () => Results.Ok(new
+// Health stays UNAUTHENTICATED (outside the /api group filter): it is the container
+// and orchestrator liveness probe, and exposes only counts and feature booleans.
+app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
     sessions = store.All.Count,
@@ -281,12 +329,7 @@ if (prometheusOptions.Enabled)
 
     app.MapGet("/metrics", (HttpRequest request) =>
     {
-        if (!string.IsNullOrEmpty(ingestApiKey))
-        {
-            var provided = request.Headers["x-api-key"].FirstOrDefault()
-                        ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
-            if (provided != ingestApiKey) return Results.Unauthorized();
-        }
+        if (!KeyAuthorized(request)) return Results.Unauthorized();
 
         // version=0.0.4 is what Prometheus negotiates for the text exposition format.
         return Results.Text(exporter.Render(), "text/plain; version=0.0.4; charset=utf-8");
