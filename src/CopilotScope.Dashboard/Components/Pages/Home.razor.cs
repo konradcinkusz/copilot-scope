@@ -26,7 +26,10 @@ public partial class Home : ComponentBase, IDisposable
     private ElementReference _chatWindowRef;
 
     private enum ViewMode { Basic, Advanced, Full }
-    private ViewMode _viewMode = ViewMode.Advanced;
+    // Basic is the default: the first screen answers "was it good, what do I fix" in a
+    // few lines instead of opening on the full firehose. A returning user's saved
+    // preference (localStorage) still wins once the circuit is live.
+    private ViewMode _viewMode = ViewMode.Basic;
 
     /// <summary>Sessions after the rail's free-text filter (id, repo or branch, case-insensitive).</summary>
     private List<SessionSummaryDto> FilteredSessions =>

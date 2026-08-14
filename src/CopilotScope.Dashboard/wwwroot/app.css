@@ -302,6 +302,9 @@ html, body {
 .view-mode-row {
   display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
 }
+/* In the topbar the switcher is always visible (once sessions exist), so a user
+   discovers Basic/Advanced/Full before opening a session. */
+.topbar .view-mode-row { margin-bottom: 0; }
 .view-mode-label {
   font-family: var(--mono); font-size: 10px; text-transform: uppercase;
   letter-spacing: 1.5px; color: var(--dim); margin-right: 4px;

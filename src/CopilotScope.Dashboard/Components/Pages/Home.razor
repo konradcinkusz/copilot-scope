@@ -9,6 +9,15 @@
         <a href="/overview">Overview</a>
         <a href="/docs">Docs</a>
     </nav>
+    @if (_sessions is { Count: > 0 })
+    {
+        <div class="view-mode-row" role="radiogroup" aria-label="Detail level">
+            <span class="view-mode-label">View:</span>
+            <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Basic)"    title="The headline verdict — score, what's driving it, key counts" @onclick="() => SetViewModeAsync(ViewMode.Basic)">Basic</button>
+            <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Advanced)" title="All panels — only tiles with actual data" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Advanced</button>
+            <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Full)"     title="All panels including no-data placeholders" @onclick="() => SetViewModeAsync(ViewMode.Full)">Full</button>
+        </div>
+    }
     <div class="conn @(_health is null ? "down" : "up")" role="status" aria-live="polite">
         @if (_health is null)
         {
@@ -97,21 +106,14 @@
         {
             <div class="empty big">
                 <div class="empty-title">No session selected</div>
-                Pick one from the list on the left. You'll get its quality score, what drove it,
-                and — under <b>Advanced</b> — per-turn analysis, tool usage and the live event feed.
+                Pick one from the list on the left. You'll get its quality score and what drove it —
+                switch to <b>Advanced</b> (top right) for per-turn analysis, tool usage and the live event feed.
             </div>
         }
         else
         {
             var s = _detail.Summary;
             var q = s.Quality;
-
-            <div class="view-mode-row" role="radiogroup" aria-label="Detail level">
-                <span class="view-mode-label">View:</span>
-                <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Basic)"    title="The headline verdict — score, what's driving it, key counts" @onclick="() => SetViewModeAsync(ViewMode.Basic)">Basic</button>
-                <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Advanced)" title="All panels — only tiles with actual data" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Advanced</button>
-                <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Full)"     title="All panels including no-data placeholders" @onclick="() => SetViewModeAsync(ViewMode.Full)">Full</button>
-            </div>
 
             <div class="panel vu-panel">
                 <div class="panel-head">
