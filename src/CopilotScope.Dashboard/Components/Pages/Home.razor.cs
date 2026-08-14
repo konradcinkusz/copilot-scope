@@ -12,6 +12,11 @@ public partial class Home : ComponentBase, IDisposable
     [Inject] public required IJSRuntime JS { get; set; }
 
     private List<SessionSummaryDto>? _sessions;
+    // Stable display order for the rail. The collector returns sessions newest-first,
+    // which reshuffles the rail under the cursor every 2 s poll while a session is
+    // live. We freeze the order a user has seen — existing rows keep their position,
+    // genuinely new sessions join at the top — while each row's data still refreshes.
+    private List<string> _sessionOrder = [];
     private SessionDetailDto? _detail;
     private HealthDto? _health;
     private string? _selectedId;
@@ -188,7 +193,16 @@ public partial class Home : ComponentBase, IDisposable
         try
         {
             _health = await Collector.GetHealthAsync(_cts.Token);
-            _sessions = await Collector.GetSessionsAsync(_showInternal, _cts.Token);
+            var fetched = await Collector.GetSessionsAsync(_showInternal, _cts.Token);
+
+            // Freeze the rail order: keep known sessions where they are, prepend new
+            // ones (server order = newest-first) at the top, drop ones that vanished.
+            var byId = new Dictionary<string, SessionSummaryDto>(fetched.Count);
+            foreach (var s in fetched) byId[s.Id] = s;
+            var known = new HashSet<string>(_sessionOrder);
+            var newIds = fetched.Where(s => !known.Contains(s.Id)).Select(s => s.Id);
+            _sessionOrder = newIds.Concat(_sessionOrder.Where(byId.ContainsKey)).ToList();
+            _sessions = _sessionOrder.Select(id => byId[id]).ToList();
 
             // Auto-focus the most recent session until the user picks one explicitly.
             _selectedId ??= _sessions.FirstOrDefault()?.Id;
@@ -443,15 +457,12 @@ public partial class Home : ComponentBase, IDisposable
     }
 
     /// <summary>CSS class for quality score color — uses percentile rank when normalization is on and history is available, absolute grade otherwise.</summary>
-    private static string RelativeGradeClass(QualityReportDto q, bool normalize = true) =>
-        (normalize ? q.PercentileRank : null) switch
-        {
-            >= 0.75 => "grade-excellent",
-            >= 0.35 => "grade-good",
-            >= 0.15 => "grade-fair",
-            not null => "grade-poor",
-            _ => $"grade-{q.Grade}"
-        };
+    // Score colour is ALWAYS the absolute grade (the same bands the VU-meter and
+    // /docs use), so a score can no longer read green-by-percentile while sitting on
+    // a red-by-value bar. The relative/percentile context lives in the subtitle text
+    // and the percentile bar instead, and the "Normalize by repo" toggle now only
+    // controls whether that context is shown — never what a colour means.
+    private static string AbsoluteGradeClass(QualityReportDto q) => $"grade-{q.Grade}";
 
     /// <summary>Subtitle line for quality score — shows percentile context when normalization is on and history is available.
     /// When <paramref name="repo"/> is non-null the peer pool is repo-scoped.</summary>

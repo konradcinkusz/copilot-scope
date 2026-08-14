@@ -94,7 +94,10 @@
                         @if (RepoShortName(s.Repository) is { } rn) { <span class="repo-chip repo-c@(ri)">@rn</span> }
                         @s.ChatCalls chat · @s.ToolCalls tools · @Ago(s.LastSeen)
                     </span>
-                    <span class="session-score @RelativeGradeClass(s.Quality, _repoNormalization)">@s.Quality.Score.ToString("0")</span>
+                    <span class="session-score @AbsoluteGradeClass(s.Quality)" aria-label="Score @s.Quality.Score.ToString("0") — @s.Quality.Grade">
+                        @s.Quality.Score.ToString("0")
+                        <span class="session-grade">@s.Quality.Grade</span>
+                    </span>
                 </button>
             }
         }
@@ -119,7 +122,7 @@
                 <div class="panel-head">
                     <div>
                         <div class="panel-label">Session quality</div>
-                        <div class="vu-score @RelativeGradeClass(q, _repoNormalization)">@q.Score.ToString("0.0") <small>@(_viewMode == ViewMode.Basic ? $"/ 100 · {q.Grade}" : QualitySubtitle(q, s.Repository, _repoNormalization))</small></div>
+                        <div class="vu-score @AbsoluteGradeClass(q)">@q.Score.ToString("0.0") <small>@(_viewMode == ViewMode.Basic ? $"/ 100 · {q.Grade}" : QualitySubtitle(q, s.Repository, _repoNormalization))</small></div>
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
@@ -155,7 +158,7 @@
                             <span class="basic-zone-tick" style="left:55%"></span>
                             <span class="basic-zone-tick" style="left:70%"></span>
                             <span class="basic-zone-tick" style="left:85%"></span>
-                            <span class="basic-fill @RelativeGradeClass(q, _repoNormalization)" style="width:@(Pct(q.Score / 100))%"></span>
+                            <span class="basic-fill @AbsoluteGradeClass(q)" style="width:@(Pct(q.Score / 100))%"></span>
                         </div>
                         <div class="basic-zones" aria-hidden="true">
                             <span style="flex:40">critical</span>
