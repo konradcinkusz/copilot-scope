@@ -1,0 +1,12 @@
+# gitleaks configuration. Extends the default ruleset and allowlists the one
+# well-known dev placeholder that appears in documentation and git history
+# (dev-secret-123) — it is not a real credential and is no longer used at
+# runtime (compose and setup scripts now require an operator-supplied key).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secret dev placeholder and its documentation references"
+regexes = [
+  '''dev-secret-123''',
+]

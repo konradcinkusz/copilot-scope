@@ -31,8 +31,8 @@
     OTLP endpoint of the CopilotScope collector. Default: http://localhost:4318
 
 .PARAMETER ApiKey
-    x-api-key for ingest auth. Defaults to 'dev-secret-123' when -Mode compose
-    (matching docker-compose.yml); otherwise unset.
+    x-api-key for ingest auth. In -Mode compose a random key is generated into the
+    gitignored .env (reused on re-runs); otherwise unset.
 
 .PARAMETER Persist
     Also store the CLI env vars at User scope (via Enable-CopilotOtel.ps1 /
@@ -81,8 +81,23 @@ if ($Persist -and -not $CopilotCli -and -not $ClaudeCode) {
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
-if (-not $ApiKey -and $Mode -eq 'compose') {
-    $ApiKey = 'dev-secret-123'   # matches docker-compose.yml's CopilotScope__Ingest__ApiKey
+if ($Mode -eq 'compose') {
+    # Compose requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (no default).
+    # Reuse an existing .env so re-runs stay stable; otherwise generate secrets
+    # into the gitignored .env that docker compose reads.
+    $EnvFile = Join-Path $RepoRoot '.env'
+    function New-ScopeSecret { -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) }) }
+    $existing = @{}
+    if (Test-Path $EnvFile) {
+        foreach ($line in Get-Content $EnvFile) {
+            if ($line -match '^(?<k>[^=]+)=(?<v>.*)$') { $existing[$Matches.k] = $Matches.v }
+        }
+    }
+    $key = if ($existing.COPILOTSCOPE_API_KEY) { $existing.COPILOTSCOPE_API_KEY } else { New-ScopeSecret }
+    $pw  = if ($existing.POSTGRES_PASSWORD)    { $existing.POSTGRES_PASSWORD }    else { New-ScopeSecret }
+    "COPILOTSCOPE_API_KEY=$key`nPOSTGRES_PASSWORD=$pw`n" | Set-Content -Path $EnvFile -NoNewline
+    Write-Host "Wrote generated secrets to $EnvFile (gitignored)."
+    if (-not $ApiKey) { $ApiKey = $key }
 }
 
 Write-Host "=== CopilotScope setup ===" -ForegroundColor Cyan

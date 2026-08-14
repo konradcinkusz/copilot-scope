@@ -10,7 +10,11 @@
 # real admin password.
 # Dashboard:  http://localhost:5200
 # Prometheus: http://localhost:9090
-# OTLP ingest: http://localhost:4318 (x-api-key: dev-secret-123)
+# OTLP ingest: http://localhost:4318 (x-api-key: $COPILOTSCOPE_API_KEY)
+#
+# Requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (copy .env.example to .env
+# or export them). Prometheus scrapes the key-gated /metrics using the same key,
+# written to a token file at startup from the env var.
 #
 # The collector's /metrics endpoint exports the *computed* signals — composite
 # quality score, its components, edit survival, friction, cost. That is the part
@@ -22,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: copilot-dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -36,8 +40,8 @@ services:
     ports:
       - "4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=copilot-dev"
-      CopilotScope__Ingest__ApiKey: "dev-secret-123"
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
       # Per-session series are opt-in because session ids are unbounded. 200 is the
       # default ceiling; the newest sessions win and the rest are dropped rather
       # than handing Prometheus an ever-growing set of time series.
@@ -54,6 +58,7 @@ services:
       - "5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
     depends_on:
       - collector
     restart: unless-stopped
@@ -62,6 +67,21 @@ services:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
+    environment:
+      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+    # Prometheus does not expand env vars inside its config, so write the scrape
+    # token to a file the config references (credentials_file), then exec the
+    # normal entrypoint. The data volume is writable by the prometheus user.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
+        printf '%s' "$$COPILOTSCOPE_API_KEY" > /prometheus/scrape_token &&
+        exec /bin/prometheus
+        --config.file=/etc/prometheus/prometheus.yml
+        --storage.tsdb.path=/prometheus
+        --web.console.libraries=/usr/share/prometheus/console_libraries
+        --web.console.templates=/usr/share/prometheus/consoles
     volumes:
       - ./grafana/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - copilotscope-promdata:/prometheus
