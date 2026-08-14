@@ -1,7 +1,12 @@
 using CopilotScope.Dashboard.Components;
 using CopilotScope.Dashboard.Services;
+using CopilotScope.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Shared kernel: OTel, health (/health + /alive — the dashboard had none), discovery,
+// resilience on the collector HttpClient (P2/P15).
+builder.AddServiceDefaults();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -28,6 +33,8 @@ builder.Services.AddHttpClient<CollectorClient>(client =>
 });
 
 var app = builder.Build();
+
+app.MapDefaultEndpoints(); // /health + /alive
 
 app.UseStaticFiles();
 app.UseAntiforgery();

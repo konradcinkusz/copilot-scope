@@ -12,6 +12,7 @@
     <!-- Reuses SessionDetailDto/TranscriptEntry directly so the persona profile can never
          drift from what the Collector actually serves. -->
     <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

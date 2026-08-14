@@ -18,4 +18,8 @@
     <InternalsVisibleTo Include="CopilotScope.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
+  </ItemGroup>
+
 </Project>

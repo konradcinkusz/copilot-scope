@@ -4,8 +4,14 @@ using CopilotScope.Collector.Forwarding;
 using CopilotScope.Collector.Otlp;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Quality;
+using CopilotScope.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Shared kernel: OTel self-instrumentation, health, discovery, resilience (P2/P15).
+// The observability product now emits telemetry about itself when an OTLP endpoint
+// is configured. This is additive to the hand-written /api/health below.
+builder.AddServiceDefaults();
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<QualityEngine>();
@@ -44,6 +50,8 @@ if (persistenceEnabled)
 }
 
 var app = builder.Build();
+
+app.MapDefaultEndpoints(); // /health (readiness) + /alive (liveness)
 
 var ingestApiKey = app.Configuration["CopilotScope:Ingest:ApiKey"]; // null/empty → open (dev mode)
 

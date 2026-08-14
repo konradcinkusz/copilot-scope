@@ -13,6 +13,7 @@
          so judge results can never drift from what the Collector already serves and can be
          consumed the same way local IInsightAnalyzer output is. -->
     <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>
