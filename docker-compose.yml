@@ -1,15 +1,18 @@
-# Tryb "kliencki" bez Aspire: kolektor + dashboard + Postgres w kontenerach.
+# Client mode without Aspire: collector + dashboard + Postgres in containers.
+#   cp .env.example .env   # then set COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD
 #   docker compose up --build
 #   Dashboard:  http://localhost:5200
-#   OTLP:       http://localhost:4318   (VS Code → github.copilot.chat.otel.otlpEndpoint)
-#   Auth ingest: OTEL_EXPORTER_OTLP_HEADERS=x-api-key=dev-secret-123 przed startem VS Code
+#   OTLP:       http://localhost:4318   (VS Code -> github.copilot.chat.otel.otlpEndpoint)
+#   Auth ingest: OTEL_EXPORTER_OTLP_HEADERS=x-api-key=$COPILOTSCOPE_API_KEY before starting VS Code.
+# The compose vars have no default on purpose — an unset value fails loudly here
+# instead of shipping a known key into a running deployment.
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: copilot-dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,9 +28,9 @@ services:
     ports:
       - "4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=copilot-dev"
-      CopilotScope__Ingest__ApiKey: "dev-secret-123"
-      # Opcjonalny forward do drugiego backendu OTLP (np. Grafana Cloud):
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      # Optional forward to a second OTLP backend (e.g. Grafana Cloud):
       # CopilotScope__Forward__Endpoint: "https://otlp-gateway-....grafana.net/otlp"
       # CopilotScope__Forward__Headers__Authorization: "Basic <base64>"
     depends_on:
@@ -43,6 +46,9 @@ services:
       - "5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
+      # The collector's /api group is gated by the ingest key, so the dashboard
+      # presents the same key.
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
     depends_on:
       - collector
     restart: unless-stopped
@@ -57,7 +63,7 @@ services:
       - "5300:8080"
     environment:
       CopilotScope__AgentForge__CollectorBaseUrl: "http://collector:4318"
-      # CopilotScope__AgentForge__Ingest__ApiKey: "dev-secret-123"
+      # CopilotScope__AgentForge__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY}
       # CopilotScope__AgentForge__AzureAI__Endpoint: "https://<your-foundry-resource>.openai.azure.com"
       # CopilotScope__AgentForge__AzureAI__DeploymentName: "<your-model-deployment>"
       # CopilotScope__AgentForge__AzureAI__ApiKey: "<your-key>"   # omit to use DefaultAzureCredential
@@ -75,7 +81,7 @@ services:
       - "5400:8080"
     environment:
       CopilotScope__JudgeAgent__CollectorBaseUrl: "http://collector:4318"
-      # CopilotScope__JudgeAgent__Ingest__ApiKey: "dev-secret-123"
+      # CopilotScope__JudgeAgent__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY}
       # CopilotScope__JudgeAgent__AzureAI__Endpoint: "https://<your-foundry-resource>.openai.azure.com"
       # CopilotScope__JudgeAgent__AzureAI__DeploymentName: "<your-model-deployment>"
       # CopilotScope__JudgeAgent__AzureAI__ApiKey: "<your-key>"   # omit to use DefaultAzureCredential

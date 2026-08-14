@@ -20,7 +20,8 @@
 #                                       the one source of time-to-first-token (schema may change)
 #   --endpoint URL                     OTLP endpoint (default: http://localhost:4318)
 #   --api-key KEY                      x-api-key for ingest auth
-#                                       (default: dev-secret-123 in --mode compose, matching docker-compose.yml)
+#                                       (in --mode compose, a random key is generated into
+#                                        the gitignored .env and reused on re-runs)
 #   --persist                          Also append the CLI env vars to your shell rc file
 #                                       (~/.zshrc or ~/.bashrc, auto-detected) so new terminals
 #                                       pick them up without re-sourcing this script.
@@ -44,6 +45,12 @@
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Generates a random hex secret (no committed default key — see the review's S6).
+_gen_secret() {
+    if command -v openssl >/dev/null 2>&1; then openssl rand -hex 24
+    else head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
+}
 
 (return 0 2>/dev/null)
 IS_SOURCED=$?   # 0 = sourced, non-zero = executed directly
@@ -94,8 +101,17 @@ case "$MODE" in
     *) _die "Invalid --mode '$MODE' (expected: compose, aspire, skip-start)" || return 1 ;;
 esac
 
-if [ -z "$API_KEY_SET" ] && [ "$MODE" = "compose" ]; then
-    API_KEY="dev-secret-123"   # matches docker-compose.yml's CopilotScope__Ingest__ApiKey
+if [ "$MODE" = "compose" ]; then
+    # Compose requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (no default).
+    # Reuse an existing .env so re-runs stay stable; otherwise generate secrets
+    # and write them to the gitignored .env that docker compose reads.
+    ENV_FILE="$REPO_ROOT/.env"
+    _env_val() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | head -1; }
+    GEN_KEY="$(_env_val COPILOTSCOPE_API_KEY)"; [ -n "$GEN_KEY" ] || GEN_KEY="$(_gen_secret)"
+    GEN_PW="$(_env_val POSTGRES_PASSWORD)";     [ -n "$GEN_PW" ]  || GEN_PW="$(_gen_secret)"
+    printf 'COPILOTSCOPE_API_KEY=%s\nPOSTGRES_PASSWORD=%s\n' "$GEN_KEY" "$GEN_PW" > "$ENV_FILE"
+    echo "Wrote generated secrets to $ENV_FILE (gitignored)."
+    [ -n "$API_KEY_SET" ] || API_KEY="$GEN_KEY"
 fi
 
 if [ -n "$PERSIST" ] && [ -z "$COPILOT_CLI" ] && [ -z "$CLAUDE_CODE" ]; then

@@ -3,8 +3,13 @@ using CopilotScope.JudgeAgent.Agents;
 using CopilotScope.JudgeAgent.Clients;
 using CopilotScope.JudgeAgent.Config;
 using CopilotScope.JudgeAgent.Judging;
+using CopilotScope.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Shared kernel: OTel, health (/health + /alive), discovery, resilience on the
+// collector + Azure AI HttpClients (P2/P15).
+builder.AddServiceDefaults();
 
 var azureAiOptions = new AzureAiOptions();
 builder.Configuration.GetSection("CopilotScope:JudgeAgent:AzureAI").Bind(azureAiOptions);
@@ -18,6 +23,8 @@ builder.Services.AddSingleton<JudgePromptBuilder>();
 builder.Services.AddSingleton<IJudgeChatClient, AzureFoundryJudgeChatClient>();
 
 var app = builder.Build();
+
+app.MapDefaultEndpoints(); // /health + /alive
 
 var ingestApiKey = app.Configuration["CopilotScope:JudgeAgent:Ingest:ApiKey"]; // null/empty → open (dev mode)
 

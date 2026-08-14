@@ -9,6 +9,15 @@
         <a href="/overview">Overview</a>
         <a href="/docs">Docs</a>
     </nav>
+    @if (_sessions is { Count: > 0 })
+    {
+        <div class="view-mode-row" role="radiogroup" aria-label="Detail level">
+            <span class="view-mode-label">View:</span>
+            <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Basic)"    title="The headline verdict — score, what's driving it, key counts" @onclick="() => SetViewModeAsync(ViewMode.Basic)">Basic</button>
+            <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Advanced)" title="All panels — only tiles with actual data" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Advanced</button>
+            <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Full)"     title="All panels including no-data placeholders" @onclick="() => SetViewModeAsync(ViewMode.Full)">Full</button>
+        </div>
+    }
     <div class="conn @(_health is null ? "down" : "up")" role="status" aria-live="polite">
         @if (_health is null)
         {
@@ -85,7 +94,10 @@
                         @if (RepoShortName(s.Repository) is { } rn) { <span class="repo-chip repo-c@(ri)">@rn</span> }
                         @s.ChatCalls chat · @s.ToolCalls tools · @Ago(s.LastSeen)
                     </span>
-                    <span class="session-score @RelativeGradeClass(s.Quality, _repoNormalization)">@s.Quality.Score.ToString("0")</span>
+                    <span class="session-score @AbsoluteGradeClass(s.Quality)" aria-label="Score @s.Quality.Score.ToString("0") — @s.Quality.Grade">
+                        @s.Quality.Score.ToString("0")
+                        <span class="session-grade">@s.Quality.Grade</span>
+                    </span>
                 </button>
             }
         }
@@ -97,8 +109,8 @@
         {
             <div class="empty big">
                 <div class="empty-title">No session selected</div>
-                Pick one from the list on the left. You'll get its quality score, what drove it,
-                and — under <b>Advanced</b> — per-turn analysis, tool usage and the live event feed.
+                Pick one from the list on the left. You'll get its quality score and what drove it —
+                switch to <b>Advanced</b> (top right) for per-turn analysis, tool usage and the live event feed.
             </div>
         }
         else
@@ -106,18 +118,11 @@
             var s = _detail.Summary;
             var q = s.Quality;
 
-            <div class="view-mode-row" role="radiogroup" aria-label="Detail level">
-                <span class="view-mode-label">View:</span>
-                <button class="view-btn @(_viewMode == ViewMode.Basic    ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Basic)"    title="The headline verdict — score, what's driving it, key counts" @onclick="() => SetViewModeAsync(ViewMode.Basic)">Basic</button>
-                <button class="view-btn @(_viewMode == ViewMode.Advanced ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Advanced)" title="All panels — only tiles with actual data" @onclick="() => SetViewModeAsync(ViewMode.Advanced)">Advanced</button>
-                <button class="view-btn @(_viewMode == ViewMode.Full     ? "active" : "")" role="radio" aria-checked="@(_viewMode == ViewMode.Full)"     title="All panels including no-data placeholders" @onclick="() => SetViewModeAsync(ViewMode.Full)">Full</button>
-            </div>
-
             <div class="panel vu-panel">
                 <div class="panel-head">
                     <div>
                         <div class="panel-label">Session quality</div>
-                        <div class="vu-score @RelativeGradeClass(q, _repoNormalization)">@q.Score.ToString("0.0") <small>@(_viewMode == ViewMode.Basic ? $"/ 100 · {q.Grade}" : QualitySubtitle(q, s.Repository, _repoNormalization))</small></div>
+                        <div class="vu-score @AbsoluteGradeClass(q)">@q.Score.ToString("0.0") <small>@(_viewMode == ViewMode.Basic ? $"/ 100 · {q.Grade}" : QualitySubtitle(q, s.Repository, _repoNormalization))</small></div>
                     </div>
                     <div class="head-actions">
                         <div class="panel-sub">@s.Id</div>
@@ -153,7 +158,7 @@
                             <span class="basic-zone-tick" style="left:55%"></span>
                             <span class="basic-zone-tick" style="left:70%"></span>
                             <span class="basic-zone-tick" style="left:85%"></span>
-                            <span class="basic-fill @RelativeGradeClass(q, _repoNormalization)" style="width:@(Pct(q.Score / 100))%"></span>
+                            <span class="basic-fill @AbsoluteGradeClass(q)" style="width:@(Pct(q.Score / 100))%"></span>
                         </div>
                         <div class="basic-zones" aria-hidden="true">
                             <span style="flex:40">critical</span>

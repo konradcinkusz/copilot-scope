@@ -1,15 +1,25 @@
-# CopilotScope.Dashboard — frontend Blazor Server.
-# SDK 9.0 / runtime 8.0 is deliberate — see the comment in ./Dockerfile.
+# CopilotScope.Dashboard — Blazor Server frontend.
+# The image major version tracks the TFM (net10.0) — see the comment in ./Dockerfile.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
+COPY src/CopilotScope.Dashboard/*.csproj src/CopilotScope.Dashboard/
+RUN dotnet restore src/CopilotScope.Dashboard
 COPY src/CopilotScope.Dashboard/ src/CopilotScope.Dashboard/
-RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish
+RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
 WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
+USER $APP_UID
+# The dashboard has no /api/health of its own; the Blazor root answers 200 once up.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD curl -fsS http://localhost:8080/ || exit 1
 ENTRYPOINT ["dotnet", "CopilotScope.Dashboard.dll"]

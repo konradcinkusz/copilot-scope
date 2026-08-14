@@ -1,15 +1,19 @@
 # Pull-and-run — NO repository clone needed. Download just this file:
 #   Linux/macOS/Git Bash: curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
 #   Windows PowerShell:   curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+# Then set the two required secrets (no default — an unset value fails loudly
+# rather than shipping a known key), e.g.:
+#   export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
+#   export POSTGRES_PASSWORD=$(openssl rand -hex 16)
 #   docker compose -f docker-compose.ghcr.yml up
-# Dashboard: http://localhost:5200 · OTLP ingest: http://localhost:4318 (x-api-key: dev-secret-123)
+# Dashboard: http://localhost:5200 · OTLP ingest: http://localhost:4318 (x-api-key: $COPILOTSCOPE_API_KEY)
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: copilot-dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see header)}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,8 +27,8 @@ services:
     ports:
       - "4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=copilot-dev"
-      CopilotScope__Ingest__ApiKey: "dev-secret-123"
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see header)}"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY (see header)}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +40,7 @@ services:
       - "5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY (see header)}
     depends_on:
       - collector
     restart: unless-stopped

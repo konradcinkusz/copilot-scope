@@ -21,20 +21,25 @@ var collector = builder.AddProject<Projects.CopilotScope_Collector>("collector")
         e.Port = 4318;
         e.TargetPort = 4318;
         e.IsProxied = false;
-    });
+    })
+    // ServiceDefaults maps /health; the Aspire dashboard now shows "healthy"
+    // only when the process is actually serving, and WaitFor gates on it.
+    .WithHttpHealthCheck("/health");
 
 // ----------------------------------------------------------------- dashboard
 builder.AddProject<Projects.CopilotScope_Dashboard>("dashboard")
     .WithReference(collector)
     .WaitFor(collector)
-    .WithExternalHttpEndpoints();
+    .WithExternalHttpEndpoints()
+    .WithHttpHealthCheck("/health");
 
 // ---------------------------------------------------------------- agentforge
 // Opt-in, experimental — see docs/AGENTFORGE.md. No cohorts are configured by default.
 builder.AddProject<Projects.CopilotScope_AgentForge>("agentforge")
     .WithReference(collector)
     .WaitFor(collector)
-    .WithExternalHttpEndpoints();
+    .WithExternalHttpEndpoints()
+    .WithHttpHealthCheck("/health");
 
 // ---------------------------------------------------------------- judgeagent
 // Opt-in, cloud-only — see docs/JUDGE_AGENT.md. Without Azure AI credentials, judge calls
@@ -42,6 +47,7 @@ builder.AddProject<Projects.CopilotScope_AgentForge>("agentforge")
 builder.AddProject<Projects.CopilotScope_JudgeAgent>("judgeagent")
     .WithReference(collector)
     .WaitFor(collector)
-    .WithExternalHttpEndpoints();
+    .WithExternalHttpEndpoints()
+    .WithHttpHealthCheck("/health");
 
 builder.Build().Run();

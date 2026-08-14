@@ -5,6 +5,10 @@
 # exposes session ids, so it must not be more open than the data it summarizes).
 # Prometheus sends it as a bearer token; the collector accepts either that or
 # the x-api-key header.
+#
+# The token is read from a file the prometheus service writes at startup from
+# $COPILOTSCOPE_API_KEY (Prometheus does not expand env vars in this config), so
+# no key is committed here.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -14,6 +18,6 @@ scrape_configs:
     metrics_path: /metrics
     authorization:
       type: Bearer
-      credentials: dev-secret-123
+      credentials_file: /prometheus/scrape_token
     static_configs:
       - targets: ['collector:4318']

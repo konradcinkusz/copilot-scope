@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CopilotScope.JudgeAgent</RootNamespace>
@@ -13,6 +13,7 @@
          so judge results can never drift from what the Collector already serves and can be
          consumed the same way local IInsightAnalyzer output is. -->
     <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

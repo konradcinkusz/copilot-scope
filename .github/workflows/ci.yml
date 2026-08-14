@@ -17,15 +17,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The 9.0 SDK builds the AppHost without the Aspire workload (Aspire 9 ships
-      # as plain NuGet packages there); the 8.0 entry brings the runtime the
-      # net8.0 test host needs.
+      # Everything targets net10.0; the Aspire AppHost SDK and packages ship as
+      # plain NuGet references, so a single 10.0 SDK builds the whole solution.
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: |
-            8.0.x
-            9.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore
         run: dotnet restore CopilotScope.sln

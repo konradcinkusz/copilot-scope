@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>CopilotScope.AgentForge</RootNamespace>
@@ -12,6 +12,7 @@
     <!-- Reuses SessionDetailDto/TranscriptEntry directly so the persona profile can never
          drift from what the Collector actually serves. -->
     <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

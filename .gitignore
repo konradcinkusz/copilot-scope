@@ -9,6 +9,10 @@ artifacts/
 .idea/
 .claude/
 
+# Local secrets for docker compose — copy .env.example to .env (tracked example only)
+.env
+!.env.example
+
 # LaTeX build artifacts (research/articles) — PDFs are built by CI and
 # attached to releases, not committed
 *.aux

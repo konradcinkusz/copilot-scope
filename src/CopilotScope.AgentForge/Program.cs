@@ -3,8 +3,13 @@ using CopilotScope.AgentForge.Clients;
 using CopilotScope.AgentForge.Config;
 using CopilotScope.AgentForge.Domain;
 using CopilotScope.AgentForge.Profiling;
+using CopilotScope.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Shared kernel: OTel, health (/health + /alive), discovery, resilience on the
+// collector + Azure AI HttpClients (P2/P15) — a Foundry blip is now retried.
+builder.AddServiceDefaults();
 
 var cohortsOptions = new CohortsOptions();
 builder.Configuration.GetSection("CopilotScope:AgentForge:Cohorts").Bind(cohortsOptions.Cohorts);
@@ -23,6 +28,8 @@ builder.Services.AddSingleton<IPersonaChatClient, AzureFoundryPersonaChatClient>
 builder.Services.AddSingleton<ProvisionedAgentCache>();
 
 var app = builder.Build();
+
+app.MapDefaultEndpoints(); // /health + /alive
 
 var ingestApiKey = app.Configuration["CopilotScope:AgentForge:Ingest:ApiKey"]; // null/empty → open (dev mode)
 
