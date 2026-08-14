@@ -316,6 +316,26 @@ against the code).
 
 Ordered so each step is independently shippable. **S / M** = small / medium effort.
 
+> **Implementation status (2026-08-14).** A first pass landed on branch
+> `claude/copilot-scope-review-wxvi5w`: actions **1, 2, 3, 4, 5, 7, 8, 9** are done, and
+> **6** is done for its ServiceDefaults half (OTel self-instrumentation, `/health` +
+> `/alive`, discovery, resilience, AppHost health checks — closing P15/P9), plus the
+> net10.0 retarget throughout. **10** is recorded as
+> [`ADR-001-deployment-target.md`](ADR-001-deployment-target.md).
+>
+> **Deferred — the `Contracts` half of action 6.** Decoupling the agents from the whole
+> Collector cannot be done cheaply: `SessionDetailDto` embeds real domain/quality types
+> (`QualityReport`, `SessionEvent`, `TurnAnalysis`, `InsightReport`, `TranscriptEntry`),
+> not flat wire DTOs, so a drift-safe `CopilotScope.Contracts` shared by both sides means
+> relocating a large slice of the collector's public surface (touching the scoring engine
+> and most of the 93 tests). The only cheap alternative — giving the agents their own DTO
+> copies, Dashboard-style — reintroduces the drift the author deliberately engineered out.
+> This is a deliberate design trade-off worth its own focused PR, not a rushed change; the
+> agent Dockerfiles keep copying the Collector source until it lands. **11** (Dashboard +
+> real-Postgres integration + collector HTTP-layer tests) is partially addressed by the
+> live end-to-end verification of the auth gate and health endpoints, with the automated
+> WebApplicationFactory/Testcontainers suite still to follow.
+
 | # | Action | Axis | Sev | Effort |
 |---|---|---|---|---|
 | 1 | Reconcile Dockerfile base images with the TFM; delete the false comment; **add a smoke test to `build-containers.yml`** | Arch P6/P12 | HIGH | S |

@@ -3,10 +3,32 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases publish two images to GHCR — `ghcr.io/konradcinkusz/copilotscope-collector`
-and `-dashboard` — plus the research paper PDF as a release asset.
+Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-collector`,
+`-dashboard`, `-agentforge` and `-judgeagent` — plus the research paper PDF as a release asset.
 
 ## [Unreleased]
+
+### Changed
+- **Retargeted every project to `net10.0`** and aligned the container base images
+  (`sdk:10.0` / `aspnet:10.0`) with the TFM, so the published GHCR images start.
+  `Aspire.AppHost.Sdk` aligned with `Aspire.Hosting.*` (13.4.6). CI builds on a
+  single 10.0 SDK; `build-containers.yml` now smoke-tests each image before publish.
+- **Security:** the whole `/api` group is gated deny-by-default by the ingest key
+  (constant-time compare), so the query API and the destructive `DELETE` are no
+  longer reachable unauthenticated when a key is set; `/api/health` stays open as a
+  liveness probe. Decoded OTLP payloads are bounded (compression-bomb guard) and
+  `/admin/seed` enforces the `seed-` id prefix server-side.
+- **Secrets:** removed the committed `dev-secret-123` / `copilot-dev` defaults; the
+  compose files require `COPILOTSCOPE_API_KEY` + `POSTGRES_PASSWORD` (no default),
+  the setup scripts generate them into a gitignored `.env`, and a `gitleaks` job runs
+  in CI.
+- **Self-observability:** new `CopilotScope.ServiceDefaults` (OTel, health `/health`
+  + `/alive`, service discovery, HTTP resilience) is called by all four services;
+  the AppHost health-checks every resource.
+- **Dashboard UX:** defaults to the Basic view with the view switcher in the topbar;
+  score colour is now the absolute grade consistently (with grade text in the rail
+  for colour-independent reading); the session rail no longer reshuffles under the
+  cursor between polls.
 
 ### Added
 - **Prometheus scrape endpoint** (`GET /metrics`) exporting the *computed* signals,

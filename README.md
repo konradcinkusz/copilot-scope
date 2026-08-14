@@ -7,7 +7,7 @@
 [![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilotscope/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilotscope?style=social)](https://github.com/konradcinkusz/copilotscope/stargazers)
 [![CI](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml)
-[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/8.0)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 **Quality scoring for AI coding-assistant sessions.**
 
@@ -79,7 +79,8 @@ is the best developer". Goodhart's law applies to this repo too.
 
 | Project | Role | NuGet deps |
 |---|---|---|
-| `src/CopilotScope.AppHost` | Aspire orchestration: Postgres + pgAdmin containers, wiring | Aspire.Hosting.* 9.3 |
+| `src/CopilotScope.AppHost` | Aspire orchestration: Postgres + pgAdmin containers, wiring | Aspire.Hosting.* 13.4 |
+| `src/CopilotScope.ServiceDefaults` | Shared kernel: OTel self-instrumentation, health, service discovery, HTTP resilience | OpenTelemetry.*, Microsoft.Extensions.{Http.Resilience,ServiceDiscovery} |
 | `src/CopilotScope.Collector` | OTLP/HTTP ingest (in-repo protobuf decoder), session aggregation, quality scoring, turn analysis, REST API, Prometheus exporter, persistence | Npgsql only |
 | `src/CopilotScope.Dashboard` | Blazor Server UI: sessions, quality VU-meter, turn analysis, prompt transcript, delete | **zero** |
 | `tests/CopilotScope.Tests` | xUnit unit tests (decoder, routing, quality, turns, persistence roundtrip) | xunit |
@@ -91,8 +92,9 @@ is the best developer". Goodhart's law applies to this repo too.
 
 ## Quick start — no clone, just pull
 
-Each GitHub release publishes two images to GHCR (see `.github/workflows/build-containers.yml`).
-Users don't need the repository at all:
+Each GitHub release publishes four images to GHCR — collector, dashboard, agentforge
+and judgeagent (see `.github/workflows/build-containers.yml`). Users don't need the
+repository at all:
 
 ```bash
 # Durable (Postgres + collector + dashboard) — download ONE file, no clone:
@@ -100,18 +102,27 @@ Users don't need the repository at all:
 curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
 # Windows PowerShell:
 curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+# Set the two required secrets first (no default — an unset value fails loudly):
+export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
+export POSTGRES_PASSWORD=$(openssl rand -hex 16)
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Both images are public — no login, no token, no clone.
+The images are public — no login, no token, no clone.
 
 ## Quick start — from source
 
-Requirements: .NET 9 SDK + Docker. No workloads — Aspire 9 comes via NuGet.
-(Everything targets `net8.0`; the 9.0 SDK is what builds the AppHost without
-`dotnet workload install aspire`.)
+Requirements: .NET 10 SDK. Docker is only needed for the full Aspire/Compose stack —
+the collector and dashboard also run as two plain `dotnet run`s with no container
+(the collector degrades to in-memory without Postgres). No workloads: Aspire comes via
+NuGet. Everything targets `net10.0`.
 
 ```bash
+# No Docker: two processes, collector in-memory —
+dotnet run --project src/CopilotScope.Collector      # OTLP on :4318, API + /metrics
+dotnet run --project src/CopilotScope.Dashboard      # UI on :5200, finds the collector
+
+# Or the full orchestrated stack (Postgres + pgAdmin via Aspire, needs Docker):
 dotnet run --project src/CopilotScope.AppHost
 ```
 
@@ -230,7 +241,7 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
 
-Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. Cloud-only analyzers (#1–#3, plus the deep variants of #9/#10) implement the same `IInsightAnalyzer` interface but call out to the Azure AI Foundry judge agent; they register only when the collector is deployed with judge configuration enabled, so a local-only setup shows them as "no-data" with a `"requires cloud deployment"` note rather than an error. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. The cloud-only algorithms (#1–#3, plus the deep variants of #9/#10) are **not** in-process `IInsightAnalyzer`s — they live in the separate, opt-in `CopilotScope.JudgeAgent` service (`POST /api/sessions/{id}/judge`), which reaches the Azure AI Foundry judge agent; a local-only setup simply never calls it. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
 
 Each of the ten is also written up as a **standalone thesis topic** — one A4 page
 per topic with scope, methodology, acceptance criteria and a code entry point, split

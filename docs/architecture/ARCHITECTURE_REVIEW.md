@@ -5,6 +5,24 @@
 > and the extracted blueprint in
 > [`FSE.CORE/docs/architecture/00-REFERENCE-ARCHITECTURE.md`](https://github.com/konradcinkusz/FSE.CORE/blob/master/docs/architecture/00-REFERENCE-ARCHITECTURE.md).
 
+> **Status update (2026-08-14).** A follow-up whole-product review lives in
+> [`PRODUCT-REVIEW-2026-08.md`](PRODUCT-REVIEW-2026-08.md), and a first remediation pass
+> has since landed on branch `claude/copilot-scope-review-wxvi5w`. Two corrections to
+> the findings below:
+> - **§3.3 errata:** `infra/main.bicep` *does* pin `scale { minReplicas: 1,
+>   maxReplicas: 1 }`, and has since the file's first commit — the recommended fix was
+>   already in place. The single-writer constraint is real and is now recorded in
+>   [`ADR-001-deployment-target.md`](ADR-001-deployment-target.md).
+> - **§2.3 errata:** the cloud analyzers do **not** register conditionally as
+>   `IInsightAnalyzer`s; the judge is a separate `CopilotScope.JudgeAgent` service.
+>
+> Fixed on that branch: §3.1 (images retargeted to net10.0 + CI smoke test),
+> §3.2/§3.6 (whole `/api` gated deny-by-default, `DELETE` included), §3.4 (Aspire
+> versions aligned), §3.5 (`CopilotScope.ServiceDefaults` added, all four services
+> self-instrument, AppHost health-checks). Deferred: §3.8 (`CopilotScope.Contracts`
+> to decouple the agents from the whole Collector) — see the note in
+> `PRODUCT-REVIEW-2026-08.md` §7.
+
 ---
 
 ## 1. What this system is
