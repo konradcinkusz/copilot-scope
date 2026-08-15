@@ -104,7 +104,7 @@ jobs:
             type=raw,value=latest
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build once, load into the local daemon, and smoke-test BEFORE publishing.
       # This is the gate that catches the class of failure that shipped v1.0.x
