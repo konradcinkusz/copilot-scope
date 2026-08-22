@@ -1,0 +1,37 @@
+{
+  "datasetVersion": "example-template-NOT-a-real-calibration",
+  "judgeModel": "example — replace with the deployment name that produced judgeScores",
+  "judgePromptVersion": null,
+
+  "labels": [
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-a", "algorithm": "G-Eval", "level": 3, "note": "Illustrative only. Replace every entry here with real human labels." },
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-b", "algorithm": "G-Eval", "level": 3, "note": "Two raters per session is the minimum that yields a ceiling." },
+    { "sessionId": "seed-quick-02-error-prone",         "rater": "example-rater-a", "algorithm": "G-Eval", "level": 1 },
+    { "sessionId": "seed-quick-02-error-prone",         "rater": "example-rater-b", "algorithm": "G-Eval", "level": 1 },
+    { "sessionId": "seed-quick-04-rejected-edits",      "rater": "example-rater-a", "algorithm": "G-Eval", "level": 1 },
+    { "sessionId": "seed-quick-04-rejected-edits",      "rater": "example-rater-b", "algorithm": "G-Eval", "level": 2, "note": "Adjacent-band disagreement — normal, and what the ceiling measures." },
+    { "sessionId": "seed-quick-chat-auth-ratelimit",    "rater": "example-rater-a", "algorithm": "G-Eval", "level": 2 },
+    { "sessionId": "seed-quick-chat-auth-ratelimit",    "rater": "example-rater-b", "algorithm": "G-Eval", "level": 2 },
+    { "sessionId": "seed-quick-chat-otlp-incident",     "rater": "example-rater-a", "algorithm": "G-Eval", "level": 3 },
+    { "sessionId": "seed-quick-chat-otlp-incident",     "rater": "example-rater-b", "algorithm": "G-Eval", "level": 3 },
+    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-a", "algorithm": "G-Eval", "level": 0 },
+    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-b", "algorithm": "G-Eval", "level": 1 },
+
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-a", "algorithm": "deep-frustration", "level": 0, "note": "Inverted rubric: level 0 = calm, level 3 = clearly frustrated." },
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-b", "algorithm": "deep-frustration", "level": 0 },
+    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-a", "algorithm": "deep-frustration", "level": 3 },
+    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-b", "algorithm": "deep-frustration", "level": 3 }
+  ],
+
+  "judgeScores": [
+    { "sessionId": "seed-quick-01-golden",              "algorithm": "G-Eval", "score": 0.91 },
+    { "sessionId": "seed-quick-02-error-prone",         "algorithm": "G-Eval", "score": 0.48 },
+    { "sessionId": "seed-quick-04-rejected-edits",      "algorithm": "G-Eval", "score": 0.55 },
+    { "sessionId": "seed-quick-chat-auth-ratelimit",    "algorithm": "G-Eval", "score": 0.78 },
+    { "sessionId": "seed-quick-chat-otlp-incident",     "algorithm": "G-Eval", "score": 0.88 },
+    { "sessionId": "seed-quick-05-frustrated",          "algorithm": "G-Eval", "score": 0.31 },
+
+    { "sessionId": "seed-quick-01-golden",              "algorithm": "deep-frustration", "score": 0.08 },
+    { "sessionId": "seed-quick-05-frustrated",          "algorithm": "deep-frustration", "score": 0.87 }
+  ]
+}

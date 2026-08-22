@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using CopilotScope.JudgeAgent.Domain;
 
 namespace CopilotScope.JudgeAgent.Agents;
@@ -17,6 +19,24 @@ public sealed class JudgePromptBuilder
             ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' not found.");
         using var reader = new StreamReader(stream);
         _template = reader.ReadToEnd();
+        TemplateFingerprint = Fingerprint(_template);
+    }
+
+    /// <summary>Short, stable hash of the rubric template — the prompt's version, derived rather
+    /// than declared so it cannot be forgotten on an edit.
+    ///
+    /// <para>A calibration κ belongs to the exact rubric that earned it. AI-EVALS.md §5 puts it
+    /// as "a judge that silently upgrades is a measuring stick that changes length": recording
+    /// this alongside the κ is what turns a later prompt edit into a visible re-baseline instead
+    /// of an invisible one. Line endings are normalised first so a CRLF checkout does not
+    /// present itself as a changed rubric.</para></summary>
+    public string TemplateFingerprint { get; }
+
+    private static string Fingerprint(string template)
+    {
+        var normalized = template.Replace("\r\n", "\n");
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hash)[..12].ToLowerInvariant();
     }
 
     public string Build(SessionJudgeContext context)
