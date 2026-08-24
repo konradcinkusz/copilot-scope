@@ -27,7 +27,10 @@ LLM call against real transcript content, which means:
   text, which local-only analyzers never do.
 - **Judge-bias awareness and calibration** — see `docs/ANALYSIS.md` §8/§8a for why SPUR in
   particular is explicitly "directional, not final" until CopilotScope collects labeled SAT/DSAT
-  session data to calibrate against.
+  session data to calibrate against. The machinery for that measurement now exists
+  (`Calibration/`, `POST /api/calibration/report` and `/run`, Cohen's κ against human labels) —
+  see **[docs/CALIBRATION.md](CALIBRATION.md)**. No calibration has been run yet, so every score
+  below is still directional.
 
 That's why this lives in its own deployable service rather than as another `IInsightAnalyzer`
 registered into the Collector's `InsightPipeline` — that interface is synchronous and local-only;
@@ -45,7 +48,17 @@ service, and the five algorithms it covers stay unavailable, exactly as the READ
 | 5 | Task-completion detection | Did the user's original ask actually get resolved by session end, not just attempted |
 
 Full per-rubric instructions live in `src/CopilotScope.JudgeAgent/Agents/JudgeSystemPromptTemplate.txt`
-— that file **is** the spec; this document doesn't duplicate it.
+— that file **is** the spec; this document doesn't duplicate it. Every calibration report records
+a hash of it (`judgePromptVersion`), so a later edit to the rubric shows up as a re-baseline
+rather than a silently moved measuring stick.
+
+## Before trusting any of these scores
+
+None of the five rubrics has been calibrated against human labels, so none of them should gate
+anything. [docs/CALIBRATION.md](CALIBRATION.md) explains what calibration measures (Cohen's κ
+against a human panel, with the panel's own agreement as the ceiling), how to run it, and how to
+read a bad result. The endpoints are `POST /api/calibration/report` (offline, free, deterministic)
+and `POST /api/calibration/run` (live, one metered model call per session).
 
 ## Request flow
 

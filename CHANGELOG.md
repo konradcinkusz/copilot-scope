@@ -8,6 +8,26 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 
 ## [Unreleased]
 
+### Added
+- **Judge calibration (Cohen's κ)** — `src/CopilotScope.JudgeAgent/Calibration/` measures how
+  well the judge agrees with human labels, closing the gap the README and
+  `JudgeSystemPromptTemplate.txt` have both been stating ("directional, not final… until
+  calibration data exists"). Cohen's κ with unweighted, linear- and quadratic-weighted variants,
+  each carrying a seeded bootstrap 95% CI; the human panel's agreement with itself is measured
+  first as the ceiling, because a judge validated against labels the labellers cannot reproduce
+  is validated against noise. Verdicts are `calibrated` / `not-calibrated` / `ceiling-too-low` /
+  `insufficient-data` against a configurable threshold (`CopilotScope:JudgeAgent:Calibration`,
+  default κ ≥ 0.70 — the repo's own published acceptance criterion). Two endpoints:
+  `POST /api/calibration/report` (pure arithmetic, deterministic, no model access — the one CI
+  can run) and `POST /api/calibration/run` (grades each session with the live judge first,
+  sequential, capped at 200 sessions per run). Labels are versioned JSON in `calibration/`;
+  `labels.example.json` is a format template deliberately too small to certify anything. New
+  `docs/CALIBRATION.md`. **No calibration has been run** — there are no human labels in the
+  repository yet, so no judge score gates anything.
+- Judge reports now record `judgePromptVersion`, a hash of `JudgeSystemPromptTemplate.txt`
+  derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
+  silently moved measuring stick.
+
 ### Changed
 - **Retargeted every project to `net10.0`** and aligned the container base images
   (`sdk:10.0` / `aspnet:10.0`) with the TFM, so the published GHCR images start.

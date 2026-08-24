@@ -231,7 +231,7 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | # | Algorithm | Status | Local | Cloud | Where |
 |---|---|---|---|---|---|
 | 1 | LLM-as-a-Judge (G-Eval) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — `POST /api/sessions/{id}/judge`, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) |
-| 2 | SPUR (learned satisfaction rubrics) | ✅ **implemented**, zero-shot (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — directional until CopilotScope collects labelled SAT/DSAT sessions to calibrate against |
+| 2 | SPUR (learned satisfaction rubrics) | ✅ **implemented**, zero-shot (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — directional until CopilotScope collects labelled SAT/DSAT sessions to calibrate against; the measurement itself now exists, see [docs/CALIBRATION.md](docs/CALIBRATION.md) |
 | 3 | RAG component metrics (RAGAS) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — only meaningful for retrieval-based Copilot flows; `no-data` until the Collector captures retrieval context |
 | 4 | Edit Survival Analysis | ✅ **full** | ✅ | ✅ | `EditSurvivalAnalyzer` — four-gram & no-revert split (0.4/0.6); also feeds the *acceptance* component |
 | 5 | Acceptance-weighted throughput | ✅ **full** | ✅ | ✅ | `ThroughputAnalyzer` — accepted LOC/turn, LOC per 1k output tokens, rejection-discounted |
@@ -240,6 +240,24 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
 | 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
+
+### Calibrating the judge — Cohen's κ against human labels
+
+An LLM judge that has never been checked against people is an opinion with a number attached.
+`CopilotScope.JudgeAgent/Calibration/` measures that agreement — Cohen's κ (unweighted, linear-
+and quadratic-weighted, each with a seeded bootstrap confidence interval) between the judge and
+a human panel, plus the panel's agreement with *itself* as the ceiling no algorithm can climb
+past. Verdicts are `calibrated` / `not-calibrated` / `ceiling-too-low` / `insufficient-data`
+against a configurable threshold (default κ ≥ 0.70, this repo's own published acceptance
+criterion).
+
+Two endpoints: `POST /api/calibration/report` is pure arithmetic — deterministic, free, and
+runnable in CI — and `POST /api/calibration/run` grades sessions with the live judge first.
+Labels are versioned JSON in `calibration/`, reviewed like code.
+
+**No calibration has been run yet.** There are no human labels in this repository, so every
+judge score in the table above is still directional and gates nothing. Full method, scale
+anchors and how to read a bad result: **[docs/CALIBRATION.md](docs/CALIBRATION.md)**.
 
 Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. The cloud-only algorithms (#1–#3, plus the deep variants of #9/#10) are **not** in-process `IInsightAnalyzer`s — they live in the separate, opt-in `CopilotScope.JudgeAgent` service (`POST /api/sessions/{id}/judge`), which reaches the Azure AI Foundry judge agent; a local-only setup simply never calls it. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
 
