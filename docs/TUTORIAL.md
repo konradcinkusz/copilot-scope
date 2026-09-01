@@ -39,6 +39,53 @@ The rest of this document is the manual walkthrough the wizard automates —
 useful if you want to understand each step, configure a surface the wizard
 doesn't cover yet, or troubleshoot (section 9).
 
+## 0.5 No configuration at all: score the history you already have
+
+If you use **Claude Code**, you already have a complete record of every session on disk —
+`~/.claude/projects/<project>/<sessionId>.jsonl` — whether or not you have ever set an OTel
+environment variable. The importer reads those files and scores them.
+
+```bash
+# Start the collector (see §1), then:
+dotnet run --project tools/CopilotScope.LogImporter -- --dry-run     # see what it found
+dotnet run --project tools/CopilotScope.LogImporter                  # import it
+```
+
+Open the dashboard and your past sessions are there, scored, with turn analysis. No env vars,
+no window reload, no configuration.
+
+| Flag | |
+|---|---|
+| `--root <dir>` | transcripts to read (default `~/.claude/projects`) |
+| `--collector <url>` | collector base URL (default `http://localhost:4318`) |
+| `--api-key <key>` | Admin-scoped key, when the collector is gated (also `COPILOTSCOPE_API_KEY`) |
+| `--since <date>` | only sessions last active on or after this date |
+| `--include-content` | also import prompt and response **text** — off by default |
+| `--dry-run` | parse and summarize; send nothing |
+
+**Re-running is safe.** Sessions keep Claude Code's own session id, so a second run replaces
+rather than duplicates — put it on a cron or a file watcher if you like. The collector refuses
+to overwrite a session it already has from live telemetry, because the import carries *less*
+signal and would silently lower its score.
+
+**Imported sessions are honestly worse-measured, and say so.** The transcript records tokens,
+models, tool calls and outcomes, turn boundaries and real wall-clock timings — all of that is
+reconstructed faithfully. It does **not** record time-to-first-token, edit accept/reject
+decisions or thumbs feedback: those are OTel events. Rather than defaulting them to zero (which
+would read as "every edit was rejected"), they are left absent, so the quality engine treats
+those components as priors carrying no weight and the session's confidence reflects the smaller
+evidence base. The dashboard badges them **imported**.
+
+If you want the full signal set — latency, acceptance, feedback — set up OTel as below. The two
+paths coexist: import your history today, turn on telemetry for tomorrow.
+
+> **Other assistants.** Only Claude Code transcripts are supported today, and only because the
+> format is pinned by a fixture in `tests/transcripts/`. Codex CLI writes comparable rollout
+> logs and is the obvious next format, but this project has already been burned once by
+> claiming support for an assistant it had no captured payloads for (issue #93) — so a parser
+> written from documentation alone is not something to ship. `tools/CopilotScope.FixtureCapture`
+> is the path to changing that.
+
 ## 1. Start CopilotScope
 
 Pick one of two ways to run it — both expose the same two things: an OTLP ingest

@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotScope.ServiceDefault
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotScope.FixtureCapture", "tools\CopilotScope.FixtureCapture\CopilotScope.FixtureCapture.csproj", "{1546EFAA-21CB-48E6-9191-DA92D909DC65}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotScope.LogImporter", "tools\CopilotScope.LogImporter\CopilotScope.LogImporter.csproj", "{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -159,6 +161,18 @@ Global
 		{1546EFAA-21CB-48E6-9191-DA92D909DC65}.Release|x64.Build.0 = Release|Any CPU
 		{1546EFAA-21CB-48E6-9191-DA92D909DC65}.Release|x86.ActiveCfg = Release|Any CPU
 		{1546EFAA-21CB-48E6-9191-DA92D909DC65}.Release|x86.Build.0 = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|x64.Build.0 = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Debug|x86.Build.0 = Debug|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|x64.ActiveCfg = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|x64.Build.0 = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|x86.ActiveCfg = Release|Any CPU
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -174,6 +188,7 @@ Global
 		{38156975-6B07-4A8A-9B4B-B9C78177CACF} = {8B74E435-F59D-4570-A385-3B4D33B1215E}
 		{08C9C3A4-0A77-48EB-89E0-8519B64645DA} = {AA8F32EA-A399-4D87-A2FB-C41A43199F27}
 		{1546EFAA-21CB-48E6-9191-DA92D909DC65} = {891CA426-11F7-4B59-BECF-4383907BEADA}
+		{EACCB2B6-FF55-40E5-B333-FDA3ABD7F1B5} = {891CA426-11F7-4B59-BECF-4383907BEADA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {FFF33FF4-6791-45D2-B875-A28749B62763}

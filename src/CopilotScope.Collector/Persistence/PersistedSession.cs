@@ -39,7 +39,10 @@ public sealed record PersistedSession(
     int EditsAutoAccepted = 0,
     /// <summary>Origin scope used by the k-anonymity floor. Defaulted: snapshots written
     /// before privacy mode existed have no subject, and each then counts as its own.</summary>
-    string? SubjectId = null)
+    string? SubjectId = null,
+    /// <summary>Where the data came from. Defaulted to OTLP, which is what every snapshot
+    /// written before log import existed actually was.</summary>
+    string Origin = SessionOrigin.Otel)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -66,7 +69,8 @@ public sealed record PersistedSession(
             kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens)),
         x.EmitterKind,
         x.EditsAutoAccepted,
-        x.SubjectId));
+        x.SubjectId,
+        x.Origin));
 
     public CopilotSession ToSession()
     {
@@ -79,6 +83,7 @@ public sealed record PersistedSession(
             Repository = Repository,
             Branch = Branch,
             SubjectId = SubjectId,
+            Origin = Origin,
             FirstSeen = FirstSeen,
             LastSeen = LastSeen,
             InputTokens = InputTokens,

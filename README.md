@@ -93,6 +93,23 @@ This matters as much as the features, so it is not buried at the bottom:
 The useful question is "where is our AI tooling wasting people's time", not "who
 is the best developer". Goodhart's law applies to this repo too.
 
+### No-config path: import the history you already have
+
+Claude Code writes every session to `~/.claude/projects/**/*.jsonl` whether or not OTel is
+configured — and most developers never configure it. `tools/CopilotScope.LogImporter` reads
+those files and posts them as first-class scored sessions:
+
+```bash
+dotnet run --project tools/CopilotScope.LogImporter -- --dry-run
+dotnet run --project tools/CopilotScope.LogImporter
+```
+
+Re-running replaces rather than duplicates (sessions keep Claude Code's own id), prompt text
+is **not** imported unless you pass `--include-content`, and the collector refuses to overwrite
+a session it already holds from live telemetry. Imported sessions are badged *imported* and
+carry lower confidence: the transcript has no latency, edit-decision or feedback signal, so
+those components are absent rather than defaulted. See [docs/TUTORIAL.md §0.5](docs/TUTORIAL.md).
+
 ### Team views
 
 Both pages take a **window** (7/30/90 days/all) and a **cohort** (repository, assistant,
@@ -130,6 +147,7 @@ biggest regressions — as the artefact a lead forwards instead of a dashboard l
 | `tests/CopilotScope.Tests` | xUnit unit tests (decoder, routing, quality, turns, persistence roundtrip) | xunit |
 | `tools/CopilotScope.TelemetryGen` | realistic demo telemetry generator (incl. gzip + captured content) | zero |
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
+| `tools/CopilotScope.LogImporter` | parses Claude Code's local `*.jsonl` transcripts into scored sessions via `/api/import` — the no-OTel-setup path | zero |
 | `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
 | `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep workflow-friction scoring, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |

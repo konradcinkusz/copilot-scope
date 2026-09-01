@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>copilotscope-import</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reuses CopilotSession/PersistedSession/ImportRequest directly, so a session
+         reconstructed from a transcript has exactly the shape real ingestion produces —
+         the same reason the Seeder takes this reference. -->
+    <ProjectReference Include="..\..\src\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+  </ItemGroup>
+</Project>
