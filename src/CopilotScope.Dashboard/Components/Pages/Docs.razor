@@ -77,18 +77,25 @@
                         Content capture: <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code>.
                     </td>
                 </tr>
-                <tr>
-                    <td>Cursor</td>
+                <tr class="unverified">
+                    <td>Cursor <span class="session-kind-badge">unverified</span></td>
                     <td><code>Cursor</code></td>
                     <td>
-                        Cursor is a VS Code fork — try adding the same VS Code settings in Cursor's settings.json.
-                        Alternatively, set <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code> if
-                        Cursor exposes an OTLP env-var hook.
+                        <b>Not a supported assistant.</b> Cursor's OpenTelemetry export is
+                        Enterprise-plan only, and no payload from a real Cursor session has ever been
+                        tested against this collector — so there is no setup guidance here that would
+                        be more than a guess. This row used to suggest trying VS Code's settings and
+                        hoping for an env-var hook; that was an instruction to guess, published as
+                        documentation.
                     </td>
                     <td>
-                        Detected via <code>service.name</code> containing <code>cursor</code>.
-                        <code>cursor.*</code> attributes are normalized. Edit acceptance signals depend on
-                        whether Cursor emits them — check your session tiles.
+                        What is actually true: telemetry whose <code>service.name</code> contains
+                        <code>cursor</code> is detected, and <code>cursor.*</code> attributes are
+                        normalized. Cursor's export sends metrics and logs but <i>no traces</i>, and a
+                        turn here is one <code>invoke_agent</code> trace — so turn-level friction
+                        analysis cannot run for it at all. See
+                        <a href="/docs#coverage">signal coverage</a>; the decision is recorded in
+                        <code>docs/architecture/ADR-002-cursor-support.md</code>.
                     </td>
                 </tr>
             </tbody>

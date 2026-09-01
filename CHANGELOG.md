@@ -189,6 +189,25 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
   silently moved measuring stick.
 
+### Changed
+- **Cursor is demoted from a supported assistant to unverified** (#93,
+  [ADR-002](docs/architecture/ADR-002-cursor-support.md)). "Five assistants" in the README
+  included one supported by a `service.name` substring check and a namespace rename, with zero
+  Cursor-specific tests and no payload from a real Cursor session ever tested — while
+  `docs/STRATEGY.md` said four, with a *different* membership. Radical honesty is this
+  project's main competitive virtue, and a support claim the code cannot back costs more than
+  the feature is worth. The supported count is now **four** (VS Code Copilot, Copilot CLI,
+  Claude Code, Claude Cowork) and both documents agree on the membership as well as the number.
+  Cursor is listed separately and labelled unverified in the README, the in-app Docs page,
+  `docs/SIGNAL_COVERAGE.md`, `docs/TUTORIAL.md` §6 and `Domain/EmitterCoverage.cs`. The
+  speculative setup guidance ("try adding the same VS Code settings … if Cursor exposes an OTLP
+  env-var hook") is gone — that was an instruction to guess, published as documentation.
+  **Nothing is removed from the ingest path**: anyone already pointing Cursor at the collector
+  keeps exactly the behaviour they had, only the claim about it changes. Seeded sessions now
+  carry a **demo** badge in the dashboard, since a fabricated Cursor session is what made the
+  claim look proven in screenshots. Documentation tests hold both counts and the unverified
+  marking in place.
+
 ### Fixed
 - **The in-app Docs page called four implemented algorithms "not implemented"** (#58). G-Eval,
   SPUR, RAGAS and task-completion detection all ship in `CopilotScope.JudgeAgent` and the

@@ -120,10 +120,11 @@ public static class EmitterCoverage
             EditSurvival: SignalSupport.None,
             Feedback: SignalSupport.None,
             TimeToFirstToken: SignalSupport.None,
-            Note: "OTel export is Enterprise-plan only and sends metrics and logs but no traces, "
-                + "so turn-level friction analysis cannot run at all. Support here is a "
-                + "service.name match plus a namespace rename, with no captured fixtures — "
-                + "treat it as unverified (see #93)."),
+            Note: "UNVERIFIED — not a supported assistant (ADR-002). OTel export is Enterprise-plan "
+                + "only and sends metrics and logs but no traces, so turn-level friction analysis "
+                + "cannot run at all. What exists is a service.name match plus a namespace rename, "
+                + "with no captured fixtures and no payload from a real Cursor session ever tested — "
+                + "resolved as demote rather than implement in ADR-002 (#93)."),
     ];
 
     public static EmitterSignals? For(EmitterKind emitter) =>

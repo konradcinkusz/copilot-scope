@@ -34,7 +34,7 @@ apart. `EmitterCoverageTests` asserts each row against what the ingest pipeline 
 | Copilot CLI | Full | Full | Full | None | None | None | Full |
 | Claude Code | Conditional | Full | Full | Full | None | None | Conditional |
 | Claude Cowork | Conditional | Full | Full | Full | None | None | Conditional |
-| Cursor | None | Conditional | Conditional | None | None | None | None |
+| Cursor *(unverified — not supported)* | None | Conditional | Conditional | None | None | None | None |
 
 ### What that costs each assistant
 
@@ -44,7 +44,7 @@ apart. `EmitterCoverageTests` asserts each row against what the ingest pipeline 
 | Copilot CLI | acceptance, feedback | No editor UI, so no accept/reject and no thumbs. |
 | Claude Code | feedback | Acceptance *does* work — from `tool_decision` events, excluding permission-mode auto-accepts. No survival signal, no thumbs. TTFT needs the beta trace channel. |
 | Claude Cowork | feedback | Same dialect as Claude Code. |
-| Cursor | acceptance, feedback, latency, **friction** | Enterprise-only export sends metrics and logs but **no traces** — and a turn is one `invoke_agent` trace, so turn-level friction analysis cannot run at all. Support is a `service.name` match plus a namespace rename, with no captured fixtures: treat it as unverified (#93). |
+| Cursor *(unverified)* | acceptance, feedback, latency, **friction** | **Not a supported assistant** — see [ADR-002](architecture/ADR-002-cursor-support.md). The Enterprise-only export sends metrics and logs but **no traces**, and a turn is one `invoke_agent` trace, so turn-level friction analysis cannot run at all. What exists is a `service.name` match plus a namespace rename, with no captured fixtures and no payload from a real Cursor session ever tested against. |
 
 ## How to compare fairly
 
@@ -58,5 +58,5 @@ apart. `EmitterCoverageTests` asserts each row against what the ingest pipeline 
 ## Related
 
 - `docs/architecture/PRODUCT-REVIEW-2026-08.md` §B2 — where this was first written down
-- #93 — the open decision on whether Cursor support is implemented for real or demoted
+- [ADR-002](architecture/ADR-002-cursor-support.md) — the decision to demote Cursor rather than implement it (#93)
 - `GET /api/coverage` — the same table, as JSON

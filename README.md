@@ -11,7 +11,7 @@
 
 **Quality scoring for AI coding-assistant sessions.**
 
-Your Copilot, Claude Code and Cursor already emit OpenTelemetry. Point them at
+Your Copilot and Claude Code already emit OpenTelemetry. Point them at
 CopilotScope and you get more than a token counter: a composite quality score
 per session, the turn where the conversation stalled, whether the accepted edits
 actually survived, and what the repair loop cost. Runs on your machine; no SDK,
@@ -45,8 +45,11 @@ every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
 | Token & cache economics | Cost per turn, cost per *accepted* edit, what the prompt cache actually saved |
 | Workflow friction signals | Rephrasing, corrective replies and negative-feedback markers — counts repair events, not emotion. Off by default, report-only, never scored |
 
-Five assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
-Code, Claude Cowork (the agent surface in the Claude desktop app) and Cursor**.
+Four assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
+Code and Claude Cowork** (the agent surface in the Claude desktop app). Cursor
+telemetry is *detected and normalized but unverified* — no payload from a real
+Cursor session has been tested against, so it is not counted here
+([ADR-002](docs/architecture/ADR-002-cursor-support.md)).
 They do not, however, all report the same *signals* — so scores are comparable
 **within** an assistant and **directional across** them. A Claude Code session has
 no thumbs and no edit-survival signal, so its 80 rests on less evidence than a VS
@@ -253,7 +256,8 @@ Redis rate limiter, debugging a production OTLP incident on the CLI, shipping a 
 search feature, an RDS Postgres major-version upgrade in Terraform, profiling a slow
 SQL endpoint down from 3s to ~100ms) so the transcript view shows a coherent story,
 not sample lines. Between them they cover every emitter — VS Code, Copilot CLI,
-Claude Code and Cursor.
+Claude Code and Cursor. **Seeded sessions are fabricated demo data** and are badged
+`demo` in the dashboard, so a screenshot of them is never evidence about an assistant.
 Pushes straight into a **running** collector via `POST /api/admin/seed`, no OTLP
 encoding and no restart needed; always clears any previously seeded data first, so
 re-running never piles up duplicates:
@@ -517,7 +521,7 @@ docker compose -f docker-compose.grafana.yml up
 | `copilotscope_edits_total`, `copilotscope_feedback_total` | `outcome=`, `vote=` |
 | `copilotscope_sessions` | `grade=` excellent … critical |
 
-Everything carries an `emitter` label (`vscode`, `cli`, `claude_code`, `cursor`),
+Everything carries an `emitter` label (`vscode`, `cli`, `claude_code`, `cowork`, `cursor`),
 so a regression in one assistant is visible instead of averaged away.
 
 Scores are exported as `_sum`/`_count` pairs rather than pre-averaged gauges, so
