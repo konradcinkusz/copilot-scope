@@ -21,7 +21,10 @@ public sealed record SessionSummaryDto(
     Dictionary<string, int> Models,
     QualityReport Quality,
     SessionKind Kind,
-    EmitterKind EmitterKind = EmitterKind.Unknown);
+    EmitterKind EmitterKind = EmitterKind.Unknown,
+    /// <summary>Edits applied under a permission mode rather than by a human decision.
+    /// Reported so a high "accepted" count can be read correctly; never scored.</summary>
+    int EditsAutoAccepted = 0);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -136,7 +139,8 @@ public static class Dto
             new Dictionary<string, int>(x.ModelCalls),
             report,
             SessionClassifier.Classify(x),
-            x.EmitterKind));
+            x.EmitterKind,
+            x.EditsAutoAccepted));
     }
 
     public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights, IReadOnlyList<double>? allScores = null)
