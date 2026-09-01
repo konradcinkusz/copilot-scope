@@ -189,6 +189,14 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
   silently moved measuring stick.
 
+### Fixed
+- **The in-app Docs page called four implemented algorithms "not implemented"** (#58). G-Eval,
+  SPUR, RAGAS and task-completion detection all ship in `CopilotScope.JudgeAgent` and the
+  README's matrix says so; the dashboard's own copy of that matrix still described them as
+  unbuilt, and it was also missing delivered-outcome linkage entirely. The two now agree. The
+  signal-coverage section added this cycle was also reachable only from one link in the session
+  rail — it is in the Docs table of contents now.
+
 ### Changed
 - **Frustration analysis is now workflow-friction signals, and ships off** (#95). EU AI Act
   Art. 5(1)(f) prohibits workplace emotion recognition outright, so a feature named for
