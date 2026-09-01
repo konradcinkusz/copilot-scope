@@ -10,6 +10,16 @@ namespace CopilotScope.Collector.Api;
 /// so seeding never drifts from what real ingestion produces.</summary>
 public sealed record SeedRequest(bool Reset, List<PersistedSession> Sessions);
 
+/// <summary>Payload for POST /api/import (tools/CopilotScope.LogImporter). Same
+/// <see cref="PersistedSession"/> shape as seeding and as the collector's own snapshots, so a
+/// session reconstructed from a local transcript is a first-class session rather than a
+/// second-class shadow of one.</summary>
+public sealed record ImportRequest(List<PersistedSession> Sessions);
+
+/// <summary>What an import run did. <c>Rejected</c> names the sessions the collector refused
+/// and why, so a scheduled importer's log says what happened instead of just a count.</summary>
+public sealed record ImportResult(int Imported, int Updated, int Skipped, List<string> Rejected);
+
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
     DateTimeOffset FirstSeen, DateTimeOffset LastSeen,
@@ -25,7 +35,10 @@ public sealed record SessionSummaryDto(
     EmitterKind EmitterKind = EmitterKind.Unknown,
     /// <summary>Edits applied under a permission mode rather than by a human decision.
     /// Reported so a high "accepted" count can be read correctly; never scored.</summary>
-    int EditsAutoAccepted = 0);
+    int EditsAutoAccepted = 0,
+    /// <summary>Where the data came from: "otel" or "log-import". An imported session is scored
+    /// on genuinely less evidence, and a reader comparing two scores needs to know which.</summary>
+    string Origin = SessionOrigin.Otel);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -165,7 +178,8 @@ public static class Dto
             report,
             SessionClassifier.Classify(x),
             x.EmitterKind,
-            x.EditsAutoAccepted));
+            x.EditsAutoAccepted,
+            x.Origin));
     }
 
     public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights,

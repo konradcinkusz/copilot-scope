@@ -6,6 +6,20 @@ namespace CopilotScope.Collector.Domain;
 /// so one user-visible prompt can spawn several CopilotSession entries — only one
 /// of which is the real conversation.
 /// </summary>
+/// <summary>
+/// Where a session's data came from. A string rather than an enum: an importer for a format
+/// nobody has written yet should be able to name itself without a collector release, and the
+/// value is only ever displayed and compared.
+/// </summary>
+public static class SessionOrigin
+{
+    /// <summary>Received over OTLP from a live emitter. The default.</summary>
+    public const string Otel = "otel";
+
+    /// <summary>Reconstructed from an assistant's own local transcript files.</summary>
+    public const string LogImport = "log-import";
+}
+
 public enum SessionKind
 {
     UserChat,

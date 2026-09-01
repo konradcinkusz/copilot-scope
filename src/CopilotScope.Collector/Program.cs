@@ -785,6 +785,74 @@ api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<
     return Results.Ok(new { seeded = req.Sessions.Count, reset = req.Reset });
 });
 
+// ------------------------------------------------------------------ log import
+// Sessions reconstructed from an assistant's own local transcript files
+// (tools/CopilotScope.LogImporter). Most developers never flip OTEL env vars, and this is the
+// path that scores their existing history without asking them to.
+//
+// Deliberately NOT the seed endpoint: seeding namespaces everything under "seed-" precisely so
+// it can never touch real captured sessions, and an import has to use the assistant's own
+// session id — that is what makes re-running it idempotent instead of duplicating a year of
+// history on every run.
+api.MapPost("/import", async (ImportRequest req, HttpRequest request, ILogger<Program> logger,
+    CancellationToken ct) =>
+{
+    // Fabricating session data is administrative, exactly as seeding is.
+    if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
+
+    // Resolved here rather than injected: SessionRepository is only registered when Postgres is
+    // configured, and a minimal-API handler parameter for an unregistered service is bound as a
+    // second request body — which fails route building for the whole application, not just this
+    // endpoint.
+    var repo = app.Services.GetService<SessionRepository>();
+
+    var rejected = new List<string>();
+    int imported = 0, updated = 0, skipped = 0;
+
+    foreach (var persisted in req.Sessions)
+    {
+        var session = persisted.ToSession();
+
+        // The origin has to be declared by the caller and has to be an import. Accepting a
+        // snapshot that claims to be OTLP would let this endpoint forge live telemetry.
+        if (session.Origin != SessionOrigin.LogImport)
+        {
+            rejected.Add($"{session.Id}: origin must be '{SessionOrigin.LogImport}', got '{session.Origin}'.");
+            continue;
+        }
+
+        // An imported session is reconstructed from a file and carries no latency samples and
+        // no edit decisions; a live one carries both. Overwriting a live session with the
+        // import of the same conversation would therefore *lose* evidence — silently, and in
+        // the direction that lowers its score. Refuse, and say so.
+        var existing = store.Get(session.Id)
+            ?? (repo is not null ? (await repo.GetAsync(session.Id, ct))?.ToSession() : null);
+        if (existing is not null && existing.Origin != SessionOrigin.LogImport)
+        {
+            skipped++;
+            rejected.Add($"{session.Id}: already present from live telemetry; import would lose signal.");
+            continue;
+        }
+
+        if (existing is null) imported++; else updated++;
+
+        // Replace rather than merge: re-importing the same file must be idempotent, and the
+        // file is the whole truth about that session. Merging would double every token on the
+        // second run.
+        store.Put(session);
+        if (repo is not null)
+        {
+            var report = quality.Evaluate(session);
+            await repo.UpsertAsync(PersistedSession.From(session), report.Score, report.Grade, ct,
+                session.Kind.ToString());
+        }
+    }
+
+    logger.LogInformation("Imported {Imported} new / {Updated} updated / {Skipped} skipped session(s) from local transcripts.",
+        imported, updated, skipped);
+    return Results.Ok(new ImportResult(imported, updated, skipped, rejected));
+});
+
 // ------------------------------------------------------------ outcome ingestion
 // Opt-in: set CopilotScope:Outcomes:WebhookSecret and point a GitHub webhook here.
 // Deliberately OUTSIDE the /api key group — GitHub authenticates with its own HMAC
@@ -892,6 +960,7 @@ app.MapGet("/", () => Results.Text(
     "Friction: GET /api/friction (aggregate; off unless CopilotScope:WorkflowFriction:Enabled)\n" +
     "Team views: GET /api/cohorts | /api/compare | /api/facets (add format=csv to export)\n" +
     "Digest: GET /api/digest | POST /api/digest/send (admin, needs CopilotScope:Alerts)\n" +
+    "Import: POST /api/import (admin) — tools/CopilotScope.LogImporter, no OTel setup needed\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 

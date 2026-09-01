@@ -9,6 +9,22 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Import Claude Code's own transcripts — the no-configuration path** (#98). Most developers
+  never flip OTEL env vars; the grassroots tools that parse these files built their entire user
+  base on that fact. Claude Code already writes every session to
+  `~/.claude/projects/**/*.jsonl`, so `tools/CopilotScope.LogImporter` reads them and posts
+  first-class scored sessions to a new admin `POST /api/import`. Re-running is idempotent —
+  sessions keep Claude Code's own id — and the collector **refuses** to overwrite a session it
+  already holds from live telemetry, because the import carries less signal and would silently
+  lower its score. Prompt text is not imported unless `--include-content` is passed. The parsing
+  handles the two traps in the format: one model response is split across several assistant
+  lines (counting blocks rather than `usage` doubles every call count) and tool results arrive
+  as *user* messages (counting them as prompts invents turns). Because the importer runs on the
+  developer's machine it resolves the actual git remote and normalizes it the way outcome
+  linkage does, so imported sessions land in the same repository cohort as live ones rather than
+  forming a duplicate. Imported sessions are badged **imported** and carry genuinely lower
+  confidence: time-to-first-token, edit decisions and feedback are OTel events the transcript
+  does not record, so they are left absent rather than defaulted to zero.
 - **Quality-regression alerts and a weekly digest — push, not just pull** (#101). A dashboard
   that must be visited gets abandoned; an output that triggers a decision gets renewed, and
   session scoring is the only thing that can raise a *quality* regression — a vendor usage

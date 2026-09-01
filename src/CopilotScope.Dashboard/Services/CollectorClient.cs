@@ -245,7 +245,16 @@ public sealed record SessionSummaryDto(
     SessionKind Kind,
     EmitterKind EmitterKind = EmitterKind.Unknown,
     /// <summary>Edits applied under a permission mode rather than by a human decision.</summary>
-    int EditsAutoAccepted = 0);
+    int EditsAutoAccepted = 0,
+    /// <summary>Where the data came from: "otel" or "log-import".</summary>
+    string Origin = SessionOrigin.Otel);
+
+/// <summary>Mirrors the collector's SessionOrigin.</summary>
+public static class SessionOrigin
+{
+    public const string Otel = "otel";
+    public const string LogImport = "log-import";
+}
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,

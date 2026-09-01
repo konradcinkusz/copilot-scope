@@ -846,3 +846,12 @@ html, body {
 .rail-filters .filter-row { gap: 6px; }
 .rail-filters .chip { padding: 4px 10px; font-size: 11px; }
 .rail-filters select { max-width: 100%; flex: 1 1 auto; min-width: 0; }
+
+/* A session reconstructed from a local transcript rather than received live. Coloured
+   differently from the kind badge because it says something about the *evidence* behind the
+   score, not about what kind of session it was. */
+.origin-import {
+  color: var(--copper);
+  border-color: color-mix(in srgb, var(--copper) 40%, transparent);
+  background: color-mix(in srgb, var(--copper) 10%, transparent);
+}

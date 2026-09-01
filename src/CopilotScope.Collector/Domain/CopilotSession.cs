@@ -25,6 +25,19 @@ public sealed class CopilotSession
     public string? Branch { get; set; }
 
     /// <summary>
+    /// Where this session's data came from. <c>otel</c> for anything the collector received
+    /// over OTLP — the default, and the only value ingest ever sets — and <c>log-import</c>
+    /// for a session reconstructed from an assistant's own local transcript files.
+    ///
+    /// Provenance is not decoration: an imported session carries no latency samples and no
+    /// edit-decision or feedback events, so it is genuinely measured on less evidence than a
+    /// live one. The confidence model already reflects that (missing components carry no
+    /// weight), but a reader comparing two scores needs to be told <i>why</i> one rests on
+    /// less, and that is what the origin says.
+    /// </summary>
+    public string Origin { get; set; } = SessionOrigin.Otel;
+
+    /// <summary>
     /// Which machine/person this session's telemetry came from — the host scope the resource
     /// fingerprint already computes, kept so a view can count distinct subjects rather than
     /// distinct sessions. Under privacy mode the underlying attributes are pseudonymized
@@ -129,6 +142,9 @@ public sealed class CopilotSession
             s.VsCodeSessionId ??= o.VsCodeSessionId;
 
             s.SubjectId ??= o.SubjectId;
+            // An imported session merged into a live one is no longer purely imported, and
+            // claiming otherwise would understate the evidence behind its score.
+            if (s.Origin != o.Origin && o.Origin == SessionOrigin.Otel) s.Origin = SessionOrigin.Otel;
             s.InputTokens += o.InputTokens; s.OutputTokens += o.OutputTokens;
             s.CacheReadTokens += o.CacheReadTokens; s.CacheCreationTokens += o.CacheCreationTokens;
             s.ChatCalls += o.ChatCalls; s.ChatErrors += o.ChatErrors;

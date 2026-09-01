@@ -167,6 +167,15 @@
                         {
                             <span class="session-kind-badge">@KindLabel(s.Kind)</span>
                         }
+                        @if (s.Origin == SessionOrigin.LogImport)
+                        {
+                            @* Reconstructed from the assistant's own transcript file rather than
+                               received live. It carries no latency or edit-decision signal, so its
+                               score rests on less evidence — which a reader comparing two scores
+                               has to be able to see. *@
+                            <span class="session-kind-badge origin-import"
+                                  title="Reconstructed from a local transcript file. No latency, edit-decision or feedback signal — those are OTel events the transcript does not record, so this session is scored with lower confidence.">imported</span>
+                        }
                     </span>
                     <span class="session-meta">
                         @if (RepoShortName(s.Repository) is { } rn) { <span class="repo-chip repo-c@(ri)">@rn</span> }
