@@ -28,6 +28,9 @@ public class CalibrationFlowTests
     /// always "no-data" — the real shape for sessions that used no retrieval.</summary>
     private sealed class ScriptedJudgeChatClient(IReadOnlyDictionary<string, double> gEvalBySession) : IJudgeChatClient
     {
+        public string BackendName => "scripted";
+        public string ModelName => "scripted-model";
+
         public int Calls { get; private set; }
 
         public Task<string> JudgeAsync(string systemPrompt, string sessionPayloadJson, CancellationToken ct)

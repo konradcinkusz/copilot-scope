@@ -21,6 +21,9 @@ public class JudgeFlowTests
 
     private sealed class StubJudgeChatClient(string response) : IJudgeChatClient
     {
+        public string BackendName => "stub";
+        public string ModelName => "stub-model";
+
         public string? LastSystemPrompt { get; private set; }
         public string? LastSessionPayloadJson { get; private set; }
 

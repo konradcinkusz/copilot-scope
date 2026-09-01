@@ -9,6 +9,17 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **The judge runs on your own hardware** (#91). `CopilotScope:JudgeAgent:Backend` selects
+  `AzureFoundry` (the default, unchanged) or `OpenAiCompatible` — one implementation covering
+  Ollama, vLLM, LM Studio and any in-region OpenAI-compatible gateway. Judging is the only
+  feature that sends real transcript text anywhere, and the only destination used to be a cloud
+  vendor, which locked the five LLM-graded algorithms away from exactly the self-hosted and
+  regulated deployments they are most valuable in. Same prompts, rubric and fingerprint — only
+  the transport changes. Judge responses now carry `backend`, `model` and `judgePromptVersion`
+  provenance, matching what calibration runs already record.
+- **Cloud services authenticate to a secured Collector** (#90). `JudgeAgent` and `AgentForge`
+  read `CopilotScope:{Service}:CollectorApiKey` and present it as `x-api-key`, falling back to
+  `CopilotScope:Ingest:ApiKey`. Both report `collectorAuthConfigured` on `/api/health`.
 - **Session history is served from Postgres** (#84). `/api/sessions` and `/api/overview`
   read the database with the live in-memory aggregates layered on top, instead of reading
   the bounded in-memory store alone — a team churned past that cap in hours, after which
@@ -36,7 +47,6 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   longer read transcripts or delete history; `CopilotScope:Dashboard:Auth` adds optional
   viewer/admin sign-in, with transcripts and deletion restricted to admin. Both off by
   default; the legacy single key still grants every scope.
-
 - **Judge calibration (Cohen's κ)** — `src/CopilotScope.JudgeAgent/Calibration/` measures how
   well the judge agrees with human labels, closing the gap the README and
   `JudgeSystemPromptTemplate.txt` have both been stating ("directional, not final… until
@@ -57,6 +67,12 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   silently moved measuring stick.
 
 ### Fixed
+- **The cloud tier 401'd against any secured Collector** (#90). `infra/main.bicep` makes the
+  Collector's ingest key a required parameter, so every Azure deployment gates `/api` — and both
+  cloud services sent no key at all, so the judge and persona cohorts only ever worked against an
+  open dev-mode Collector. Their inbound key checks also moved to a constant-time comparison
+  (they still used `==`, which leaks the key under timing analysis); that comparison now lives
+  once in `CopilotScope.ServiceDefaults` instead of in three copies that had already drifted.
 - **Cross-developer session contamination behind a shared collector** (#85). Process- and
   service-scoped resource fingerprints are unique only within one machine, so two
   developers running the same assistant had their identity-less metrics merged into one
