@@ -778,3 +778,71 @@ html, body {
 }
 .privacy-note b { color: var(--text); }
 .privacy-note a { color: var(--ok); }
+
+/* ---------------------------------------------------------------- team-lead views
+   Window + cohort filters, the before/after delta table, and the print rules that
+   turn the Overview page into the one-page summary a lead takes to a meeting. */
+
+.filters { display: flex; flex-direction: column; gap: 8px; }
+
+.filter-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--dim); min-width: 62px;
+}
+
+/* Pushes the export/print controls to the right without a second flex container. */
+.filter-spacer { flex: 1 1 auto; }
+
+.chip {
+  font: inherit; font-size: 12px; line-height: 1;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 12px; cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center;
+}
+.chip:hover { border-color: var(--copper); }
+.chip.active { border-color: var(--copper); color: var(--copper); }
+
+.filters select {
+  font: inherit; font-size: 12px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 8px; max-width: 220px;
+}
+
+.delta-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.delta-table th {
+  text-align: left; font-weight: 500; color: var(--dim);
+  border-bottom: 1px solid var(--line); padding: 6px 8px;
+}
+.delta-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.delta-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.delta-table td i { color: var(--dim); font-style: normal; margin-left: 4px; }
+.delta-good { color: var(--ok); }
+.delta-bad  { color: var(--err); }
+
+.print-only { display: none; }
+
+@media print {
+  /* What survives: the headline row, the before/after table and the rollups. Controls,
+     live charts and the session list are navigation, not evidence. */
+  .no-print, .topbar { display: none !important; }
+  .print-only { display: block; }
+  .print-head h2 { margin: 0 0 4px; font-size: 18px; }
+  .print-head p { margin: 0 0 16px; font-size: 11px; color: #555; }
+  .overview-main { padding: 0; }
+  .panel { break-inside: avoid; border: 1px solid #ccc; box-shadow: none; }
+  .tile { break-inside: avoid; }
+  a[href]::after { content: ""; } /* no URL footnotes — the page is the artefact */
+}
+
+/* Window + cohort controls above the session rail. Narrower than the Overview page's
+   equivalents because the rail is a column, not a page. */
+.rail-filters { display: flex; flex-direction: column; gap: 6px; }
+.rail-filters .filter-row { gap: 6px; }
+.rail-filters .chip { padding: 4px 10px; font-size: 11px; }
+.rail-filters select { max-width: 100%; flex: 1 1 auto; min-width: 0; }

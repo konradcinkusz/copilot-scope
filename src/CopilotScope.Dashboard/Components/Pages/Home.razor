@@ -1,4 +1,8 @@
 @page "/"
+@* Deep link to one session. Selection used to be component state only, so a session could not
+   be linked, bookmarked or pasted into a review — and Overview's "top sessions" links went to
+   the list and left the reader to find the row. *@
+@page "/sessions/{SessionId}"
 
 <PageTitle>CopilotScope</PageTitle>
 
@@ -71,6 +75,29 @@
                        value="@_filter" @oninput="e => _filter = e.Value?.ToString() ?? string.Empty" />
             </div>
         }
+
+        @* Window and cohort. The rail is the session list, so the filters that narrow it live
+           here; the aggregate versions of the same filters are on Overview. No developer axis
+           on either — see docs/PRIVACY.md. *@
+        <div class="rail-filters">
+            <div class="filter-row">
+                @foreach (var (label, value) in Ranges)
+                {
+                    <button class="chip @(_days == value ? "active" : "")"
+                            @onclick="() => SetRangeAsync(value)">@label</button>
+                }
+            </div>
+            <div class="filter-row">
+                <select value="@_repository" @onchange="e => SetRepositoryAsync(e.Value?.ToString())">
+                    <option value="">All repositories</option>
+                    @foreach (var r in _facets?.Repositories ?? []) { <option value="@r">@r</option> }
+                </select>
+                <select value="@_emitter" @onchange="e => SetEmitterAsync(e.Value?.ToString())">
+                    <option value="">All assistants</option>
+                    @foreach (var a in _facets?.Assistants ?? []) { <option value="@a">@a</option> }
+                </select>
+            </div>
+        </div>
 
         @if (MixedAssistants)
         {

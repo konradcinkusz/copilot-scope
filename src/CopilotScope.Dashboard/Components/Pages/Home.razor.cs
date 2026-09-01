@@ -25,6 +25,21 @@ public partial class Home : ComponentBase, IDisposable
     /// reachable by id; the rail is a working set, not the archive.</summary>
     private const int RailPageSize = 200;
 
+    private static readonly (string Label, int Days)[] Ranges =
+        [("7d", 7), ("30d", 30), ("90d", 90), ("All", 0)];
+
+    /// <summary>Session id from the /sessions/{id} route. Set once, on navigation, and then
+    /// left alone: clicking a row afterwards changes the selection without a page load, which
+    /// is what a rail is for.</summary>
+    [Parameter] public string? SessionId { get; set; }
+
+    private int _days;
+    private string? _repository;
+    private string? _emitter;
+    private FacetsDto? _facets;
+
+    private CohortQuery Cohort => new(_repository, _emitter);
+
     private List<SessionSummaryDto>? _sessions;
 
     /// <summary>Total sessions matching the current query, which may exceed the rail page.
@@ -135,6 +150,15 @@ public partial class Home : ComponentBase, IDisposable
         // withheld view rather than rendering an empty one that looks like a failure.
         _privacy = await Collector.GetPrivacyAsync(_cts.Token);
 
+        // A linked session may be older than the default window, so a deep link opens on the
+        // full history rather than 404-ing inside a 30-day filter the visitor never chose.
+        if (SessionId is { Length: > 0 } linked)
+        {
+            _selectedId = Uri.UnescapeDataString(linked);
+            _days = 0;
+        }
+
+        _facets = await Collector.GetFacetsAsync(ct: _cts.Token);
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
     }
@@ -236,7 +260,8 @@ public partial class Home : ComponentBase, IDisposable
             // Explicit page size: the collector now serves history from Postgres, so an
             // unbounded request would pull a team's whole archive into the rail. The rail
             // shows the newest page; _sessionTotal reports what that page is a page of.
-            var page = await Collector.GetSessionPageAsync(_showInternal, limit: RailPageSize, ct: _cts.Token);
+            var page = await Collector.GetSessionPageAsync(_showInternal,
+                days: _days > 0 ? _days : null, limit: RailPageSize, cohort: Cohort, ct: _cts.Token);
             var fetched = page.Sessions;
             _sessionTotal = page.Total;
             _suppressed = page.SuppressedReason;
@@ -262,6 +287,28 @@ public partial class Home : ComponentBase, IDisposable
         {
             _health = null; // collector unreachable — keep the last known data on screen
         }
+    }
+
+    private async Task SetRangeAsync(int days)
+    {
+        _days = days;
+        // The rail is rebuilt from a different window, so its frozen order no longer applies.
+        _sessionOrder.Clear();
+        await RefreshAsync();
+    }
+
+    private async Task SetRepositoryAsync(string? value)
+    {
+        _repository = string.IsNullOrWhiteSpace(value) ? null : value;
+        _sessionOrder.Clear();
+        await RefreshAsync();
+    }
+
+    private async Task SetEmitterAsync(string? value)
+    {
+        _emitter = string.IsNullOrWhiteSpace(value) ? null : value;
+        _sessionOrder.Clear();
+        await RefreshAsync();
     }
 
     private async Task ToggleShowInternalAsync(bool value)

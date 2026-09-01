@@ -93,6 +93,18 @@ This matters as much as the features, so it is not buried at the bottom:
 The useful question is "where is our AI tooling wasting people's time", not "who
 is the best developer". Goodhart's law applies to this repo too.
 
+### Team views
+
+Both pages take a **window** (7/30/90 days/all) and a **cohort** (repository, assistant,
+model). `GET /api/cohorts` rolls the window up by each of those axes; `GET /api/compare`
+puts two windows side by side for the same cohort — the "did the upgrade help" question —
+with the baseline defaulting to the equally long window before the current one. Any
+filtered rollup or comparison downloads as CSV (group rows only, no session ids), and the
+Overview page prints to a one-page summary in utilization / impact / cost language.
+Sessions are deep-linkable at `/sessions/{id}`.
+
+No view and no export has a per-developer dimension. Every axis describes the tooling.
+
 ## Projects
 
 | Project | Role | NuGet deps |

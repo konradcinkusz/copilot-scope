@@ -311,17 +311,20 @@ api.AddEndpointFilter(async (ctx, next) =>
 // hours of being written, because the store only ever keeps the most recent sessions.
 // `days` is the friendly form of the window; `since`/`until` are the precise one.
 api.MapGet("/sessions", async (bool? includeInternal, int? days, DateTimeOffset? since, DateTimeOffset? until,
-    int? limit, int? offset, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+    int? limit, int? offset, string? repository, string? emitter, string? model, string? kind, string? grade,
+    HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
 {
     var from = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
-    var page = await sessions.PageAsync(includeInternal == true, from, until, limit, offset, ct);
+    var cohort = CohortFilter.From(repository, emitter, model, kind, grade);
+    var page = await sessions.PageAsync(includeInternal == true, from, until, limit, offset, ct, cohort);
 
     // The aggregation floor is applied to what the caller would actually see. Filtering a
     // "team" view down to one repository worked on by one person is how a pseudonymous list
     // becomes a named one, and the filters that do it are the query parameters above.
     var verdict = privacyGuard.EvaluateSubjects(page.Subjects);
     var actor = AccessAuditLog.ActorFor(request);
-    audit.Record(actor, "sessions.list", DescribeQuery(days, since, until, limit, offset),
+    audit.Record(actor, "sessions.list",
+        $"{DescribeQuery(days, since, until, limit, offset)} {cohort.Describe()}".Trim(),
         verdict.Allowed ? $"served {page.Sessions.Count} session(s)" : "withheld (k-anonymity)");
 
     return verdict.Allowed
@@ -435,13 +438,17 @@ api.MapGet("/coverage", () => Results.Ok(EmitterCoverage.All.Select(e => new
     note = e.Note
 })));
 
-api.MapGet("/overview", async (int? days, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+api.MapGet("/overview", async (int? days, DateTimeOffset? since, DateTimeOffset? until,
+    string? repository, string? emitter, string? model, string? kind, string? grade,
+    HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
 {
-    var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
-    var all = await sessions.AllInWindowAsync(from, ct);
+    var from = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
+    var cohort = CohortFilter.From(repository, emitter, model, kind, grade);
+    var all = await InCohort(sessions, from, until, cohort, ct);
 
     var verdict = privacyGuard.Evaluate(all);
-    audit.Record(AccessAuditLog.ActorFor(request), "overview", days is > 0 ? $"days={days}" : "all",
+    audit.Record(AccessAuditLog.ActorFor(request), "overview",
+        $"{DescribeQuery(days, since, until, null, null)} {cohort.Describe()}".Trim(),
         verdict.Allowed ? $"served {all.Count} session(s)" : "withheld (k-anonymity)");
 
     return verdict.Allowed
@@ -449,6 +456,98 @@ api.MapGet("/overview", async (int? days, HttpRequest request, SessionQueryServi
         : Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
             statusCode: StatusCodes.Status403Forbidden);
 });
+
+// The window plus the cohort, with the grade half applied here because it needs a score.
+// Shared by every aggregate endpoint so they cannot disagree about what a cohort contains.
+async Task<IReadOnlyCollection<CopilotSession>> InCohort(SessionQueryService sessions,
+    DateTimeOffset? from, DateTimeOffset? to, CohortFilter cohort, CancellationToken ct)
+{
+    var all = await sessions.AllInWindowAsync(from, ct, to, cohort);
+    return cohort.Grade is null
+        ? all
+        : all.Where(s => cohort.MatchesGrade(quality.Evaluate(s).Grade)).ToList();
+}
+
+// ------------------------------------------------------------------- cohorts
+// Rollups by repository, assistant, model and session kind — "where is the spend going, and
+// which slice is going badly". This is the view a platform lead evaluating assistants needs,
+// and it deliberately has no developer axis: every dimension describes the tooling.
+api.MapGet("/cohorts", async (int? days, DateTimeOffset? since, DateTimeOffset? until,
+    string? repository, string? emitter, string? model, string? kind, string? grade, string? format,
+    HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var from = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
+    var cohort = CohortFilter.From(repository, emitter, model, kind, grade);
+    var all = await InCohort(sessions, from, until, cohort, ct);
+
+    var verdict = privacyGuard.Evaluate(all);
+    audit.Record(AccessAuditLog.ActorFor(request), "cohorts",
+        $"{DescribeQuery(days, since, until, null, null)} {cohort.Describe()}".Trim(),
+        verdict.Allowed ? $"served {all.Count} session(s)" : "withheld (k-anonymity)");
+    if (!verdict.Allowed)
+        return Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    var report = Cohorts.Build(all, quality, from, until);
+    return IsCsv(format)
+        ? Results.Text(CohortExport.ToCsv(report), "text/csv; charset=utf-8")
+        : Results.Ok(report);
+});
+
+// Distinct values worth filtering on, so the UI offers what exists instead of a free-text box
+// that silently matches nothing.
+api.MapGet("/facets", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
+    var (repositories, assistants, models) = await sessions.FacetsAsync(from, ct);
+    return Results.Ok(new { repositories, assistants, models });
+});
+
+// Before/after for one cohort: did the model upgrade help, is the new assistant better. The
+// buying question, answered in one request instead of two dashboards and mental subtraction.
+api.MapGet("/compare", async (DateTimeOffset? baselineSince, DateTimeOffset? baselineUntil,
+    DateTimeOffset? since, DateTimeOffset? until, int? days,
+    string? repository, string? emitter, string? model, string? kind, string? grade, string? format,
+    HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var currentFrom = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
+    // Default the baseline to the window immediately before the current one, which is the
+    // comparison a reader means by "before". Requires a bounded current window to infer from.
+    var length = currentFrom is { } cf ? (until ?? DateTimeOffset.UtcNow) - cf : (TimeSpan?)null;
+    var baseFrom = baselineSince ?? (length is { } l && currentFrom is { } c ? c - l : null);
+    var baseUntil = baselineUntil ?? currentFrom;
+
+    if (baseFrom is null || currentFrom is null)
+        return Results.BadRequest(new
+        {
+            error = "A comparison needs two bounded windows.",
+            detail = "Pass days (or since) for the current window; baselineSince/baselineUntil " +
+                     "default to the equally long window immediately before it.",
+        });
+
+    var cohort = CohortFilter.From(repository, emitter, model, kind, grade);
+    var current = await InCohort(sessions, currentFrom, until, cohort, ct);
+    var baseline = await InCohort(sessions, baseFrom, baseUntil, cohort, ct);
+
+    // The floor applies to the union: two windows each just under k would otherwise be a way
+    // of reading a small group twice.
+    var verdict = privacyGuard.Evaluate(current.Concat(baseline));
+    audit.Record(AccessAuditLog.ActorFor(request), "compare",
+        $"baseline={baseFrom:O}..{baseUntil:O} current={currentFrom:O}..{until:O} {cohort.Describe()}".Trim(),
+        verdict.Allowed ? $"served {current.Count}/{baseline.Count} session(s)" : "withheld (k-anonymity)");
+    if (!verdict.Allowed)
+        return Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    var report = Cohorts.Compare(cohort.Describe(),
+        baseline, baseFrom, baseUntil, current, currentFrom, until, quality);
+
+    return IsCsv(format)
+        ? Results.Text(CohortExport.ToCsv(report), "text/csv; charset=utf-8")
+        : Results.Ok(report);
+});
+
+static bool IsCsv(string? format) => string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase);
 
 // ------------------------------------------------------------- workflow friction
 // The aggregate-first surface for workflow-friction signals: a team/period rate, never a
@@ -710,6 +809,7 @@ app.MapGet("/", () => Results.Text(
     "API: GET /api/sessions | /api/sessions/{id} | /api/health | POST /api/admin/seed\n" +
     "Privacy: GET /api/privacy | /api/audit?format=csv (admin)\n" +
     "Friction: GET /api/friction (aggregate; off unless CopilotScope:WorkflowFriction:Enabled)\n" +
+    "Team views: GET /api/cohorts | /api/compare | /api/facets (add format=csv to export)\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 

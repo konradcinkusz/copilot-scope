@@ -106,6 +106,37 @@ if (authOptions.Enabled)
     }).DisableAntiforgery();
 }
 
+// CSV export proxy.
+//
+// The browser cannot call the collector directly — the API key lives here and never reaches
+// the page — so the download has to be served from this origin and forwarded server-side.
+// Deliberately a proxy rather than a re-implementation: the CSV is generated in one place, so
+// the file a lead mails to their director is the same numbers the dashboard rendered.
+var export = app.MapGet("/export/{report}.csv", async (string report, HttpRequest request,
+    CollectorClient collector, CancellationToken ct) =>
+{
+    if (report is not ("cohorts" or "compare")) return Results.NotFound();
+
+    // Forward the caller's filters verbatim, plus format=csv. Whitelisted by name so a
+    // crafted query string cannot reach an endpoint or parameter this route does not intend.
+    string[] allowed = ["days", "since", "until", "repository", "emitter", "model", "kind", "grade",
+                        "baselineSince", "baselineUntil"];
+    var query = string.Concat(allowed
+        .Where(name => request.Query.ContainsKey(name))
+        .Select(name => $"&{name}={Uri.EscapeDataString(request.Query[name].ToString())}"));
+
+    using var response = await collector.GetRawAsync($"/api/{report}?format=csv{query}", ct);
+    if (!response.IsSuccessStatusCode)
+        return Results.StatusCode((int)response.StatusCode);
+
+    var csv = await response.Content.ReadAsStringAsync(ct);
+    var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmm");
+    return Results.File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv",
+        $"copilotscope-{report}-{stamp}.csv");
+});
+// The export carries the same aggregates the pages show, so it needs the same sign-in.
+if (authOptions.Enabled) export.RequireAuthorization();
+
 var components = app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 // Deny-by-default once auth is on: every page needs a signed-in user, and /login opts
 // back out explicitly. Listing protected pages instead would fail open on the next one added.

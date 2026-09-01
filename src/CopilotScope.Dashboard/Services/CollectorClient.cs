@@ -14,12 +14,13 @@ public sealed class CollectorClient(HttpClient http)
     /// sessions layered on top, so the list is no longer bounded by what its memory holds.
     /// </summary>
     public async Task<SessionPageDto> GetSessionPageAsync(bool includeInternal = false, int? days = null,
-        int? limit = null, int? offset = null, CancellationToken ct = default)
+        int? limit = null, int? offset = null, CohortQuery? cohort = null, CancellationToken ct = default)
     {
         var query = $"/api/sessions?includeInternal={includeInternal}"
             + (days is > 0 ? $"&days={days}" : "")
             + (limit is > 0 ? $"&limit={limit}" : "")
-            + (offset is > 0 ? $"&offset={offset}" : "");
+            + (offset is > 0 ? $"&offset={offset}" : "")
+            + (cohort?.ToQuery() ?? "");
         return await http.GetFromJsonAsync<SessionPageDto>(query, ct)
             ?? new SessionPageDto([], 0, 0, 0, false);
     }
@@ -34,11 +35,45 @@ public sealed class CollectorClient(HttpClient http)
         return await response.Content.ReadFromJsonAsync<SessionDetailDto>(cancellationToken: ct);
     }
 
-    public async Task<OverviewDto?> GetOverviewAsync(CancellationToken ct = default)
+    public async Task<OverviewDto?> GetOverviewAsync(int? days = null, CohortQuery? cohort = null,
+        CancellationToken ct = default)
     {
-        try { return await http.GetFromJsonAsync<OverviewDto>("/api/overview", ct); }
+        var query = "/api/overview?" + (days is > 0 ? $"days={days}" : "") + (cohort?.ToQuery() ?? "");
+        try { return await http.GetFromJsonAsync<OverviewDto>(query, ct); }
         catch { return null; }
     }
+
+    /// <summary>Rollups by repository, assistant, model and kind for the window and cohort.</summary>
+    public async Task<CohortReportDto?> GetCohortsAsync(int? days = null, CohortQuery? cohort = null,
+        CancellationToken ct = default)
+    {
+        var query = "/api/cohorts?" + (days is > 0 ? $"days={days}" : "") + (cohort?.ToQuery() ?? "");
+        try { return await http.GetFromJsonAsync<CohortReportDto>(query, ct); }
+        catch { return null; }
+    }
+
+    /// <summary>Before/after for one cohort. The baseline defaults to the equally long window
+    /// immediately before the current one, which is what a reader means by "before".</summary>
+    public async Task<ComparisonReportDto?> GetComparisonAsync(int days, CohortQuery? cohort = null,
+        CancellationToken ct = default)
+    {
+        var query = $"/api/compare?days={days}" + (cohort?.ToQuery() ?? "");
+        try { return await http.GetFromJsonAsync<ComparisonReportDto>(query, ct); }
+        catch { return null; }
+    }
+
+    /// <summary>Values worth offering in the filter controls, read from the same window.</summary>
+    public async Task<FacetsDto?> GetFacetsAsync(int? days = null, CancellationToken ct = default)
+    {
+        var query = "/api/facets" + (days is > 0 ? $"?days={days}" : "");
+        try { return await http.GetFromJsonAsync<FacetsDto>(query, ct); }
+        catch { return null; }
+    }
+
+    /// <summary>Raw passthrough for the CSV export proxy — the browser cannot call the
+    /// collector itself, because the API key lives here and never reaches it.</summary>
+    public Task<HttpResponseMessage> GetRawAsync(string path, CancellationToken ct = default) =>
+        http.GetAsync(path, ct);
 
     public async Task<bool> DeleteSessionAsync(string id, CancellationToken ct = default)
     {
@@ -75,6 +110,73 @@ public sealed record SessionPageDto(
     /// <summary>Set when the k-anonymity floor withheld the page. The list is then empty by
     /// design, and this is what the UI should say instead of showing "no sessions".</summary>
     string? SuppressedReason = null);
+
+/// <summary>
+/// The cohort a view is about. Mirrors the collector's CohortFilter — deliberately without a
+/// developer dimension, which is the axis this product will not add.
+/// </summary>
+public sealed record CohortQuery(
+    string? Repository = null, string? Emitter = null, string? Model = null,
+    string? Kind = null, string? Grade = null)
+{
+    public static CohortQuery None { get; } = new();
+
+    public bool IsEmpty =>
+        string.IsNullOrEmpty(Repository) && string.IsNullOrEmpty(Emitter) &&
+        string.IsNullOrEmpty(Model) && string.IsNullOrEmpty(Kind) && string.IsNullOrEmpty(Grade);
+
+    public string ToQuery()
+    {
+        var parts = new List<string>();
+        void Add(string name, string? value)
+        {
+            if (!string.IsNullOrEmpty(value)) parts.Add($"&{name}={Uri.EscapeDataString(value)}");
+        }
+        Add("repository", Repository);
+        Add("emitter", Emitter);
+        Add("model", Model);
+        Add("kind", Kind);
+        Add("grade", Grade);
+        return string.Concat(parts);
+    }
+
+    /// <summary>One line naming the cohort, for a panel heading and an export filename.</summary>
+    public string Describe()
+    {
+        if (IsEmpty) return "all sessions";
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(Repository)) parts.Add(Repository);
+        if (!string.IsNullOrEmpty(Emitter)) parts.Add(Emitter);
+        if (!string.IsNullOrEmpty(Model)) parts.Add(Model);
+        if (!string.IsNullOrEmpty(Kind)) parts.Add(Kind);
+        if (!string.IsNullOrEmpty(Grade)) parts.Add($"grade {Grade}");
+        return string.Join(" · ", parts);
+    }
+}
+
+public sealed record FacetsDto(List<string> Repositories, List<string> Assistants, List<string> Models);
+
+public sealed record CohortRowDto(
+    string Dimension, string Value,
+    int Sessions, int Subjects,
+    long InputTokens, long OutputTokens, long CacheReadTokens,
+    int ChatCalls, int ChatErrors, int ToolCalls, int ToolErrors, int Turns,
+    int EditsAccepted, int EditsRejected,
+    double AvgQualityScore, double AvgConfidence,
+    double ErrorRate);
+
+public sealed record CohortReportDto(
+    DateTimeOffset? Since, DateTimeOffset? Until, int Sessions,
+    List<CohortRowDto> ByRepository, List<CohortRowDto> ByAssistant,
+    List<CohortRowDto> ByModel, List<CohortRowDto> ByKind);
+
+public sealed record MetricDeltaDto(string Metric, double Baseline, double Current, double Delta, double? PercentChange);
+
+public sealed record ComparisonReportDto(
+    string Cohort,
+    DateTimeOffset? BaselineSince, DateTimeOffset? BaselineUntil, int BaselineSessions,
+    DateTimeOffset? CurrentSince, DateTimeOffset? CurrentUntil, int CurrentSessions,
+    List<MetricDeltaDto> Deltas, List<string> Caveats);
 
 /// <summary>What the collector's privacy mode is enforcing (mirrors GET /api/privacy).</summary>
 public sealed record PrivacyDto(
