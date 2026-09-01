@@ -15,6 +15,7 @@
     <nav class="doc-toc">
         <a href="/docs#sources">Supported sources</a>
         <a href="/docs#model">Data model</a>
+        <a href="/docs#coverage">Signal coverage</a>
         <a href="/docs#quality">Session quality</a>
         <a href="/docs#turns">Turn analysis</a>
         <a href="/docs#tiles">Tiles reference</a>
@@ -492,16 +493,17 @@
         <table class="doc-table">
             <thead><tr><th>#</th><th>Algorithm</th><th>Status</th><th>Where / why not</th></tr></thead>
             <tbody>
-                <tr><td>1</td><td>LLM-as-a-Judge (G-Eval)</td><td>❌ not implemented</td><td>Requires a judge model, conversation content and a token budget.</td></tr>
-                <tr><td>2</td><td>SPUR (learned satisfaction rubrics)</td><td>❌ not implemented</td><td>Requires an LLM plus labeled training sessions; the designated upgrade path for workflow-friction detection.</td></tr>
-                <tr><td>3</td><td>RAG component metrics (RAGAS)</td><td>❌ not implemented</td><td>Applies to retrieval-grounded sessions; requires content.</td></tr>
+                <tr><td>1</td><td>LLM-as-a-Judge (G-Eval)</td><td>✅ implemented — cloud, opt-in</td><td><code>CopilotScope.JudgeAgent</code>, <code>POST /api/sessions/{id}/judge</code>. Needs a judge model, conversation content and a token budget, which is why it is a separate opt-in service rather than part of scoring. Runs against Azure AI Foundry or a local OpenAI-compatible endpoint.</td></tr>
+                <tr><td>2</td><td>SPUR (learned satisfaction rubrics)</td><td>✅ implemented, zero-shot — cloud, opt-in</td><td><code>CopilotScope.JudgeAgent</code>. True SPUR calibrates against a labelled SAT/DSAT set, which this project is only now able to collect (<code>CopilotScope:Labelling</code>, see <code>docs/CALIBRATION.md</code> §8) — so the measurement exists and is <i>directional</i> until those labels do. Still the designated upgrade path over the lexical workflow-friction heuristic.</td></tr>
+                <tr><td>3</td><td>RAG component metrics (RAGAS)</td><td>✅ implemented — cloud, opt-in</td><td><code>CopilotScope.JudgeAgent</code>. Only meaningful for retrieval-grounded sessions and returns <code>no-data</code> until the collector captures retrieval context — the judge is instructed never to fabricate a retrieval judgment from a plain chat session.</td></tr>
                 <tr><td>4</td><td>Edit Survival Analysis</td><td>✅ full</td><td><code>EditSurvivalAnalyzer</code> — four-gram and no-revert tracked separately (0.4/0.6); also feeds the <i>acceptance</i> component.</td></tr>
                 <tr><td>5</td><td>Acceptance-weighted throughput</td><td>✅ full</td><td><code>ThroughputAnalyzer</code> — accepted LOC per turn, LOC per 1k output tokens, rejection-discounted.</td></tr>
                 <tr><td>6</td><td>TFRA — turn-level friction &amp; repair</td><td>✅ full</td><td><code>SegmentAnalyzer</code> (Turn analysis panel) + the <i>friction</i> component of the composite score.</td></tr>
                 <tr><td>7</td><td>Latency-utility model</td><td>✅ full</td><td><code>LatencyUtilityAnalyzer</code> — per-sample utility curve, 2&nbsp;s / 8&nbsp;s attention-risk buckets; simplified form remains the <i>latency</i> component.</td></tr>
                 <tr><td>8</td><td>Token &amp; cache economics</td><td>✅ full</td><td><code>TokenEconomicsAnalyzer</code> — per-model cost from a configurable price sheet, cache savings, cost per turn / accepted edit.</td></tr>
                 <tr><td>9</td><td>Workflow-friction signals</td><td>✅ simplified, off by default</td><td><code>WorkflowFrictionAnalyzer</code> — EN/PL lexicon + rephrasing similarity + typography; counts repair events, not emotion. Report-only, deliberately outside the composite score, and not registered unless enabled.</td></tr>
-                <tr><td>10</td><td>Task-completion detection</td><td>❌ not implemented</td><td>Needs completion signals (builds, tests) that Copilot telemetry does not carry.</td></tr>
+                <tr><td>10</td><td>Task-completion detection</td><td>⚠️ partial locally · ✅ implemented — cloud, opt-in</td><td>Copilot telemetry carries no completion signals (build/test exit codes) and there is no ingest path for them yet, so the local side stays partial. <code>CopilotScope.JudgeAgent</code> reasons about "did the user's ask actually get resolved" from the transcript alone; it will honour <code>completionSignals</code> once that ingest path exists.</td></tr>
+                <tr><td>11</td><td>Delivered-outcome linkage</td><td>✅ implemented — local, opt-in</td><td><code>Outcomes/</code> — a GitHub webhook fills <code>pull_request_outcomes</code>, joined to sessions by repository, branch and time with an explicit confidence on each link. Reported <i>beside</i> the score and deliberately not folded into it: the join is a heuristic, and the correlation study that would justify scoring it does not exist yet.</td></tr>
             </tbody>
         </table>
         </div>
