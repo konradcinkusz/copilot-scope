@@ -598,6 +598,40 @@
             </div>
             }
 
+            @* ---- What shipped: the session joined to its pull requests ---- *@
+            @if (_detail.Outcomes is { Count: > 0 })
+            {
+                <div class="panel">
+                    <div class="panel-head">
+                        <div class="panel-label">Delivered outcome</div>
+                        <div class="panel-sub">shown beside the score, not folded into it</div>
+                    </div>
+                    <div class="outcomes">
+                        @foreach (var o in _detail.Outcomes)
+                        {
+                            <div class="outcome">
+                                <div class="outcome-head">
+                                    <span class="outcome-state state-@o.State">@o.State</span>
+                                    <span class="outcome-title">#@o.Number @o.Title</span>
+                                    <span class="outcome-confidence conf-@o.Confidence" title="@o.Reason">@o.Confidence confidence</span>
+                                </div>
+                                <div class="outcome-meta">
+                                    @o.Branch · +@o.Additions/−@o.Deletions in @o.ChangedFiles file@(o.ChangedFiles == 1 ? "" : "s")
+                                    @if (o.HoursToFirstReview is { } review)
+                                    {
+                                        <text> · first review after @FormatHours(review)</text>
+                                    }
+                                    @if (o.HoursToMerge is { } merge)
+                                    {
+                                        <text> · merged after @FormatHours(merge)</text>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (_viewMode != ViewMode.Basic)
             {
                 <div class="panel">

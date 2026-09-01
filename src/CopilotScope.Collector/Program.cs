@@ -2,6 +2,7 @@ using CopilotScope.Collector.Api;
 using CopilotScope.Collector.Domain;
 using CopilotScope.Collector.Forwarding;
 using CopilotScope.Collector.Otlp;
+using CopilotScope.Collector.Outcomes;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Quality;
 using CopilotScope.ServiceDefaults;
@@ -56,11 +57,19 @@ var historyOptions = new HistoryOptions();
 builder.Configuration.GetSection("CopilotScope:History").Bind(historyOptions);
 builder.Services.AddSingleton(historyOptions);
 
+// Outcome linkage: opt-in, and only meaningful with somewhere to store outcomes.
+var outcomeOptions = new OutcomeOptions();
+builder.Configuration.GetSection("CopilotScope:Outcomes").Bind(outcomeOptions);
+builder.Services.AddSingleton(outcomeOptions);
+
 if (persistenceEnabled)
 {
     builder.Services.AddSingleton(new SessionRepository(connectionString!));
     builder.Services.AddSingleton<PersistenceWriter>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<PersistenceWriter>());
+
+    if (outcomeOptions.Enabled)
+        builder.Services.AddSingleton(new OutcomeRepository(connectionString!));
 }
 
 var app = builder.Build();
@@ -249,7 +258,23 @@ api.MapGet("/sessions/{id}", async (string id, SessionQueryService sessions, Can
     // session has to keep working.
     if (await sessions.FindAsync(Uri.UnescapeDataString(id), ct) is not { } s) return Results.NotFound();
     var baseline = await sessions.BaselineAsync(ct);
-    return Results.Ok(Dto.Detail(s, quality, insightPipeline, baseline));
+
+    // Outcome links are opt-in and best-effort: an outcome store that is unreachable must
+    // not take the session detail down with it.
+    IReadOnlyList<OutcomeLink>? links = null;
+    if (app.Services.GetService<OutcomeRepository>() is { } outcomeRepo
+        && OutcomeLinker.NormalizeRepository(s.Repository) is { } repo)
+    {
+        try
+        {
+            var candidates = await outcomeRepo.ForRepositoryAsync(
+                repo, s.FirstSeen.AddDays(-1), s.LastSeen + OutcomeLinker.OpenWindow, ct);
+            links = OutcomeLinker.Link(s, candidates);
+        }
+        catch (Exception ex) { app.Logger.LogDebug(ex, "Outcome lookup failed for {Id}.", s.Id); }
+    }
+
+    return Results.Ok(Dto.Detail(s, quality, insightPipeline, baseline, links));
 });
 
 api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<Program> logger) =>
@@ -323,6 +348,58 @@ api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<
     logger.LogInformation("Seeded {Count} session(s) (reset={Reset}).", req.Sessions.Count, req.Reset);
     return Results.Ok(new { seeded = req.Sessions.Count, reset = req.Reset });
 });
+
+// ------------------------------------------------------------ outcome ingestion
+// Opt-in: set CopilotScope:Outcomes:WebhookSecret and point a GitHub webhook here.
+// Deliberately OUTSIDE the /api key group — GitHub authenticates with its own HMAC
+// signature over the raw body, and cannot send an x-api-key header.
+if (outcomeOptions.Enabled && app.Services.GetService<OutcomeRepository>() is { } outcomes)
+{
+    await outcomes.EnsureSchemaAsync(CancellationToken.None);
+
+    app.MapPost("/api/outcomes/github", async (HttpRequest request, ILogger<Program> logger) =>
+    {
+        // Read the raw bytes: the HMAC is over exactly what GitHub sent, so any
+        // deserialize-and-reserialize round trip would break verification.
+        using var buffer = new MemoryStream();
+        await request.Body.CopyToAsync(buffer);
+        var body = buffer.ToArray();
+
+        if (!GitHubWebhook.VerifySignature(body, request.Headers["X-Hub-Signature-256"].FirstOrDefault(),
+                outcomeOptions.WebhookSecret))
+        {
+            logger.LogWarning("Rejected outcome webhook from {RemoteIp}: bad or missing signature.",
+                request.HttpContext.Connection.RemoteIpAddress);
+            return Results.Unauthorized();
+        }
+
+        var eventName = request.Headers["X-GitHub-Event"].FirstOrDefault() ?? "";
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+
+        if (GitHubWebhook.Parse(eventName, document.RootElement) is { } outcome)
+        {
+            await outcomes.UpsertAsync(outcome, CancellationToken.None);
+            return Results.Ok(new { recorded = $"{outcome.Repository}#{outcome.Number}" });
+        }
+
+        if (eventName == "push")
+        {
+            var reverted = 0;
+            foreach (var (repo, number, at) in GitHubWebhook.ParseReverts(document.RootElement))
+            {
+                // Mark-only upsert: the ON CONFLICT merge ORs the revert flag onto the
+                // existing row and leaves every other field alone.
+                await outcomes.UpsertAsync(new PullRequestOutcome(
+                    repo, number, "", "", DateTimeOffset.UnixEpoch, null, null, null, 0, 0, 0,
+                    Reverted: true, RevertedAt: at), CancellationToken.None);
+                reverted++;
+            }
+            return Results.Ok(new { reverted });
+        }
+
+        return Results.Ok(new { ignored = eventName });
+    });
+}
 
 // Health stays UNAUTHENTICATED (outside the /api group filter): it is the container
 // and orchestrator liveness probe, and exposes only counts and feature booleans.

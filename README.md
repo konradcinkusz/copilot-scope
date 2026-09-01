@@ -238,6 +238,41 @@ truncated at 4 000 chars) — enough to review a session later, not a verbatim
 archive. For a complete raw-telemetry archive, use the forwarder to a full
 backend.
 
+## Did the code actually ship? (opt-in)
+
+Every signal above stops at the session boundary. A session can run cleanly, have its
+edits accepted, and still produce a change nobody merged — which is the same critique
+this project levels at usage counters, turned back on itself. Outcome linkage closes
+that loop by joining sessions to the pull requests they produced.
+
+```jsonc
+"CopilotScope": { "Outcomes": { "WebhookSecret": "<the secret you set on the webhook>" } }
+```
+
+Then point a GitHub webhook at `POST /api/outcomes/github` with events
+**pull_request**, **pull_request_review** and **push**, using the same secret. Deliveries
+are verified by HMAC (`X-Hub-Signature-256`) over the raw body — without a secret the
+endpoint is not mapped at all, because it writes into the very data the score is about
+to be validated against.
+
+The join is a heuristic — telemetry carries a repository and a branch, never a commit —
+so every link ships with its confidence and the reason for it:
+
+| Confidence | When |
+|---|---|
+| `high` | repo and branch match, PR opened inside the session's window |
+| `medium` | repo and branch match, timing is looser |
+| `low` | repo matches only — shown, but excluded from any correlation |
+
+Sessions then carry a **Delivered outcome** panel: merged, closed or reverted, time to
+first review, time to merge, size of the change. It sits *beside* the quality score and
+is deliberately not folded into it — the score has not been validated against outcomes
+yet, and that validation is the point of collecting them.
+
+**Privacy.** Outcomes are repository-level. No author, no reviewer, no commit message
+beyond detecting a revert. A merged pull request is a fact about a change, not about a
+person, and the "not a developer scoreboard" non-goal applies here as much as anywhere.
+
 ## Session quality
 
 Two complementary views:
@@ -272,6 +307,7 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
 | 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
+| 11 | Delivered-outcome linkage | ✅ **implemented** (local, opt-in) | ✅ | ✅ | `Outcomes/` — GitHub webhook → `pull_request_outcomes`, joined to sessions by repo/branch/time with an explicit confidence. Reported beside the score; **not** a scored component until the correlation study exists |
 
 ### Calibrating the judge — Cohen's κ against human labels
 
@@ -343,6 +379,7 @@ each role can see: **[SECURITY.md](SECURITY.md)**.
 | `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis (falls back to Postgres for sessions no longer in memory) |
 | `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions — accepts `days` |
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
+| `POST /api/outcomes/github` | GitHub webhook for PR outcomes (HMAC-verified; only mapped when a secret is configured) |
 | `GET /api/health` | health incl. persistence status |
 | `GET /metrics` | Prometheus scrape endpoint — see below |
 

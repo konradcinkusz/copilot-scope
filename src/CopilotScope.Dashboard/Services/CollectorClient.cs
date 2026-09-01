@@ -97,7 +97,18 @@ public sealed record SessionDetailDto(
     List<SessionEventDto> Events,
     List<TranscriptEntryDto> Transcript,
     TurnAnalysisDto Turns,
-    List<InsightReportDto> Insights);
+    List<InsightReportDto> Insights,
+    /// <summary>Pull requests this session plausibly produced; null unless outcome
+    /// ingestion is configured on the collector.</summary>
+    List<OutcomeLinkDto>? Outcomes = null);
+
+/// <summary>One session→pull-request link and how much it can be trusted.</summary>
+public sealed record OutcomeLinkDto(
+    string Repository, int Number, string Branch, string Title,
+    string State, string Confidence, string Reason,
+    DateTimeOffset OpenedAt, DateTimeOffset? MergedAt,
+    double? HoursToFirstReview, double? HoursToMerge,
+    int Additions, int Deletions, int ChangedFiles);
 
 public sealed record InsightMetricDto(string Label, string Value);
 

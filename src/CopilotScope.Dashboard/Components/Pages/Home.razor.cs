@@ -353,6 +353,12 @@ public partial class Home : ComponentBase, IDisposable
              : $"{d.TotalDays:0}d ago";
     }
 
+    /// <summary>Elapsed hours in the units a reviewer thinks in — minutes, hours, then days.</summary>
+    private static string FormatHours(double hours) =>
+        hours < 1 ? $"{hours * 60:0}m"
+        : hours < 48 ? $"{hours:0.#}h"
+        : $"{hours / 24:0.#}d";
+
     /// <summary>Wall-clock span the session covered, from first to last telemetry.</summary>
     private static string Duration(SessionSummaryDto s)
     {

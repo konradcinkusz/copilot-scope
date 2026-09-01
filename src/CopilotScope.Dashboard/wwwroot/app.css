@@ -729,3 +729,29 @@ html, body {
 }
 .signout-btn:hover { color: var(--text); border-color: var(--copper); }
 .signout-btn:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+/* ---------------------------------------------------------- delivered outcome */
+/* Pull requests a session plausibly produced. Confidence is shown, not hidden:
+   the join is a heuristic on repo + branch + time, and a reader has to be able
+   to discount a weak link rather than read it as a fact. */
+.outcomes { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.outcome {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px 12px;
+}
+.outcome-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.outcome-title { font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outcome-meta { margin-top: 3px; font-size: 11px; color: var(--dim); }
+.outcome-state {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  border-radius: 4px; padding: 1px 6px; border: 1px solid;
+}
+.state-merged   { color: var(--ok);     border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.state-open     { color: var(--copper); border-color: color-mix(in srgb, var(--copper) 45%, transparent); }
+.state-closed   { color: var(--dim);    border-color: var(--line); }
+.state-reverted { color: var(--err);    border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+.outcome-confidence { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; cursor: help; }
+.conf-attributed { color: var(--ok); }
+.conf-high       { color: var(--ok); }
+.conf-medium     { color: var(--copper); }
+.conf-low        { color: var(--dim); }
