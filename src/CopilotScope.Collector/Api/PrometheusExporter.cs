@@ -65,10 +65,23 @@ public sealed class PrometheusExporter(
         RenderLatency(sb, rows);
         RenderCost(sb, rows);
         RenderErrorTypes(sb, rows);
+        RenderIngestHealth(sb);
 
         if (options.PerSession) RenderPerSession(sb, rows);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Ingest-side attribution health. A non-zero value on a shared collector means
+    /// identity-less signals arrived with no way to tell the sending machines apart,
+    /// so they share one fingerprint scope — configure host.name on the emitters.
+    /// </summary>
+    private void RenderIngestHealth(StringBuilder sb)
+    {
+        Header(sb, "copilotscope_hostless_signals_total", "counter",
+            "Identity-less signals fingerprinted without a host discriminator (see docs/TUTORIAL.md team mode).");
+        Write(sb, "copilotscope_hostless_signals_total", store.HostlessSignals);
     }
 
     // ------------------------------------------------------------------ collect

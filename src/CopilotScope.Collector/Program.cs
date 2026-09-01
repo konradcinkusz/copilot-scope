@@ -176,7 +176,10 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     }
 
     var knownBefore = store.All.Count;
-    var touched = store.Ingest(batch);
+    // The connection identity scopes process/service fingerprints to one machine. Without
+    // it, two developers behind a shared collector whose emitters report the same
+    // service.name would have their identity-less metrics merged into one conversation.
+    var touched = store.Ingest(batch, request.HttpContext.Connection.RemoteIpAddress?.ToString());
     persistence?.MarkDirty(touched);
 
     // Buckets consumed by a merge must also disappear from Postgres, or they'd
@@ -320,6 +323,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
     sessions = store.All.Count,
+    hostlessSignals = store.HostlessSignals,
     persistence = persistenceEnabled,
     forwarding = forwarder.Enabled,
     prometheus = prometheusOptions.Enabled,
