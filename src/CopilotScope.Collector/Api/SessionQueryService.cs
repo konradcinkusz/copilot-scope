@@ -50,7 +50,9 @@ public sealed class SessionQueryService(
         var take = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
         var skip = Math.Clamp(offset ?? 0, 0, MaxOffset);
 
-        var candidates = await CandidatesAsync(since, until, take + skip, ct);
+        // The database applies the internal-session filter itself, so the page is already
+        // the right size; the in-memory overlay still needs filtering here.
+        var candidates = await CandidatesAsync(since, until, take + skip, ct, includeInternal);
         var visible = candidates
             .Where(s => includeInternal || !SessionClassifier.IsInternal(s.Kind))
             .OrderByDescending(s => s.LastSeen)
@@ -66,7 +68,7 @@ public sealed class SessionQueryService(
             .ToList();
 
         var total = repository is not null
-            ? Math.Max(await repository.CountAsync(since, until, ct), visible.Count)
+            ? Math.Max(await repository.CountAsync(since, until, ct, includeInternal), visible.Count)
             : visible.Count;
 
         return new SessionPage(dtos, total, take, skip, Durable);
@@ -107,17 +109,42 @@ public sealed class SessionQueryService(
             .ToList();
     }
 
+    // The overview is a whole-window aggregate — thousands of JSONB snapshots deserialized
+    // and re-scored — and the dashboard polls it on a timer from every open tab. Without a
+    // short shared cache, N tabs multiply that cost by N for an answer that cannot
+    // meaningfully change between polls.
+    private readonly SemaphoreSlim _overviewLock = new(1, 1);
+    private (DateTimeOffset? Since, DateTimeOffset At, IReadOnlyCollection<CopilotSession> Sessions)? _overviewCache;
+
     /// <summary>
     /// Every session in the window, for cross-session aggregates. Bounded by
-    /// <see cref="HistoryOptions.BaselineMaxSamples"/> so an overview query on a long
-    /// history stays a bounded amount of work rather than loading the whole table.
+    /// <see cref="HistoryOptions.OverviewMaxSessions"/> so a long history stays a bounded
+    /// amount of work, and memoized briefly so concurrent viewers share one computation.
     /// </summary>
-    public async Task<IReadOnlyCollection<CopilotSession>> AllInWindowAsync(DateTimeOffset? since, CancellationToken ct) =>
-        await CandidatesAsync(since, null, options.BaselineMaxSamples, ct);
+    public async Task<IReadOnlyCollection<CopilotSession>> AllInWindowAsync(DateTimeOffset? since, CancellationToken ct)
+    {
+        var ttl = options.OverviewCacheSeconds;
+        if (ttl <= 0) return await CandidatesAsync(since, null, options.OverviewMaxSessions, ct);
+
+        await _overviewLock.WaitAsync(ct);
+        try
+        {
+            if (_overviewCache is { } cached
+                && cached.Since == since
+                && DateTimeOffset.UtcNow - cached.At < TimeSpan.FromSeconds(ttl))
+                return cached.Sessions;
+
+            var sessions = await CandidatesAsync(since, null, options.OverviewMaxSessions, ct);
+            _overviewCache = (since, DateTimeOffset.UtcNow, sessions);
+            return sessions;
+        }
+        finally { _overviewLock.Release(); }
+    }
 
     /// <summary>All sessions in the window: the stored page, with live aggregates layered over it.</summary>
     private async Task<List<CopilotSession>> CandidatesAsync(
-        DateTimeOffset? since, DateTimeOffset? until, int depth, CancellationToken ct)
+        DateTimeOffset? since, DateTimeOffset? until, int depth, CancellationToken ct,
+        bool includeInternal = false)
     {
         var live = store.All.ToList();
         if (repository is null) return InWindow(live, since, until).ToList();
@@ -125,7 +152,7 @@ public sealed class SessionQueryService(
         List<CopilotSession> stored;
         try
         {
-            stored = (await repository.QueryAsync(since, until, depth, 0, ct))
+            stored = (await repository.QueryAsync(since, until, depth, 0, ct, includeInternal))
                 .Select(p => p.ToSession()).ToList();
         }
         catch (OperationCanceledException) { throw; }

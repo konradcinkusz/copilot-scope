@@ -51,8 +51,10 @@ public sealed class OutcomeRepository(string connectionString) : IAsyncDisposabl
                  first_review_at, additions, deletions, changed_files, reverted, reverted_at, updated_at)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
             ON CONFLICT (repository, number) DO UPDATE SET
-                branch          = EXCLUDED.branch,
-                title           = EXCLUDED.title,
+                -- NULLIF: a payload that omits these (some event types do) must not blank
+                -- the real values. Branch in particular is the session join key.
+                branch          = COALESCE(NULLIF(EXCLUDED.branch, ''), pull_request_outcomes.branch),
+                title           = COALESCE(NULLIF(EXCLUDED.title, ''), pull_request_outcomes.title),
                 merged_at       = COALESCE(pull_request_outcomes.merged_at, EXCLUDED.merged_at),
                 closed_at       = COALESCE(pull_request_outcomes.closed_at, EXCLUDED.closed_at),
                 first_review_at = LEAST(
@@ -80,6 +82,31 @@ public sealed class OutcomeRepository(string connectionString) : IAsyncDisposabl
         cmd.Parameters.AddWithValue(pr.Reverted);
         cmd.Parameters.Add(Nullable(pr.RevertedAt));
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Flags an already-known pull request as reverted.
+    ///
+    /// A targeted UPDATE rather than an upsert on purpose: a revert delivery knows only the
+    /// repository and PR number, so routing it through <see cref="UpsertAsync"/> would write
+    /// empty strings over the real branch and title (breaking the session join, which matches
+    /// on branch) and leave a placeholder <c>opened_at</c> that the window queries then filter
+    /// out. Returns false when the PR was never recorded — a revert of something this
+    /// collector never saw merged is not an outcome it can attribute.
+    /// </summary>
+    public async Task<bool> MarkRevertedAsync(string repository, int number, DateTimeOffset at, CancellationToken ct)
+    {
+        await using var cmd = _dataSource.CreateCommand("""
+            UPDATE pull_request_outcomes
+            SET reverted = true,
+                reverted_at = COALESCE(reverted_at, $3),
+                updated_at = now()
+            WHERE repository = $1 AND number = $2;
+            """);
+        cmd.Parameters.AddWithValue(repository);
+        cmd.Parameters.AddWithValue(number);
+        cmd.Parameters.AddWithValue(at);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
     /// <summary>Candidate outcomes for one repository within a time window.</summary>

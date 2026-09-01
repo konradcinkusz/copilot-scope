@@ -166,4 +166,18 @@ public sealed class ApiScopeTests
         using var c = f.CreateClient();
         Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/api/sessions")).StatusCode);
     }
+
+    [Fact]
+    public async Task AWhitespaceOnlyKeyStillEnforcesAuth()
+    {
+        // Regression: dropping whitespace-only keys left the registry empty, which reads as
+        // dev/open mode and disabled authentication on ingest, reads, DELETE and /metrics
+        // alike. A strange key is still a key — fail closed.
+        using var f = LegacyFactory("   ");
+        using var anonymous = f.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/sessions")).StatusCode);
+
+        using var keyed = Keyed(f, "   ");
+        Assert.Equal(HttpStatusCode.OK, (await keyed.GetAsync("/api/sessions")).StatusCode);
+    }
 }

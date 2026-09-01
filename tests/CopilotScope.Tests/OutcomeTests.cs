@@ -249,4 +249,21 @@ public class OutcomeTests
 
         Assert.Empty(reverts);
     }
+
+    [Fact]
+    public void ARevertOfATitleContainingAHashStillFindsTheTrailingReference()
+    {
+        // "Revert \"fix: escape C# strings (#42)\"" — taking the FIRST '#' finds "C#" and
+        // gives up, silently losing the revert. GitHub appends the reference at the end.
+        var reverts = GitHubWebhook.ParseReverts(Json("""
+            {
+              "repository": { "full_name": "acme/widgets" },
+              "commits": [
+                { "message": "Revert \"fix: escape C# strings\" (#42)", "timestamp": "2026-08-22T11:00:00Z" }
+              ]
+            }
+            """)).ToList();
+
+        Assert.Equal(42, Assert.Single(reverts).Number);
+    }
 }

@@ -48,16 +48,24 @@ public static class SessionModeClassifier
 
         var humanSignals = s.EditsAccepted + s.EditsRejected + s.ThumbsUp + s.ThumbsDown;
 
-        // Strongest single signal: the agent applied edits under a permission setting and
-        // no human decision was ever recorded. That is a delegated run by construction,
-        // whatever the tool ratio looks like.
+        // Autonomy needs POSITIVE evidence, never merely the absence of human signals.
+        // Several emitters send no edit decisions and no feedback at all (Copilot CLI is
+        // the documented case), so "no human signal" often means "no telemetry", not "no
+        // human" — and reading it as autonomy would zero the latency component for someone
+        // who really was sitting there waiting.
+        //
+        // The evidence that does hold: the agent applied edits under a permission setting
+        // and no human ever decided one. That is a delegated run by construction.
         if (s.EditsAutoAccepted > 0 && humanSignals == 0) return SessionMode.Autonomous;
 
         var agentic = s.ToolCalls >= AgenticToolFloor
                    && s.ToolCalls >= AgenticToolRatio * Math.Max(1, s.ChatCalls);
         if (!agentic) return SessionMode.Interactive;
 
-        return humanSignals > 0 ? SessionMode.SupervisedAgent : SessionMode.Autonomous;
+        // Agentic shape without proof either way: supervised, which discounts latency
+        // rather than dropping it. Being wrong here costs a little accuracy; being wrong
+        // in the autonomous direction silently stops measuring a real person's wait.
+        return SessionMode.SupervisedAgent;
     }
 
     /// <summary>Short human-readable label for the API and dashboard.</summary>

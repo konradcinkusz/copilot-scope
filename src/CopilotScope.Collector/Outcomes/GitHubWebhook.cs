@@ -125,13 +125,21 @@ public static class GitHubWebhook
         }
     }
 
-    /// <summary>Pulls the "#123" out of a revert message.</summary>
+    /// <summary>
+    /// Pulls the pull-request number out of a revert message. Scans from the end rather
+    /// than taking the first '#': a reverted title can contain one of its own
+    /// (<c>Revert "fix: escape C# strings (#42)"</c>), and the trailing reference is the
+    /// one GitHub appends.
+    /// </summary>
     private static int? ExtractPrNumber(string message)
     {
-        var hash = message.IndexOf('#');
-        if (hash < 0) return null;
-        var digits = message[(hash + 1)..].TakeWhile(char.IsDigit).ToArray();
-        return digits.Length > 0 && int.TryParse(new string(digits), out var n) ? n : null;
+        for (var i = message.LastIndexOf('#'); i >= 0; i = message.LastIndexOf('#', i - 1))
+        {
+            var digits = message[(i + 1)..].TakeWhile(char.IsDigit).ToArray();
+            if (digits.Length > 0 && int.TryParse(new string(digits), out var n)) return n;
+            if (i == 0) break;
+        }
+        return null;
     }
 
     private static string? Repository(JsonElement payload) =>

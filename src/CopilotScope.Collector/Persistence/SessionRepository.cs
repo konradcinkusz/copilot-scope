@@ -92,14 +92,25 @@ public sealed class SessionRepository(string connectionString) : IAsyncDisposabl
     /// show the newest 200 sessions the in-memory store happens to hold, and a team's
     /// history would silently disappear hours after it was written.
     /// </summary>
+    /// <summary>
+    /// Internal Copilot helper sessions (title generation, summarization). Excluded in SQL
+    /// rather than after the LIMIT: filtering afterwards under-fills every page and, once
+    /// the offset passes the number of user sessions in the fetched slice, returns nothing
+    /// at all — making older history unreachable through the API.
+    /// </summary>
+    private const string InternalKindFilter =
+        "session_kind NOT IN ('InternalTitleGeneration','InternalSummary','InternalHelper')";
+
     public async Task<List<PersistedSession>> QueryAsync(
-        DateTimeOffset? since, DateTimeOffset? until, int limit, int offset, CancellationToken ct)
+        DateTimeOffset? since, DateTimeOffset? until, int limit, int offset,
+        CancellationToken ct, bool includeInternal = false)
     {
         var result = new List<PersistedSession>();
-        await using var cmd = _dataSource.CreateCommand("""
+        await using var cmd = _dataSource.CreateCommand($"""
             SELECT snapshot FROM sessions
             WHERE ($1::timestamptz IS NULL OR last_seen >= $1)
               AND ($2::timestamptz IS NULL OR last_seen <= $2)
+              {(includeInternal ? "" : $"AND {InternalKindFilter}")}
             ORDER BY last_seen DESC
             LIMIT $3 OFFSET $4;
             """);
@@ -126,12 +137,16 @@ public sealed class SessionRepository(string connectionString) : IAsyncDisposabl
     }
 
     /// <summary>Total rows matching the window — so a pager can report what it is paging through.</summary>
-    public async Task<int> CountAsync(DateTimeOffset? since, DateTimeOffset? until, CancellationToken ct)
+    public async Task<int> CountAsync(DateTimeOffset? since, DateTimeOffset? until, CancellationToken ct,
+        bool includeInternal = false)
     {
-        await using var cmd = _dataSource.CreateCommand("""
+        // Must apply the same filter as QueryAsync, or the pager reports a total it can
+        // never page to.
+        await using var cmd = _dataSource.CreateCommand($"""
             SELECT count(*) FROM sessions
             WHERE ($1::timestamptz IS NULL OR last_seen >= $1)
-              AND ($2::timestamptz IS NULL OR last_seen <= $2);
+              AND ($2::timestamptz IS NULL OR last_seen <= $2)
+              {(includeInternal ? "" : $"AND {InternalKindFilter}")};
             """);
         cmd.Parameters.Add(Nullable(since));
         cmd.Parameters.Add(Nullable(until));
@@ -192,11 +207,13 @@ public sealed class SessionRepository(string connectionString) : IAsyncDisposabl
         Value = value.HasValue ? value.Value : DBNull.Value
     };
 
-    public async Task DeleteAsync(string id, CancellationToken ct)
+    /// <summary>Deletes a session. Returns rows removed, so a caller can tell whether the
+    /// session existed at all — it may live only here, not in the in-memory working set.</summary>
+    public async Task<int> DeleteAsync(string id, CancellationToken ct)
     {
         await using var cmd = _dataSource.CreateCommand("DELETE FROM sessions WHERE id = $1;");
         cmd.Parameters.AddWithValue(id);
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Bulk-deletes rows whose id starts with the given prefix — used to clear a

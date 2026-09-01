@@ -70,7 +70,10 @@ public sealed class ApiKeyRegistry
 
     private void Add(string key, ApiScope scope)
     {
-        if (string.IsNullOrWhiteSpace(key)) return;
+        // IsNullOrEmpty, deliberately NOT IsNullOrWhiteSpace: dropping a whitespace-only key
+        // would leave no keys registered at all, which reads as dev/open mode and disables
+        // authentication everywhere. A strange key is still a key — fail closed.
+        if (string.IsNullOrEmpty(key)) return;
         _keys.Add((Encoding.UTF8.GetBytes(key), scope));
     }
 

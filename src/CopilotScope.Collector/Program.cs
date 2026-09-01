@@ -283,13 +283,18 @@ api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<P
     if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
     var key = Uri.UnescapeDataString(id);
     var removed = store.Remove(key);
+    // Existing only in Postgres is now the normal case for anything older than the
+    // in-memory working set, so the outcome cannot be decided by the store alone: that
+    // reported 404 for a session it had just successfully deleted.
+    var removedFromDb = false;
     if (app.Services.GetService<SessionRepository>() is { } repo)
     {
-        try { await repo.DeleteAsync(key, CancellationToken.None); }
+        try { removedFromDb = await repo.DeleteAsync(key, CancellationToken.None) > 0; }
         catch (Exception ex) { logger.LogWarning(ex, "Failed to delete session {Id} from Postgres.", key); }
     }
-    logger.LogInformation("Session {Id} deleted (existed in memory: {Removed}).", key, removed);
-    return removed ? Results.NoContent() : Results.NotFound();
+    logger.LogInformation("Session {Id} deleted (memory: {Memory}, database: {Db}).",
+        key, removed, removedFromDb);
+    return removed || removedFromDb ? Results.NoContent() : Results.NotFound();
 });
 
 // Overview aggregates the same window the session list pages through, so "everything you
@@ -355,7 +360,21 @@ api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<
 // signature over the raw body, and cannot send an x-api-key header.
 if (outcomeOptions.Enabled && app.Services.GetService<OutcomeRepository>() is { } outcomes)
 {
-    await outcomes.EnsureSchemaAsync(CancellationToken.None);
+    // Postgres is commonly not accepting connections yet when the collector starts under
+    // compose. Persistence tolerates that and degrades; an unguarded schema call here would
+    // instead take the whole collector down, losing ingest over an opt-in side feature.
+    // The webhook route re-attempts the schema on its first delivery.
+    var outcomeSchemaReady = false;
+    try
+    {
+        await outcomes.EnsureSchemaAsync(CancellationToken.None);
+        outcomeSchemaReady = true;
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex,
+            "Outcome schema not ready at startup (is Postgres up?) — will retry on first webhook delivery.");
+    }
 
     app.MapPost("/api/outcomes/github", async (HttpRequest request, ILogger<Program> logger) =>
     {
@@ -373,6 +392,12 @@ if (outcomeOptions.Enabled && app.Services.GetService<OutcomeRepository>() is { 
             return Results.Unauthorized();
         }
 
+        if (!outcomeSchemaReady)
+        {
+            await outcomes.EnsureSchemaAsync(CancellationToken.None);
+            outcomeSchemaReady = true;
+        }
+
         var eventName = request.Headers["X-GitHub-Event"].FirstOrDefault() ?? "";
         using var document = System.Text.Json.JsonDocument.Parse(body);
 
@@ -386,14 +411,8 @@ if (outcomeOptions.Enabled && app.Services.GetService<OutcomeRepository>() is { 
         {
             var reverted = 0;
             foreach (var (repo, number, at) in GitHubWebhook.ParseReverts(document.RootElement))
-            {
-                // Mark-only upsert: the ON CONFLICT merge ORs the revert flag onto the
-                // existing row and leaves every other field alone.
-                await outcomes.UpsertAsync(new PullRequestOutcome(
-                    repo, number, "", "", DateTimeOffset.UnixEpoch, null, null, null, 0, 0, 0,
-                    Reverted: true, RevertedAt: at), CancellationToken.None);
-                reverted++;
-            }
+                if (await outcomes.MarkRevertedAsync(repo, number, at, CancellationToken.None))
+                    reverted++;
             return Results.Ok(new { reverted });
         }
 

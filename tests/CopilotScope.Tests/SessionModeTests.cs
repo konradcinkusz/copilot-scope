@@ -56,13 +56,16 @@ public class SessionModeTests
     }
 
     [Fact]
-    public void HeavyToolUseWithNoHumanSignalAtAllIsAutonomous()
+    public void HeavyToolUseWithNoDecisionTelemetryIsSupervisedNotAutonomous()
     {
-        // A read-only agent run: no edit decisions of any kind, no feedback.
+        // Copilot CLI emits no edit decisions and no feedback at all, so "no human signal"
+        // there means "no telemetry", not "no human". Calling that autonomous would zero the
+        // latency component for someone who really was waiting — autonomy needs positive
+        // evidence, and supervised is the safe classification without it.
         var s = Session();
         s.ChatCalls = 2;
         s.ToolCalls = 25;
-        Assert.Equal(SessionMode.Autonomous, SessionModeClassifier.Classify(s));
+        Assert.Equal(SessionMode.SupervisedAgent, SessionModeClassifier.Classify(s));
     }
 
     [Fact]
