@@ -280,18 +280,33 @@
                         Biggest drag on quality: <b>@worst.Name</b> (@((worst.Value * 100).ToString("0"))/100) — @worst.Detail
                     </div>
                 }
+                @if (q.Mode is SessionMode.Autonomous or SessionMode.SupervisedAgent)
+                {
+                    <div class="mode-note">
+                        Scored as an <b>@q.ModeLabel</b> run. Time-to-first-token and edit acceptance
+                        measure a person waiting and deciding; on a delegated run neither is present,
+                        so this session is weighted on friction and reliability instead.
+                    </div>
+                }
                 <div class="components">
                     @foreach (var c in q.Components)
                     {
                         // Certain factors are VS Code–only; mark them clearly for CLI sessions
                         var isCliNa = IsCli(s) && c.Samples == 0 && c.Name is "acceptance" or "feedback";
-                        <div class="component @(isCliNa ? "component-na" : "")">
+                        // A zero weight means this session's mode excludes the factor: it was
+                        // computed but does not measure anything here (see the mode note above).
+                        var notScored = c.Weight == 0;
+                        <div class="component @(isCliNa || notScored ? "component-na" : "")">
                             <div class="component-head">
-                                <span><span class="dot dot-@(isCliNa ? "unknown" : TrafficClass(c))"></span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
+                                <span><span class="dot dot-@(isCliNa || notScored ? "unknown" : TrafficClass(c))"></span>@c.Name <em>@(notScored ? "not scored" : $"w={c.Weight:0.00}")</em></span>
                                 <span>@(isCliNa ? "—" : (c.Value * 100).ToString("0"))</span>
                             </div>
                             @if (!isCliNa) { <div class="bar"><span style="width:@(Pct(c.Value))%"></span></div> }
-                            <div class="component-detail">@(isCliNa ? "not emitted by CLI" : c.Detail + (c.Samples == 0 ? " · prior" : ""))</div>
+                            <div class="component-detail">
+                                @(isCliNa ? "not emitted by CLI"
+                                  : notScored ? $"{c.Detail} · excluded for {q.ModeLabel} sessions"
+                                  : c.Detail + (c.Samples == 0 ? " · prior" : ""))
+                            </div>
                         </div>
                     }
                 </div>

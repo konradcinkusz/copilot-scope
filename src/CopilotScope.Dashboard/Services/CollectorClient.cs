@@ -51,6 +51,9 @@ public enum SessionKind
 
 public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor, Cowork }
 
+/// <summary>Mirrors the collector's SessionMode — how the session was driven.</summary>
+public enum SessionMode { Unknown, Interactive, SupervisedAgent, Autonomous }
+
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
     DateTimeOffset FirstSeen, DateTimeOffset LastSeen,
@@ -63,7 +66,9 @@ public sealed record SessionSummaryDto(
     Dictionary<string, int> Models,
     QualityReportDto Quality,
     SessionKind Kind,
-    EmitterKind EmitterKind = EmitterKind.Unknown);
+    EmitterKind EmitterKind = EmitterKind.Unknown,
+    /// <summary>Edits applied under a permission mode rather than by a human decision.</summary>
+    int EditsAutoAccepted = 0);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -98,10 +103,23 @@ public sealed record SessionEventDto(DateTimeOffset Time, string Kind, string Su
 
 public sealed record QualityReportDto(
     double Score, double Confidence, string Grade, List<QualityComponentDto> Components,
-    double? PercentileRank = null, int? HistoryCount = null, double? HistoryMean = null, double? HistoryStdDev = null)
+    double? PercentileRank = null, int? HistoryCount = null, double? HistoryMean = null, double? HistoryStdDev = null,
+    /// <summary>How the session was driven; decides which components carried weight.</summary>
+    SessionMode Mode = SessionMode.Unknown,
+    /// <summary>Name of the scoring profile the weights came from.</summary>
+    string Profile = "interactive")
 {
     public double? ZScore =>
         HistoryMean is { } mu && HistoryStdDev is > 0 ? (Score - mu) / HistoryStdDev : null;
+
+    /// <summary>Human-readable session mode, mirroring the collector's own label.</summary>
+    public string ModeLabel => Mode switch
+    {
+        SessionMode.Interactive => "interactive",
+        SessionMode.SupervisedAgent => "supervised agent",
+        SessionMode.Autonomous => "autonomous agent",
+        _ => "unknown"
+    };
     public string? RelativeGrade => PercentileRank switch
     {
         >= 0.75 => "above baseline",

@@ -197,6 +197,16 @@ html, body {
 }
 .worst-factor b { color: var(--copper); }
 
+/* Why an agent-driven session is not scored on latency/acceptance. Sits directly
+   above the component list so the "not scored" rows below it read as deliberate. */
+.mode-note {
+  font-size: 12px; line-height: 1.5; color: var(--dim);
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-left: 3px solid var(--copper); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 12px;
+}
+.mode-note b { color: var(--text); }
+
 /* ------------------------------------------------------------- status chip */
 
 .status-chip {
