@@ -165,6 +165,7 @@ Configure Azure AI Foundry (e.g. in `appsettings.Development.json` or environmen
   "CopilotScope": {
     "JudgeAgent": {
       "CollectorBaseUrl": "http://localhost:4318",
+      "CollectorApiKey": null,
       "AzureAI": {
         "Endpoint": "https://<your-foundry-resource>.openai.azure.com",
         "DeploymentName": "<your-model-deployment>",
@@ -178,6 +179,28 @@ Configure Azure AI Foundry (e.g. in `appsettings.Development.json` or environmen
 `ApiKey: null` (the default) uses `DefaultAzureCredential` (managed identity / `az login`) instead
 of a key, same as AgentForge.
 
-Auth for the ingest-adjacent `/api/sessions/{id}/judge` endpoint follows the same pattern as the
-Collector and AgentForge: set `CopilotScope:JudgeAgent:Ingest:ApiKey` and send it as `x-api-key`
-(or `Authorization: Bearer <key>`); unset, the endpoint is open (dev mode).
+### Two keys, in opposite directions
+
+Secured deployments need both, and they are easy to confuse:
+
+| Setting | Direction | What it is for |
+|---|---|---|
+| `CopilotScope:JudgeAgent:Ingest:ApiKey` | **inbound** | the key a caller must present to `POST /api/sessions/{id}/judge` |
+| `CopilotScope:JudgeAgent:CollectorApiKey` | **outbound** | the key this service presents *to the Collector* when reading a session |
+
+The outbound one is the one people miss. `infra/main.bicep` makes the Collector's ingest key a
+**required** parameter, so every Azure deployment runs a Collector whose whole `/api` group is
+gated — and a judge that presents no key gets a 401 on every session read, at request time, with
+nothing at startup to warn about it. Give it a **Read**-scoped Collector key
+(`CopilotScope:Keys:Read`): the judge only ever reads the one session a request names, and a
+Read key cannot delete or seed.
+
+If `CollectorApiKey` is unset it falls back to `CopilotScope:Ingest:ApiKey`, so a compose file
+that already exports one shared key keeps working with no extra configuration.
+
+Check it before you need it — `GET /api/health` reports `collectorAuthConfigured`:
+
+```bash
+curl -s http://localhost:5400/api/health
+# {"status":"ok","collectorAuthConfigured":true,"azureAiConfigured":true}
+```

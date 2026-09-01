@@ -83,6 +83,32 @@ Configure a cohort (e.g. in `appsettings.Development.json`) with real, consented
 }
 ```
 
+### Talking to a secured Collector
+
+AgentForge reads sessions from the Collector, and `infra/main.bicep` makes the Collector's
+ingest key a **required** parameter — so every Azure deployment runs a Collector whose whole
+`/api` group is gated. Present a key or every profile build 401s at request time:
+
+```json
+{
+  "CopilotScope": {
+    "AgentForge": {
+      "CollectorBaseUrl": "http://localhost:4318",
+      "CollectorApiKey": "<a Read-scoped Collector key>"
+    }
+  }
+}
+```
+
+A **Read**-scoped key (`CopilotScope:Keys:Read` on the Collector) is the right one: AgentForge
+only ever reads sessions a cohort already names, and a Read key cannot delete or seed. Unset,
+it falls back to `CopilotScope:Ingest:ApiKey`, so a compose file exporting one shared key keeps
+working. `GET /api/health` reports `collectorAuthConfigured` so a missing key is visible before
+the first request fails.
+
+Note this is the *outbound* key. `CopilotScope:AgentForge:Ingest:ApiKey` is the separate
+*inbound* one, which callers of AgentForge's own endpoints must present.
+
 Preview the assembled profile before provisioning (no Azure AI call, just Collector reads):
 
 ```bash

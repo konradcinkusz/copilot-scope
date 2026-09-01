@@ -20,7 +20,21 @@ builder.Configuration.GetSection("CopilotScope:AgentForge:AzureAI").Bind(azureAi
 builder.Services.AddSingleton(azureAiOptions);
 
 var collectorBaseUrl = builder.Configuration["CopilotScope:AgentForge:CollectorBaseUrl"] ?? "http://collector:4318";
-builder.Services.AddHttpClient<ICollectorClient, CollectorClient>(c => c.BaseAddress = new Uri(collectorBaseUrl));
+
+// The Collector gates its whole /api group behind a key, and infra/main.bicep makes that key
+// a REQUIRED parameter — so every Azure deployment runs a secured Collector, and this client
+// must present the key or every session read 401s at request time. Without it the cloud tier
+// only ever worked against an open dev-mode Collector, which is the opposite of the posture
+// the project's own deployment guidance sets. A Read-scoped key is the right one here: these
+// services only ever read sessions.
+var collectorApiKey = builder.Configuration["CopilotScope:AgentForge:CollectorApiKey"]
+                   ?? builder.Configuration["CopilotScope:Ingest:ApiKey"];
+builder.Services.AddHttpClient<ICollectorClient, CollectorClient>(c =>
+{
+    c.BaseAddress = new Uri(collectorBaseUrl);
+    if (!string.IsNullOrEmpty(collectorApiKey))
+        c.DefaultRequestHeaders.Add(ApiKeyAuth.HeaderName, collectorApiKey);
+});
 
 builder.Services.AddTransient<PersonaProfileBuilder>();
 builder.Services.AddSingleton<PersonaPromptBuilder>();
@@ -33,17 +47,15 @@ app.MapDefaultEndpoints(); // /health + /alive
 
 var ingestApiKey = app.Configuration["CopilotScope:AgentForge:Ingest:ApiKey"]; // null/empty → open (dev mode)
 
-bool IsAuthorized(HttpRequest request)
-{
-    if (string.IsNullOrEmpty(ingestApiKey)) return true;
-    var provided = request.Headers["x-api-key"].FirstOrDefault()
-                ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
-    return provided == ingestApiKey;
-}
+// Constant-time compare via the shared kernel. The previous `==` short-circuits on the
+// first differing byte, which leaks the key a character at a time under timing analysis —
+// the Collector was hardened for exactly that reason and these two were left behind.
+bool IsAuthorized(HttpRequest request) => ApiKeyAuth.Authorized(request, ingestApiKey);
 
 app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
+    collectorAuthConfigured = !string.IsNullOrEmpty(collectorApiKey),
     azureAiConfigured = !string.IsNullOrEmpty(azureAiOptions.Endpoint),
     cohortsLoaded = cohortsOptions.Cohorts.Count
 }));
