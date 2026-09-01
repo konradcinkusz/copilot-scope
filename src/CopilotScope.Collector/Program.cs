@@ -4,6 +4,7 @@ using CopilotScope.Collector.Forwarding;
 using CopilotScope.Collector.Otlp;
 using CopilotScope.Collector.Outcomes;
 using CopilotScope.Collector.Persistence;
+using CopilotScope.Collector.Privacy;
 using CopilotScope.Collector.Quality;
 using CopilotScope.ServiceDefaults;
 
@@ -62,6 +63,22 @@ var outcomeOptions = new OutcomeOptions();
 builder.Configuration.GetSection("CopilotScope:Outcomes").Bind(outcomeOptions);
 builder.Services.AddSingleton(outcomeOptions);
 
+// Privacy mode (docs/PRIVACY.md). Off by default; on, it pseudonymizes identity at ingest,
+// drops prompt/response content, applies an aggregation floor to every view, and logs reads.
+// Bound from the built container's IConfiguration rather than from builder.Configuration:
+// sources added by a host wrapper (a test host, a sidecar) land after CreateBuilder has run,
+// so binding early would silently read defaults and report privacy mode off while it is on.
+builder.Services.AddSingleton(sp =>
+{
+    var options = new PrivacyOptions();
+    sp.GetRequiredService<IConfiguration>().GetSection("CopilotScope:Privacy").Bind(options);
+    return options;
+});
+builder.Services.AddSingleton(sp => new Pseudonymizer(sp.GetRequiredService<PrivacyOptions>().Salt));
+builder.Services.AddSingleton<PrivacyRedactor>();
+builder.Services.AddSingleton<PrivacyGuard>();
+builder.Services.AddSingleton<AccessAuditLog>();
+
 if (persistenceEnabled)
 {
     builder.Services.AddSingleton(new SessionRepository(connectionString!));
@@ -70,6 +87,14 @@ if (persistenceEnabled)
 
     if (outcomeOptions.Enabled)
         builder.Services.AddSingleton(new OutcomeRepository(connectionString!));
+
+    // The audit record must outlive the sessions it describes, so it gets its own table and
+    // is never touched by the session retention sweep. Registered whenever Postgres is
+    // present and switched on at runtime by AccessAuditLog.Enabled — the privacy options are
+    // not yet bound at this point, and guessing them here is how a deployment ends up with
+    // an audit log that reports itself as durable while writing nowhere.
+    builder.Services.AddSingleton(new AccessAuditRepository(connectionString!));
+    builder.Services.AddHostedService<AccessAuditWriter>();
 }
 
 var app = builder.Build();
@@ -93,6 +118,26 @@ var quality = app.Services.GetRequiredService<QualityEngine>();
 var insightPipeline = app.Services.GetRequiredService<InsightPipeline>();
 var forwarder = app.Services.GetRequiredService<OtlpForwarder>();
 var persistence = app.Services.GetService<PersistenceWriter>(); // null when persistence disabled
+var privacyOptions = app.Services.GetRequiredService<PrivacyOptions>();
+var redactor = app.Services.GetRequiredService<PrivacyRedactor>();
+var privacyGuard = app.Services.GetRequiredService<PrivacyGuard>();
+var audit = app.Services.GetRequiredService<AccessAuditLog>();
+
+// Raw forwarding relays the payload exactly as it arrived — before redaction, by design,
+// since a faithful relay is the whole point. Under privacy mode that is a hole straight
+// through every control here, so it is refused unless the operator states that the upstream
+// backend is in scope of the same works agreement.
+var forwardRaw = !privacyOptions.Enabled || privacyOptions.AllowRawForwarding;
+if (forwarder.Enabled && !forwardRaw)
+    app.Logger.LogWarning(
+        "Privacy mode is on and CopilotScope:Privacy:AllowRawForwarding is not set — OTLP forwarding is " +
+        "DISABLED. Raw forwarding relays un-redacted payloads upstream; set AllowRawForwarding=true only " +
+        "if the upstream backend is covered by the same data-processing agreement.");
+if (privacyOptions.Enabled && app.Services.GetRequiredService<Pseudonymizer>().SaltIsEphemeral)
+    app.Logger.LogWarning(
+        "Privacy mode is on but CopilotScope:Privacy:Salt is not set — an ephemeral salt was generated. " +
+        "Pseudonyms will change on every restart, so history stops correlating across a deploy. " +
+        "Set a stable secret salt before this is more than a trial.");
 
 // ---------------------------------------------------------------- OTLP ingest
 // Copilot Chat's default exporter is otlp-http (protobuf) on http://localhost:4318.
@@ -193,6 +238,11 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
         return Results.BadRequest(new { error = ex.Message });
     }
 
+    // Redact BEFORE anything aggregates the batch: nothing downstream — the store, the
+    // write-behind snapshot, the Prometheus exporter — then ever holds the identifying value,
+    // so the guarantee survives a database dump rather than depending on every read path.
+    redactor.Apply(batch);
+
     var knownBefore = store.All.Count;
     // The connection identity scopes process/service fingerprints to one machine. Without
     // it, two developers behind a shared collector whose emitters report the same
@@ -210,7 +260,7 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
             catch (Exception ex) { logger.LogDebug(ex, "Could not delete merged bucket {Id} from Postgres.", id); }
         }
 
-    forwarder.Enqueue($"/v1/{signal}", payload);
+    if (forwardRaw) forwarder.Enqueue($"/v1/{signal}", payload);
 
     if (store.All.Count > knownBefore)
         logger.LogInformation("New session(s) started: {Sessions}", string.Join(", ", touched));
@@ -245,18 +295,65 @@ api.AddEndpointFilter(async (ctx, next) =>
 // hours of being written, because the store only ever keeps the most recent sessions.
 // `days` is the friendly form of the window; `since`/`until` are the precise one.
 api.MapGet("/sessions", async (bool? includeInternal, int? days, DateTimeOffset? since, DateTimeOffset? until,
-    int? limit, int? offset, SessionQueryService sessions, CancellationToken ct) =>
+    int? limit, int? offset, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
 {
     var from = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
     var page = await sessions.PageAsync(includeInternal == true, from, until, limit, offset, ct);
-    return Results.Ok(page);
+
+    // The aggregation floor is applied to what the caller would actually see. Filtering a
+    // "team" view down to one repository worked on by one person is how a pseudonymous list
+    // becomes a named one, and the filters that do it are the query parameters above.
+    var verdict = privacyGuard.EvaluateSubjects(page.Subjects);
+    var actor = AccessAuditLog.ActorFor(request);
+    audit.Record(actor, "sessions.list", DescribeQuery(days, since, until, limit, offset),
+        verdict.Allowed ? $"served {page.Sessions.Count} session(s)" : "withheld (k-anonymity)");
+
+    return verdict.Allowed
+        ? Results.Ok(page)
+        : Results.Ok(page.Suppressed(verdict.Reason));
 });
 
-api.MapGet("/sessions/{id}", async (string id, SessionQueryService sessions, CancellationToken ct) =>
+// One line describing what a read covered, for the audit record. Deliberately the query,
+// not the result: an auditor asks what was looked for, not what happened to match.
+static string DescribeQuery(int? days, DateTimeOffset? since, DateTimeOffset? until, int? limit, int? offset)
 {
+    var parts = new List<string>();
+    if (days is > 0) parts.Add($"days={days}");
+    if (since is { } s) parts.Add($"since={s.UtcDateTime:O}");
+    if (until is { } u) parts.Add($"until={u.UtcDateTime:O}");
+    if (limit is > 0) parts.Add($"limit={limit}");
+    if (offset is > 0) parts.Add($"offset={offset}");
+    return parts.Count > 0 ? string.Join(" ", parts) : "all";
+}
+
+api.MapGet("/sessions/{id}", async (string id, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var requested = Uri.UnescapeDataString(id);
+    var actor = AccessAuditLog.ActorFor(request);
+
+    // A single session is a group of one, so drilling into it is precisely the
+    // individual-level inspection the aggregation floor exists to prevent. Refused before
+    // the lookup: whether the session exists is itself information about one person.
+    if (privacyGuard.SessionDetailSuppressed)
+    {
+        audit.Record(actor, "sessions.detail", requested, "refused (privacy mode)");
+        return Results.Json(new
+        {
+            error = "Per-session detail is disabled under privacy mode.",
+            reason = "A single session covers one subject, below any k-anonymity floor. " +
+                     "Set CopilotScope:Privacy:SuppressSessionDetail=false only where the works " +
+                     "agreement permits individual review.",
+        }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
     // Falls back to Postgres for sessions trimmed from memory — a link to last week's
     // session has to keep working.
-    if (await sessions.FindAsync(Uri.UnescapeDataString(id), ct) is not { } s) return Results.NotFound();
+    if (await sessions.FindAsync(requested, ct) is not { } s)
+    {
+        audit.Record(actor, "sessions.detail", requested, "not found");
+        return Results.NotFound();
+    }
+    audit.Record(actor, "sessions.detail", requested, "served");
     var baseline = await sessions.BaselineAsync(ct);
 
     // Outcome links are opt-in and best-effort: an outcome store that is unreachable must
@@ -294,6 +391,10 @@ api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<P
     }
     logger.LogInformation("Session {Id} deleted (memory: {Memory}, database: {Db}).",
         key, removed, removedFromDb);
+    // Irreversible, and it destroys the record of one person's work — exactly the act an
+    // access log has to be able to account for afterwards.
+    audit.Record(AccessAuditLog.ActorFor(request), "sessions.delete", key,
+        removed || removedFromDb ? "deleted" : "not found");
     return removed || removedFromDb ? Results.NoContent() : Results.NotFound();
 });
 
@@ -318,11 +419,78 @@ api.MapGet("/coverage", () => Results.Ok(EmitterCoverage.All.Select(e => new
     note = e.Note
 })));
 
-api.MapGet("/overview", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
+api.MapGet("/overview", async (int? days, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
 {
     var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
     var all = await sessions.AllInWindowAsync(from, ct);
-    return Results.Ok(DtoOverview.Build(all, quality));
+
+    var verdict = privacyGuard.Evaluate(all);
+    audit.Record(AccessAuditLog.ActorFor(request), "overview", days is > 0 ? $"days={days}" : "all",
+        verdict.Allowed ? $"served {all.Count} session(s)" : "withheld (k-anonymity)");
+
+    return verdict.Allowed
+        ? Results.Ok(DtoOverview.Build(all, quality))
+        : Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+});
+
+// ------------------------------------------------------------------- privacy
+// What privacy mode is actually enforcing right now, with live counters. A works council or
+// a DPO asks to see the control, not the setting — and an operator needs to confirm the
+// deployment matches the annex they signed. Read scope: it exposes no session data.
+api.MapGet("/privacy", () => Results.Ok(new
+{
+    enabled = privacyOptions.Enabled,
+    mode = privacyOptions.Describe(),
+    minimumGroupSize = privacyOptions.MinimumGroupSize,
+    sessionDetailSuppressed = privacyGuard.SessionDetailSuppressed,
+    transcriptsRetained = !privacyOptions.Enabled,
+    pseudonymizeBranch = privacyOptions.PseudonymizeBranch,
+    rawForwarding = forwarder.Enabled && forwardRaw,
+    saltConfigured = !app.Services.GetRequiredService<Pseudonymizer>().SaltIsEphemeral,
+    auditLog = audit.Enabled,
+    auditDurable = audit.Enabled && app.Services.GetService<AccessAuditRepository>() is not null,
+    counters = new
+    {
+        attributesPseudonymized = redactor.AttributesPseudonymized,
+        contentDropped = redactor.ContentDropped,
+        accessesRecorded = audit.Recorded,
+    },
+    documentation = "docs/PRIVACY.md",
+}));
+
+// The access log itself. Admin scope: it names who looked at what, which is exactly the
+// kind of record that should not be readable by everyone it describes. `format=csv` is what
+// gets handed to a DPO or a works council.
+api.MapGet("/audit", async (HttpRequest request, string? format, int? limit, CancellationToken ct) =>
+{
+    if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
+    if (!audit.Enabled)
+        return Results.Json(new { error = "The access audit log is off. Enable CopilotScope:Privacy." },
+            statusCode: StatusCodes.Status409Conflict);
+
+    var take = Math.Clamp(limit ?? 500, 1, 50_000);
+
+    // Prefer the durable record: the in-memory tail is only the recent slice, and an export
+    // that silently stops at the last restart would misrepresent itself as complete.
+    List<AccessAuditEntry> entries;
+    if (audit.Enabled && app.Services.GetService<AccessAuditRepository>() is { } auditRepo)
+    {
+        try { entries = await auditRepo.RecentAsync(take, ct); }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Audit export fell back to the in-memory tail.");
+            entries = audit.Recent(take).ToList();
+        }
+    }
+    else entries = audit.Recent(take).ToList();
+
+    // Reading the audit log is itself an access worth recording.
+    audit.Record(AccessAuditLog.ActorFor(request), "audit.export", $"limit={take}", $"served {entries.Count} entr{(entries.Count == 1 ? "y" : "ies")}");
+
+    return string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase)
+        ? Results.Text(AccessAuditLog.ToCsv(entries), "text/csv; charset=utf-8")
+        : Results.Ok(entries);
 });
 
 // ------------------------------------------------------------ admin / seeding
@@ -475,6 +643,7 @@ app.MapGet("/", () => Results.Text(
     "CopilotScope collector.\n" +
     "OTLP ingest: POST /v1/traces | /v1/metrics | /v1/logs\n" +
     "API: GET /api/sessions | /api/sessions/{id} | /api/health | POST /api/admin/seed\n" +
+    "Privacy: GET /api/privacy | /api/audit?format=csv (admin)\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
@@ -487,6 +656,7 @@ app.Logger.LogInformation(
       Ingest auth      : {Auth}
       Persistence      : {Persist}
       Forwarding       : {Fwd}
+      Privacy mode     : {Privacy}
     Point VS Code at this endpoint:
       "github.copilot.chat.otel.enabled": true,
       "github.copilot.chat.otel.otlpEndpoint": "<this host>"
@@ -497,6 +667,7 @@ app.Logger.LogInformation(
         : "disabled",
     apiKeys.Describe(),
     persistenceEnabled ? "Postgres" : "in-memory only",
-    forwarder.Enabled ? "enabled" : "disabled");
+    forwarder.Enabled ? (forwardRaw ? "enabled" : "blocked by privacy mode") : "disabled",
+    privacyOptions.Describe());
 
 app.Run();

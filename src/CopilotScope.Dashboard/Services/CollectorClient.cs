@@ -51,6 +51,17 @@ public sealed class CollectorClient(HttpClient http)
         try { return await http.GetFromJsonAsync<HealthDto>("/api/health", ct); }
         catch { return null; }
     }
+
+    /// <summary>
+    /// What privacy mode is enforcing. Read once per circuit rather than per refresh: it is
+    /// deployment configuration, and knowing it up front lets the UI explain a withheld view
+    /// instead of rendering an empty one that looks like a bug.
+    /// </summary>
+    public async Task<PrivacyDto?> GetPrivacyAsync(CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<PrivacyDto>("/api/privacy", ct); }
+        catch { return null; }
+    }
 }
 
 // --- DTOs mirroring CopilotScope.Collector.Api (deserialized with Web defaults) ---
@@ -58,7 +69,18 @@ public sealed class CollectorClient(HttpClient http)
 /// <summary>One page of session history. <c>Durable</c> is false when the collector is
 /// running without Postgres, i.e. the window is bounded by memory rather than by the query.</summary>
 public sealed record SessionPageDto(
-    List<SessionSummaryDto> Sessions, int Total, int Limit, int Offset, bool Durable);
+    List<SessionSummaryDto> Sessions, int Total, int Limit, int Offset, bool Durable,
+    /// <summary>Distinct origins this page covers — what privacy mode's aggregation floor counts.</summary>
+    List<string>? Subjects = null,
+    /// <summary>Set when the k-anonymity floor withheld the page. The list is then empty by
+    /// design, and this is what the UI should say instead of showing "no sessions".</summary>
+    string? SuppressedReason = null);
+
+/// <summary>What the collector's privacy mode is enforcing (mirrors GET /api/privacy).</summary>
+public sealed record PrivacyDto(
+    bool Enabled, string Mode, int MinimumGroupSize, bool SessionDetailSuppressed,
+    bool TranscriptsRetained, bool PseudonymizeBranch, bool RawForwarding,
+    bool SaltConfigured, bool AuditLog, bool AuditDurable, string Documentation);
 
 public enum SessionKind
 {

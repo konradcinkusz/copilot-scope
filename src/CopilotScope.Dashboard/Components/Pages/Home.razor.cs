@@ -30,6 +30,15 @@ public partial class Home : ComponentBase, IDisposable
     /// <summary>Total sessions matching the current query, which may exceed the rail page.
     /// Whether that history is durable is already on the health chip (Postgres / in-memory).</summary>
     private int _sessionTotal;
+
+    /// <summary>What the collector's privacy mode enforces; null when it is off or unreachable.</summary>
+    private PrivacyDto? _privacy;
+
+    /// <summary>Set when the k-anonymity floor withheld the session list. Rendered instead of
+    /// "no sessions yet" — an empty rail with no explanation reads as a broken collector.</summary>
+    private string? _suppressed;
+
+    private bool DetailSuppressed => _privacy?.SessionDetailSuppressed == true;
     // Stable display order for the rail. The collector returns sessions newest-first,
     // which reshuffles the rail under the cursor every 2 s poll while a session is
     // live. We freeze the order a user has seen — existing rows keep their position,
@@ -121,6 +130,10 @@ public partial class Home : ComponentBase, IDisposable
             _canReadTranscripts = Auth.CanReadTranscripts(user);
             _canDelete = Auth.CanDelete(user);
         }
+
+        // Deployment configuration, not per-refresh state: read once so the UI can explain a
+        // withheld view rather than rendering an empty one that looks like a failure.
+        _privacy = await Collector.GetPrivacyAsync(_cts.Token);
 
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
@@ -226,6 +239,7 @@ public partial class Home : ComponentBase, IDisposable
             var page = await Collector.GetSessionPageAsync(_showInternal, limit: RailPageSize, ct: _cts.Token);
             var fetched = page.Sessions;
             _sessionTotal = page.Total;
+            _suppressed = page.SuppressedReason;
 
             // Freeze the rail order: keep known sessions where they are, prepend new
             // ones (server order = newest-first) at the top, drop ones that vanished.
@@ -238,7 +252,9 @@ public partial class Home : ComponentBase, IDisposable
 
             // Auto-focus the most recent session until the user picks one explicitly.
             _selectedId ??= _sessions.FirstOrDefault()?.Id;
-            if (_selectedId is not null)
+            // Under privacy mode the collector refuses per-session detail; polling it every two
+            // seconds would be a 403 loop that also fills the access log with refusals.
+            if (_selectedId is not null && !DetailSuppressed)
                 _detail = await Collector.GetSessionAsync(_selectedId, _cts.Token) ?? _detail;
         }
         catch (OperationCanceledException) { throw; }
@@ -261,6 +277,7 @@ public partial class Home : ComponentBase, IDisposable
         _confirmDelete = false;
         _showChat = false;
         _showAllTurns = false;
+        if (DetailSuppressed) { _detail = null; return; }
         _detail = await Collector.GetSessionAsync(id, _cts.Token);
     }
 

@@ -36,7 +36,10 @@ public sealed record PersistedSession(
     EmitterKind EmitterKind = EmitterKind.Unknown,
     /// <summary>Permission-mode auto-accepts. Defaulted so snapshots written before this
     /// field existed still deserialize — they simply report no auto-applied edits.</summary>
-    int EditsAutoAccepted = 0)
+    int EditsAutoAccepted = 0,
+    /// <summary>Origin scope used by the k-anonymity floor. Defaulted: snapshots written
+    /// before privacy mode existed have no subject, and each then counts as its own.</summary>
+    string? SubjectId = null)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -62,7 +65,8 @@ public sealed record PersistedSession(
         x.ModelUsage.ToDictionary(kv => kv.Key, kv => new PersistedModelStat(
             kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens)),
         x.EmitterKind,
-        x.EditsAutoAccepted));
+        x.EditsAutoAccepted,
+        x.SubjectId));
 
     public CopilotSession ToSession()
     {
@@ -74,6 +78,7 @@ public sealed record PersistedSession(
             AgentName = AgentName,
             Repository = Repository,
             Branch = Branch,
+            SubjectId = SubjectId,
             FirstSeen = FirstSeen,
             LastSeen = LastSeen,
             InputTokens = InputTokens,

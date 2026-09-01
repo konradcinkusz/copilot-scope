@@ -151,7 +151,7 @@ public sealed class SessionStore
 
     private void IngestSpan(OtlpSpan span, HashSet<string> touched, string? sourceId)
     {
-        var session = Resolve(SessionKeyFor(span, sourceId), span.Resource);
+        var session = Resolve(SessionKeyFor(span, sourceId), span.Resource, sourceId);
         if (span.TraceId.Length > 0) _traceToSession[span.TraceId] = session.Id;
         touched.Add(session.Id);
         session.AddSpan(span);
@@ -269,7 +269,7 @@ public sealed class SessionStore
 
     private void IngestMetric(OtlpMetricPoint point, HashSet<string> touched, string? sourceId)
     {
-        var session = Resolve(SessionKeyFor(point.MetricName, point.Attributes, point.Resource, sourceId), point.Resource);
+        var session = Resolve(SessionKeyFor(point.MetricName, point.Attributes, point.Resource, sourceId), point.Resource, sourceId);
         touched.Add(session.Id);
 
         session.Apply(s =>
@@ -334,7 +334,7 @@ public sealed class SessionStore
         if (key is null && log.TraceId is not null && _traceToSession.TryGetValue(log.TraceId, out var mapped))
             key = mapped;
 
-        var session = Resolve(key, log.Resource);
+        var session = Resolve(key, log.Resource, sourceId);
         touched.Add(session.Id);
 
         var name = ClaudeCode.Describe(log) ?? log.EventName ?? log.Body ?? "log";
@@ -457,6 +457,31 @@ public sealed class SessionStore
         return string.IsNullOrEmpty(sourceId) ? null : $"src:{sourceId}";
     }
 
+    /// <summary>
+    /// Resource attributes that name the person behind a session, most specific first.
+    /// Under privacy mode these arrive already pseudonymized, so the scope is a token; the
+    /// equality that the aggregation floor counts on survives either way.
+    /// </summary>
+    private static readonly string[] SubjectKeys =
+    [
+        "enduser.id", "claude_code.user.account_uuid", "user.email", "user.id", "user.name",
+        "github.copilot.user", "os.user",
+    ];
+
+    /// <summary>
+    /// Who this telemetry is about, for the k-anonymity floor: the identified person where an
+    /// emitter names one, otherwise the machine it came from. A developer running two
+    /// assistants is one subject on one host, which is the answer a works council means by
+    /// "how many people does this view cover".
+    /// </summary>
+    private static string? SubjectScope(Dictionary<string, AttrValue> resource, string? sourceId)
+    {
+        foreach (var key in SubjectKeys)
+            if (resource.TryGetValue(key, out var v) && v.ToString() is { Length: > 0 } value)
+                return $"user:{value}";
+        return HostScope(resource, sourceId);
+    }
+
     /// <param name="signalName">
     /// Span, metric or event name the emitter is being detected from. Claude Code and Cowork
     /// may ship a bare resource, in which case the claude_code.* namespace is the only thing
@@ -506,7 +531,7 @@ public sealed class SessionStore
         }
     }
 
-    private CopilotSession Resolve(string? key, Dictionary<string, AttrValue> resource)
+    private CopilotSession Resolve(string? key, Dictionary<string, AttrValue> resource, string? sourceId = null)
     {
         key ??= "unattributed";
         var created = false;
@@ -519,6 +544,13 @@ public sealed class SessionStore
                 VsCodeSessionId = resource.TryGetValue(Sem.SessionId, out var s) ? s.ToString() : null
             };
         });
+
+        // The subject is what the k-anonymity floor counts, so it has to be attached to every
+        // session, not only to the ones a privacy-mode deployment happens to create first.
+        // Backfilled rather than set only on create: a session often starts from a signal
+        // carrying no host attributes and learns its origin from the next one.
+        if (session.SubjectId is null && SubjectScope(resource, sourceId) is { } subject)
+            session.SubjectId = subject;
 
         // Recreating a session that was trimmed from memory: flag it so its persisted
         // snapshot gets merged back before the next flush overwrites it.

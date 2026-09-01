@@ -85,10 +85,33 @@
             </div>
         }
 
+        @if (_privacy?.Enabled == true)
+        {
+            @* A works-council deployment: identity is pseudonymized at ingest, prompts and
+               responses are never stored, and views below the aggregation floor do not render.
+               Saying so on screen is part of the point — the people being measured should be
+               able to see what the tool can and cannot do without reading the config. *@
+            <div class="privacy-note" role="note">
+                <b>Privacy mode.</b> Identities are pseudonymized, prompts and responses are not
+                stored, and views covering fewer than @_privacy.MinimumGroupSize developers are
+                withheld. <a href="/docs#privacy">What is collected</a>
+            </div>
+        }
+
         <div class="rail-list">
         @if (_sessions is null)
         {
             <div class="empty">Connecting to the collector…</div>
+        }
+        else if (_suppressed is not null)
+        {
+            @* Not an error and not an empty database: the floor did its job. Say which, or the
+               operator debugs a collector that is working exactly as configured. *@
+            <div class="empty">
+                @_suppressed
+                <br /><br />
+                <a href="/docs#privacy">Why views are withheld</a>
+            </div>
         }
         else if (_sessions.Count == 0)
         {
@@ -133,7 +156,18 @@
     </aside>
 
     <section class="main">
-        @if (_detail is null)
+        @if (DetailSuppressed)
+        {
+            <div class="empty big">
+                <div class="empty-title">Per-session detail is off</div>
+                This collector runs in privacy mode. A single session covers one person, which is
+                below any aggregation floor, so the detail view is disabled rather than
+                pseudonymized — use the overview and the aggregate reports instead.
+                <br /><br />
+                <a href="/docs#privacy">What privacy mode enforces</a>
+            </div>
+        }
+        else if (_detail is null)
         {
             <div class="empty big">
                 <div class="empty-title">No session selected</div>
