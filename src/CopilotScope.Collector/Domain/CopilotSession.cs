@@ -23,6 +23,15 @@ public sealed class CopilotSession
     public string? AgentName { get; set; }
     public string? Repository { get; set; }
     public string? Branch { get; set; }
+
+    /// <summary>
+    /// Which machine/person this session's telemetry came from — the host scope the resource
+    /// fingerprint already computes, kept so a view can count distinct subjects rather than
+    /// distinct sessions. Under privacy mode the underlying attributes are pseudonymized
+    /// before this is derived, so it is a token; without it, it is the plain host name.
+    /// Null when the emitter sends nothing that identifies an origin.
+    /// </summary>
+    public string? SubjectId { get; set; }
     public DateTimeOffset FirstSeen { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastSeen { get; set; } = DateTimeOffset.UtcNow;
 
@@ -119,6 +128,7 @@ public sealed class CopilotSession
             s.Branch ??= o.Branch;
             s.VsCodeSessionId ??= o.VsCodeSessionId;
 
+            s.SubjectId ??= o.SubjectId;
             s.InputTokens += o.InputTokens; s.OutputTokens += o.OutputTokens;
             s.CacheReadTokens += o.CacheReadTokens; s.CacheCreationTokens += o.CacheCreationTokens;
             s.ChatCalls += o.ChatCalls; s.ChatErrors += o.ChatErrors;

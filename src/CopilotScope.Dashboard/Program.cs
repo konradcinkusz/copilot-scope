@@ -54,13 +54,18 @@ if (string.IsNullOrWhiteSpace(collectorBase))
 // header is simply omitted.
 var ingestApiKey = builder.Configuration["CopilotScope:Ingest:ApiKey"];
 
+// Named the signed-in viewer on every collector call, so the collector's access audit log
+// (privacy mode) records a person rather than "the dashboard".
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddTransient<ActorForwardingHandler>();
+
 builder.Services.AddHttpClient<CollectorClient>(client =>
 {
     client.BaseAddress = new Uri(collectorBase);
     client.Timeout = TimeSpan.FromSeconds(5);
     if (!string.IsNullOrEmpty(ingestApiKey))
         client.DefaultRequestHeaders.Add("x-api-key", ingestApiKey);
-});
+}).AddHttpMessageHandler<ActorForwardingHandler>();
 
 var app = builder.Build();
 

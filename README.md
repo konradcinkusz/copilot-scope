@@ -69,7 +69,12 @@ This matters as much as the features, so it is not buried at the bottom:
 
 - **Not for performance reviews.** The score grades a *session*, not a person.
   Ranking developers by it is a misuse the design does not support — there is no
-  per-developer view, and adding one is not on the roadmap.
+  per-developer view, and adding one is not on the roadmap. On a team deployment
+  this stops being a convention and becomes enforced: **privacy mode**
+  pseudonymizes identities at ingest, drops prompt and response content, refuses
+  any view covering fewer than *k* developers, and logs every read. See
+  [docs/PRIVACY.md](docs/PRIVACY.md) for the GDPR Art. 30 data map, retention
+  behaviour, and a template works-agreement annex.
 - **Acceptance rate is not a target.** Push on it and you reward accepting bad
   suggestions. That is exactly why acceptance is only 0.20 of the composite and
   is paired with *edit survival* — the counter-metric that catches code accepted

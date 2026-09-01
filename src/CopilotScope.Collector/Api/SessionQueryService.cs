@@ -12,7 +12,24 @@ public sealed record SessionPage(
     int Offset,
     /// <summary>False when the collector is running without Postgres, so the caller knows
     /// the window is bounded by what memory holds rather than by the query.</summary>
-    bool Durable);
+    bool Durable,
+    /// <summary>Distinct origins the page covers, for the k-anonymity floor. Counted here
+    /// because the page is where the caller's filters have already been applied — the floor
+    /// has to be evaluated against what would actually be shown, not against all of history.
+    /// Empty and unused when privacy mode is off.</summary>
+    IReadOnlyCollection<string> Subjects,
+    /// <summary>Set when the aggregation floor withheld the page; null when it was served.</summary>
+    string? SuppressedReason = null)
+{
+    /// <summary>The same page with its contents withheld. Shape is preserved deliberately:
+    /// a caller that cannot parse the response learns nothing, whereas an empty page plus a
+    /// reason tells the UI exactly what to say and why.</summary>
+    public SessionPage Suppressed(string reason) =>
+        // Total goes too. "0 sessions shown of 412" is harmless; "0 of 412" for a window that
+        // covers one person is a report about that person's week, which is the thing the floor
+        // was withholding in the first place.
+        this with { Sessions = [], Subjects = [], Total = 0, SuppressedReason = reason };
+}
 
 /// <summary>
 /// The read path for session history.
@@ -71,7 +88,12 @@ public sealed class SessionQueryService(
             ? Math.Max(await repository.CountAsync(since, until, ct, includeInternal), visible.Count)
             : visible.Count;
 
-        return new SessionPage(dtos, total, take, skip, Durable);
+        // Subjects of the page, not of the whole window: the floor answers "how many people
+        // does this screen cover", and the screen is one page of one filtered query.
+        var subjects = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in page) subjects.Add(s.SubjectId ?? $"unknown:{s.Id}");
+
+        return new SessionPage(dtos, total, take, skip, Durable, subjects);
     }
 
     /// <summary>

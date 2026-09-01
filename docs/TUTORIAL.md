@@ -251,7 +251,33 @@ user setting → default.
 
 ## 8. Cloud / team mode
 
-Deploy the collector where the team can reach it (e.g. Azure Container Apps —
+**Turn privacy mode on first.** The moment a second developer's telemetry reaches the same
+collector, you are running a technical system capable of monitoring employee performance —
+which in the EU triggers works-council co-determination on the capability alone, whatever
+you intend to do with it. Privacy mode makes the intent enforceable: identities are
+pseudonymized before anything stores them, prompt and response text is dropped, no view
+renders for fewer than *k* developers, and every read is logged.
+
+```jsonc
+// appsettings.json on the collector
+{
+  "CopilotScope": {
+    "Privacy": {
+      "Enabled": true,
+      "Salt": "<long random secret, stored separately from the database>",
+      "MinimumGroupSize": 5
+    },
+    "History": { "RetentionDays": 90 }
+  }
+}
+```
+
+Check what a running deployment enforces with `GET /api/privacy`. The full data map,
+retention behaviour and a template works-agreement annex are in
+[`docs/PRIVACY.md`](PRIVACY.md) — read it before the first team deployment, not after the
+first question about it.
+
+Then deploy the collector where the team can reach it (e.g. Azure Container Apps —
 `infra/main.bicep`), set an ingest key, and point clients at it:
 
 ```jsonc
@@ -331,3 +357,11 @@ By default Copilot sends **metadata only** (models, tokens, durations, tool
 names, error types) — no prompts, no code. The "Prompts & responses" panel stays
 empty unless `captureContent` is enabled on the client. Repository URLs are
 stripped of embedded credentials before display or storage.
+
+That is the default, not a guarantee: a client with `captureContent` on sends the
+conversation, and the collector stores it. **Privacy mode** turns the default into
+something enforced — content dropped at ingest, identities pseudonymized, an aggregation
+floor on every view, and an access log — regardless of how the clients are configured. For
+any deployment with more than one developer on it, see
+[`docs/PRIVACY.md`](PRIVACY.md), which also carries the GDPR Art. 30 data map, the
+retention and deletion behaviour, and a template works-agreement annex.

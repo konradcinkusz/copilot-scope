@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CopilotScope.Collector.Domain;
+using CopilotScope.Collector.Privacy;
 using CopilotScope.Collector.Quality;
 
 namespace CopilotScope.Collector.Api;
@@ -45,7 +46,8 @@ public sealed class PrometheusExporter(
     SessionStore store,
     QualityEngine quality,
     PricingOptions pricing,
-    PrometheusOptions options)
+    PrometheusOptions options,
+    PrivacyGuard? privacy = null)
 {
     private static readonly string[] ComponentNames =
         ["reliability", "acceptance", "friction", "latency", "feedback", "efficiency"];
@@ -67,7 +69,11 @@ public sealed class PrometheusExporter(
         RenderErrorTypes(sb, rows);
         RenderIngestHealth(sb);
 
-        if (options.PerSession) RenderPerSession(sb, rows);
+        // Per-session series are an individual-level view of one developer's work, labelled by
+        // session id and carrying that session's quality score. Under privacy mode that would
+        // walk straight around the aggregation floor the API enforces — Prometheus is not a
+        // less sensitive surface for being a different port. Refused, not merely discouraged.
+        if (options.PerSession && privacy?.Enabled != true) RenderPerSession(sb, rows);
 
         return sb.ToString();
     }

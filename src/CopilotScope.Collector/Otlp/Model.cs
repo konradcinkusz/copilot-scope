@@ -51,7 +51,10 @@ public sealed class OtlpLogEvent
     public string? EventName { get; init; }
     public DateTimeOffset Time { get; init; }
     public int SeverityNumber { get; init; }
-    public string? Body { get; init; }
+    /// <summary>Settable so privacy mode can drop it: on the GenAI content events the body
+    /// IS the prompt or the completion, so an init-only body would be the one content path
+    /// redaction could not close.</summary>
+    public string? Body { get; set; }
     public string? TraceId { get; init; }
     public Dictionary<string, AttrValue> Attributes { get; init; } = new();
     public Dictionary<string, AttrValue> Resource { get; init; } = new();

@@ -766,3 +766,15 @@ html, body {
 }
 .comparability-note b { color: var(--text); }
 .comparability-note a { color: var(--copper); }
+
+/* Shown above the session rail whenever the collector runs in privacy mode. Deliberately
+   persistent rather than dismissible: the people being measured should be able to see the
+   controls that apply to them without reading the deployment's configuration. */
+.privacy-note {
+  font-size: 11px; line-height: 1.5; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--ok); border-radius: 8px;
+  padding: 8px 10px;
+}
+.privacy-note b { color: var(--text); }
+.privacy-note a { color: var(--ok); }
