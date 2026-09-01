@@ -1,3 +1,5 @@
+using CopilotScope.Collector.Calibration;
+
 namespace CopilotScope.JudgeAgent.Calibration;
 
 // ------------------------------------------------------------------------ input

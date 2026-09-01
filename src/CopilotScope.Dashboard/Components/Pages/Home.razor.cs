@@ -40,6 +40,25 @@ public partial class Home : ComponentBase, IDisposable
 
     private CohortQuery Cohort => new(_repository, _emitter);
 
+    // ------------------------------------------------------------------ labelling
+    // Off unless the collector says so. The controls are a write surface on a page that is
+    // otherwise read-only, and most deployments are not running a labelling study.
+    private RubricsDto? _rubrics;
+
+    /// <summary>The rater's own handle. Free text and deliberately not tied to telemetry
+    /// identity: it names who did the rating, which is what inter-rater agreement is computed
+    /// over, and it is not the developer whose session is being rated.</summary>
+    private string _rater = "";
+
+    /// <summary>Rubric → the band this rater picked, or null for "skip". Skip is a real answer:
+    /// "this session has no retrieval context to judge RAGAS on" is information, and forcing a
+    /// number would be worse than recording nothing.</summary>
+    private readonly Dictionary<string, int?> _labelDraft = new(StringComparer.Ordinal);
+    private string _labelNote = "";
+    private string? _labelStatus;
+
+    private bool LabellingAvailable => _rubrics?.Enabled == true;
+
     private List<SessionSummaryDto>? _sessions;
 
     /// <summary>Total sessions matching the current query, which may exceed the rail page.
@@ -159,6 +178,7 @@ public partial class Home : ComponentBase, IDisposable
         }
 
         _facets = await Collector.GetFacetsAsync(ct: _cts.Token);
+        _rubrics = await Collector.GetRubricsAsync(_cts.Token);
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
     }
@@ -324,8 +344,10 @@ public partial class Home : ComponentBase, IDisposable
         _confirmDelete = false;
         _showChat = false;
         _showAllTurns = false;
+        _labelStatus = null;
         if (DetailSuppressed) { _detail = null; return; }
         _detail = await Collector.GetSessionAsync(id, _cts.Token);
+        if (LabellingAvailable) await LoadLabelsAsync(id);
     }
 
     private async Task DeleteAsync()
@@ -343,6 +365,58 @@ public partial class Home : ComponentBase, IDisposable
         }
         _confirmDelete = false;
         await RefreshAsync();
+    }
+
+    /// <summary>Loads what this rater already recorded for the session, so the form opens on
+    /// their previous judgment instead of blank.</summary>
+    private async Task LoadLabelsAsync(string sessionId)
+    {
+        _labelDraft.Clear();
+        _labelNote = "";
+        var existing = await Collector.GetLabelsAsync(sessionId, _cts.Token);
+        foreach (var label in existing.Where(l => l.Rater == _rater))
+        {
+            _labelDraft[label.Algorithm] = label.Level;
+            if (!string.IsNullOrEmpty(label.Note)) _labelNote = label.Note;
+        }
+    }
+
+    private void SetBand(string algorithm, int? level) => _labelDraft[algorithm] = level;
+
+    private int? BandFor(string algorithm) =>
+        _labelDraft.TryGetValue(algorithm, out var level) ? level : null;
+
+    private bool HasAnswered(string algorithm) => _labelDraft.ContainsKey(algorithm);
+
+    private async Task SaveLabelsAsync()
+    {
+        if (_selectedId is null || _rubrics is null) return;
+        if (string.IsNullOrWhiteSpace(_rater))
+        {
+            _labelStatus = "Enter a rater handle first — agreement is computed between raters, " +
+                           "so an unnamed label cannot be used.";
+            return;
+        }
+
+        // Every rubric is submitted, answered or skipped. A rubric left out of the payload would
+        // be indistinguishable from one the rater never reached, and the difference matters:
+        // one is "no opinion", the other is "not finished".
+        var labels = _rubrics.Rubrics
+            .Where(r => HasAnswered(r.Algorithm))
+            .Select(r => new SessionLabelDto(_selectedId, _rater.Trim(), r.Algorithm,
+                BandFor(r.Algorithm), string.IsNullOrWhiteSpace(_labelNote) ? null : _labelNote.Trim(),
+                DateTimeOffset.UtcNow))
+            .ToList();
+
+        if (labels.Count == 0)
+        {
+            _labelStatus = "Nothing to save — rate at least one rubric, or mark it skipped.";
+            return;
+        }
+
+        _labelStatus = await Collector.SaveLabelsAsync(labels, _cts.Token)
+            ? $"Saved {labels.Count} judgment(s) as “{_rater.Trim()}”."
+            : "The collector rejected the labels — check that labelling is enabled.";
     }
 
     private static string KindLabel(SessionKind kind) => kind switch

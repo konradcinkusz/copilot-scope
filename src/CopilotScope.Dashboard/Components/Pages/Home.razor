@@ -592,6 +592,73 @@
             </div>
             }
 
+            @if (LabellingAvailable)
+            {
+                @* The missing half of the calibration machinery. The engine that computes
+                   quadratic-weighted κ, bootstrap CIs and a human ceiling already exists and has
+                   nothing to consume, which is why the composite is still an opinion with a
+                   confidence interval rather than a measurement. This is where a person makes a
+                   label. It rates the SESSION, never the developer. *@
+                <div class="panel labelling">
+                    <div class="panel-label">
+                        Rate this session
+                        <span class="label-hint">for calibration — judgments about the session, not about anyone</span>
+                    </div>
+
+                    <div class="label-rater">
+                        <label for="rater">Rater handle</label>
+                        <input id="rater" type="text" value="@_rater" placeholder="e.g. rater-a"
+                               @oninput="e => _rater = e.Value?.ToString() ?? string.Empty" />
+                        <span class="label-hint">Agreement is computed between raters, so a label needs a name.</span>
+                    </div>
+
+                    @foreach (var rubric in _rubrics!.Rubrics)
+                    {
+                        <div class="label-rubric">
+                            <div class="label-question">
+                                @rubric.Question
+                                @if (!rubric.HigherIsBetter)
+                                {
+                                    @* Four rubrics ask "how good"; this one runs the other way. A
+                                       rater who reads band 3 as "great session" here would be
+                                       recorded as maximally disagreeing with a judge that got it
+                                       right — which would report a broken judge on the strength
+                                       of a broken form. *@
+                                    <span class="label-inverted" title="This rubric runs the other way: band 3 means MORE of what it measures, which is worse.">inverted</span>
+                                }
+                            </div>
+                            <div class="label-bands">
+                                @foreach (var band in _rubrics.Bands)
+                                {
+                                    var level = band.Level;
+                                    <button class="band @(BandFor(rubric.Algorithm) == level && HasAnswered(rubric.Algorithm) ? "active" : "")"
+                                            title="@band.Anchor"
+                                            @onclick="() => SetBand(rubric.Algorithm, level)">
+                                        @band.Level · @band.Name
+                                    </button>
+                                }
+                                <button class="band skip @(HasAnswered(rubric.Algorithm) && BandFor(rubric.Algorithm) is null ? "active" : "")"
+                                        title="Not judgeable from this session — recorded as a skip, which is a real answer."
+                                        @onclick="() => SetBand(rubric.Algorithm, null)">
+                                    skip
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="label-note">
+                        <input type="text" value="@_labelNote" placeholder="Optional note (why you graded it this way)"
+                               @oninput="e => _labelNote = e.Value?.ToString() ?? string.Empty" />
+                        <button class="chip" @onclick="SaveLabelsAsync">Save judgments</button>
+                    </div>
+
+                    @if (_labelStatus is not null)
+                    {
+                        <div class="label-status">@_labelStatus</div>
+                    }
+                </div>
+            }
+
             @if (_viewMode != ViewMode.Basic)
             {
                 var visInsights = _detail.Insights.Where(ShowInsight).ToList();

@@ -9,6 +9,22 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **An opt-in session labelling flow** (#102). The composite's credibility problem is written
+  down in this repo twice over — no calibration has been run, there are no human labels, and the
+  product review calls the score "an opinion with a confidence interval, not a measurement" —
+  while the machinery that would fix it (quadratic-weighted κ, bootstrap CIs, human-ceiling
+  checks) was already built and had nothing to consume. `CopilotScope:Labelling:Enabled` (off by
+  default) adds a **Rate this session** panel: a free-text rater handle not tied to telemetry
+  identity, band 0–3 per rubric with the anchor text, and a skip option — a skip is a real
+  answer and is stored but not exported as a label. `GET /api/labels/export` emits exactly the
+  shape `calibration/labels.example.json` uses, pinned by a round-trip test through
+  `CalibrationEngine`. **Seeded sessions are excluded by default**: labelling the Seeder's own
+  synthetic personas would validate the scoring model against fiction this repository wrote, and
+  a report built on that circle is worse than none because it arrives carrying a κ. Overriding
+  stamps `-synthetic` into the dataset version. `RubricScale` moved into the Collector, since
+  the judge's output, a rater's form and the calibration engine now all have to be reading the
+  same sentence. Labels rate sessions, never people — the schema has no field for the developer
+  being rated.
 - **Import Claude Code's own transcripts — the no-configuration path** (#98). Most developers
   never flip OTEL env vars; the grassroots tools that parse these files built their entire user
   base on that fact. Claude Code already writes every session to

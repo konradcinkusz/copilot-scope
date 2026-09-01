@@ -194,22 +194,79 @@ records both — `judgeModel` from the deployment name, and `judgePromptVersion`
 `JudgeSystemPromptTemplate.txt` derived automatically rather than declared, so it cannot be
 forgotten on an edit. A judge that silently upgrades is a measuring stick that changes length.
 
-## 8. What this does not do
+## 8. Collecting labels
+
+The engine above has always been the easy half. The hard half is that somebody has to sit down
+and grade sessions — and until now there was no way to do that except hand-authoring JSON.
+
+**Turn labelling on** (off by default; it puts a write control on a page that is otherwise
+read-only):
+
+```jsonc
+{ "CopilotScope": { "Labelling": { "Enabled": true } } }
+```
+
+A **Rate this session** panel then appears on the session detail view. A rater:
+
+1. enters a **handle** — free text, not tied to telemetry identity. It names *who did the
+   rating*, which is what inter-rater agreement is computed over. It is **not** the developer
+   whose session is being rated, and there is no field for that person anywhere.
+2. picks a **band 0–3** for each of the five rubrics, with the anchor text on hover, or marks
+   the rubric **skipped**. A skip is a real answer — "this session has no retrieval context to
+   judge RAGAS on" is information, and forcing a number would be worse than recording nothing.
+   Skips are stored and are *not* exported as labels.
+3. optionally adds a note, and saves.
+
+The inverted rubric (`deep-friction`) is flagged in the form, because a rater who reads band 3
+as "great session" on it would be recorded as maximally disagreeing with a judge that got it
+right — and the report would blame the judge for a broken form.
+
+Re-rating replaces: a rater revising their own judgment is normal, and keeping both would
+record a person as disagreeing with themselves, which is exactly the noise the human-ceiling
+calculation exists to detect.
+
+**Export the dataset** when the study is done:
+
+```bash
+curl -s localhost:4318/api/labels/export > calibration/labels.json
+```
+
+The output is exactly the shape `calibration/labels.example.json` uses and this engine reads —
+no hand-editing, and a round-trip test pins it. Add judge scores from a `POST /api/sessions/{id}/judge`
+run to the `judgeScores` array and the dataset is complete.
+
+### Anti-circularity
+
+**Sessions with the `seed-` prefix are excluded from the export by default.** This project's own
+research plan suggests labelling Seeder-generated sessions to bootstrap the dataset — which
+would validate the scoring model against the synthetic personas the same repository wrote. A
+calibration report built on that circle is *worse* than no report, because it arrives carrying a
+κ and a confidence interval. `?includeSynthetic=true` overrides it and stamps `-synthetic` into
+`datasetVersion`, so the result cannot later be read as though it came from real work.
+
+### How many labels
+
+The engine reports `insufficient-data` rather than a verdict below its thresholds, so it will
+tell you. As a planning figure: at least two raters, and enough sessions that each rubric has
+a couple of dozen paired judgments — a κ over five items swings on one item.
+
+## 9. What this still does not do
 
 - **It does not gate CI.** Nothing in `.github/workflows/` fails on a κ today. Wiring that up
   is a deliberate next step, and it needs real labels first.
-- **It does not collect labels.** There is no labelling UI; the dataset is hand-authored JSON.
 - **It does not promote judge scores into the composite.** The Collector stays telemetry-only
   by design (`research/articles/quality_measurement_framework.tex` §77–85: *no LLM judge, no
   prompt inspection, no network round-trip at scoring time*). Calibration lives in JudgeAgent
   precisely because the Collector must not depend on a judge.
 
-## 9. Where the code is
+## 10. Where the code is
 
 | File | Role |
 |---|---|
 | `Calibration/Agreement.cs` | Cohen's κ, weighted variants, bootstrap CI, Landis & Koch bands |
-| `Calibration/RubricScale.cs` | The four bands, the five rubrics, score → band binning |
+| `Collector/Calibration/RubricScale.cs` | The four bands, the five rubrics, score → band binning. In the Collector because three things depend on it: the judge's output, the labelling form, and this engine |
+| `Collector/Calibration/Labelling.cs` | The label store, validation and the calibration-schema export |
+| `Collector/Calibration/LabelRepository.cs` | Durable label storage — a study must survive a restart |
 | `Calibration/CalibrationEngine.cs` | Ceiling, consensus, judge agreement, verdicts |
 | `Calibration/CalibrationModels.cs` | Dataset and report contracts |
 | `Config/CalibrationOptions.cs` | Thresholds |

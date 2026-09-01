@@ -122,6 +122,22 @@ Sessions are deep-linkable at `/sessions/{id}`.
 
 No view and no export has a per-developer dimension. Every axis describes the tooling.
 
+### Labelling: turning the score from an opinion into a measurement
+
+The composite is not validated. This repo says so twice — the calibration docs state that no
+calibration has been run and there are no human labels, and the product review calls the score
+"an opinion with a confidence interval, not a measurement". The consumption machinery
+(quadratic-weighted Cohen's κ, bootstrap CIs, human-ceiling checks) was already built and had
+nothing to consume.
+
+Set `CopilotScope:Labelling:Enabled` and a **Rate this session** panel appears on the session
+detail view: a rater handle, band 0–3 per rubric with anchors, and a skip option.
+`GET /api/labels/export` produces exactly the JSON the calibration engine reads — no
+hand-editing, pinned by a round-trip test. Seeded sessions are excluded by default, because
+validating the scoring model against the synthetic personas this repo wrote is a circle, and a
+κ built on one is worse than no κ. Labels rate *sessions*, never people. See
+[docs/CALIBRATION.md §8](docs/CALIBRATION.md).
+
 ### Alerts and the weekly digest
 
 Off by default. When configured (`CopilotScope:Alerts`), the collector compares each week

@@ -70,6 +70,36 @@ public sealed class CollectorClient(HttpClient http)
         catch { return null; }
     }
 
+    /// <summary>The four-band scale and the five rubric questions, served from the collector so
+    /// a rater and the judge are answering the same sentence.</summary>
+    public async Task<RubricsDto?> GetRubricsAsync(CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<RubricsDto>("/api/labels/rubrics", ct); }
+        catch { return null; }
+    }
+
+    /// <summary>Judgments already recorded for a session, so a rater sees what they did rather
+    /// than re-rating from memory.</summary>
+    public async Task<List<SessionLabelDto>> GetLabelsAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            return await http.GetFromJsonAsync<List<SessionLabelDto>>(
+                $"/api/labels?sessionId={Uri.EscapeDataString(sessionId)}", ct) ?? [];
+        }
+        catch { return []; }
+    }
+
+    public async Task<bool> SaveLabelsAsync(List<SessionLabelDto> labels, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync("/api/labels", labels, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
     /// <summary>Raw passthrough for the CSV export proxy — the browser cannot call the
     /// collector itself, because the API key lives here and never reaches it.</summary>
     public Task<HttpResponseMessage> GetRawAsync(string path, CancellationToken ct = default) =>
@@ -248,6 +278,19 @@ public sealed record SessionSummaryDto(
     int EditsAutoAccepted = 0,
     /// <summary>Where the data came from: "otel" or "log-import".</summary>
     string Origin = SessionOrigin.Otel);
+
+/// <summary>One band on the ordinal scale a rater picks from.</summary>
+public sealed record RubricBandDto(int Level, string Name, double Lower, double Upper, string Anchor);
+
+/// <summary>One rubric: the question a rater answers, and which way it runs.</summary>
+public sealed record RubricDto(string Algorithm, string Question, bool HigherIsBetter);
+
+public sealed record RubricsDto(bool Enabled, int Categories, List<RubricBandDto> Bands, List<RubricDto> Rubrics);
+
+/// <summary>One human judgment. <c>Level</c> is null when the rater skipped the rubric, which
+/// is a real answer — forcing a number would be worse than recording nothing.</summary>
+public sealed record SessionLabelDto(
+    string SessionId, string Rater, string Algorithm, int? Level, string? Note, DateTimeOffset At);
 
 /// <summary>Mirrors the collector's SessionOrigin.</summary>
 public static class SessionOrigin
