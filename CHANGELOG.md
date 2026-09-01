@@ -9,6 +9,16 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Fixture capture and a semconv drift canary** (#92). `tools/CopilotScope.FixtureCapture` is a
+  recording proxy: point an assistant at it, and it writes each real OTLP payload to
+  `tests/fixtures/<assistant>/<version>/` while forwarding it upstream unchanged.
+  `FixtureGoldenTests` replays whatever is committed there through the real decoder and session
+  store, asserting the batch decodes to something and still classifies as its assistant. A weekly
+  `semconv canary` workflow checks that upstream still defines every `gen_ai.*` name
+  `Domain/Sem.cs` reads, and opens an issue when one disappears — a renamed attribute otherwise
+  keeps ingest returning 200 while the counters it feeds go to zero. **No real captures are
+  committed yet**: capturing needs a machine running the assistants, so until then the
+  multi-assistant claim still rests on hand-built payloads.
 - **The judge runs on your own hardware** (#91). `CopilotScope:JudgeAgent:Backend` selects
   `AzureFoundry` (the default, unchanged) or `OpenAiCompatible` — one implementation covering
   Ollama, vLLM, LM Studio and any in-region OpenAI-compatible gateway. Judging is the only
