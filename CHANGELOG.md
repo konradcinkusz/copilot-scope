@@ -9,6 +9,15 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Per-assistant signal coverage is disclosed** (#100). The composite renormalizes over the
+  components that have data, which means an 80 from one assistant is not an 80 from another —
+  a Claude Code session is scored without feedback or edit survival, so its 80 rests on less
+  evidence. The project's own product review flagged this (B2) and noted nothing in the UI
+  warned, while "compare assistants before you buy" is the headline use case. There is now a
+  coverage matrix in `docs/SIGNAL_COVERAGE.md`, on the in-app Docs page and at
+  `GET /api/coverage`, all served from one table in `Domain/EmitterCoverage.cs`; the session
+  detail names the components its assistant can never report; and the rail warns when a visible
+  list mixes assistants whose scores rest on different evidence.
 - **Fixture capture and a semconv drift canary** (#92). `tools/CopilotScope.FixtureCapture` is a
   recording proxy: point an assistant at it, and it writes each real OTLP payload to
   `tests/fixtures/<assistant>/<version>/` while forwarding it upstream unchanged.

@@ -755,3 +755,14 @@ html, body {
 .conf-high       { color: var(--ok); }
 .conf-medium     { color: var(--copper); }
 .conf-low        { color: var(--dim); }
+
+/* Shown above the session rail only when the visible list mixes assistants whose scores rest
+   on different components — see EmitterCoverage. */
+.comparability-note {
+  font-size: 11px; line-height: 1.5; color: var(--dim);
+  background: var(--panel); border: 1px solid var(--line);
+  border-left: 3px solid var(--copper); border-radius: 8px;
+  padding: 8px 10px;
+}
+.comparability-note b { color: var(--text); }
+.comparability-note a { color: var(--copper); }

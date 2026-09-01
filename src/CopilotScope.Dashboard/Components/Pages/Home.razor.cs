@@ -353,6 +353,14 @@ public partial class Home : ComponentBase, IDisposable
              : $"{d.TotalDays:0}d ago";
     }
 
+    /// <summary>
+    /// True when the visible sessions come from assistants whose scores rest on different
+    /// evidence. Only then is the comparability caveat worth the space — shown on every list it
+    /// would become furniture, and furniture is not read.
+    /// </summary>
+    private bool MixedAssistants =>
+        EmitterCoverage.NeedsComparabilityCaveat(FilteredSessions.Select(x => x.EmitterKind));
+
     /// <summary>Elapsed hours in the units a reviewer thinks in — minutes, hours, then days.</summary>
     private static string FormatHours(double hours) =>
         hours < 1 ? $"{hours * 60:0}m"

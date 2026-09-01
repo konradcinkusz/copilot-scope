@@ -71,6 +71,39 @@ public enum SessionKind
 
 public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor, Cowork }
 
+/// <summary>
+/// Which quality components an assistant can never populate, mirroring the collector's
+/// EmitterCoverage. Kept here so the rail can warn about mixed-assistant lists without a
+/// round trip per render.
+/// </summary>
+public static class EmitterCoverage
+{
+    private static readonly Dictionary<EmitterKind, string[]> AlwaysPrior = new()
+    {
+        [EmitterKind.VSCode] = [],
+        [EmitterKind.CLI] = ["acceptance", "feedback"],
+        [EmitterKind.ClaudeCode] = ["feedback"],
+        [EmitterKind.Cowork] = ["feedback"],
+        [EmitterKind.Cursor] = ["acceptance", "feedback", "latency", "friction"],
+    };
+
+    public static IReadOnlyList<string> PriorComponents(EmitterKind emitter) =>
+        AlwaysPrior.TryGetValue(emitter, out var names) ? names : [];
+
+    /// <summary>
+    /// True when a visible set spans assistants whose scores rest on different evidence.
+    /// The composite renormalizes over the components that have data, so an 80 built on four
+    /// components is not an 80 built on six — and reading them side by side is the obvious
+    /// mistake. Sessions from assistants with identical coverage need no warning: a caveat
+    /// shown everywhere is a caveat nobody reads.
+    /// </summary>
+    public static bool NeedsComparabilityCaveat(IEnumerable<EmitterKind> emitters) =>
+        emitters.Where(e => e != EmitterKind.Unknown)
+                .Select(e => string.Join(",", PriorComponents(e)))
+                .Distinct()
+                .Count() > 1;
+}
+
 /// <summary>Mirrors the collector's SessionMode — how the session was driven.</summary>
 public enum SessionMode { Unknown, Interactive, SupervisedAgent, Autonomous }
 
