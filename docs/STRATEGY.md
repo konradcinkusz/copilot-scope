@@ -150,3 +150,32 @@ Order matters, because attention is spent once:
   Azure judge agent and remain unimplemented. The README's status table says so
   plainly, and it should stay that way — an honest "not implemented" is worth more
   than an aspirational checkmark.
+
+## 8. Execution status (updated 2026-09-01)
+
+§6 laid out a six-step distribution sequence in July. **None of it has been executed
+yet**, and recording that here is the point: a plan whose status is implicit reads as
+a plan that is going fine.
+
+| Step | Status |
+|---|---|
+| 1. Foundation — screenshots, green CI, working quickstart | **In progress.** Screenshots and CI are done. The quickstart snippet omitted its two required env exports until 2026-09-01; the GHCR image set is still incomplete (#54, #56, #57). |
+| 2. Awesome lists | Not started |
+| 3. Adjacent projects as neighbours | Not started |
+| 4. Data before tool (a post with real numbers) | Not started — but see below |
+| 5. Show HN | Not started, correctly: it is last |
+| 6. Use the paper | Not started |
+
+Step 1 is the gate, and it is nearly closed. The remaining blocker is a tagged release
+containing everything in `CHANGELOG.md` `[Unreleased]`, verified from a clean machine
+against the published images.
+
+Step 4 changed shape. The strongest available post is no longer "here is a friction
+distribution from seeded sessions" — the outcome linkage added in #87 makes "we scored
+N real sessions and the score predicts merge/revert behaviour" possible, and that is a
+result rather than a demo. It needs real deployments first, which makes steps 1–3 the
+prerequisite for the post rather than an alternative to it.
+
+**Adoption, honestly:** 1 star, 0 forks, no issues from anyone outside the project. That
+is what an unexecuted launch looks like, not what a rejected product looks like — the
+distinction only holds while the launch is still pending.

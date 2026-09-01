@@ -24,6 +24,9 @@ that score to Prometheus and Grafana if you already run them.
 
 ```bash
 curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+# Two secrets, no defaults — the compose file fails loudly rather than shipping a known key:
+export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
+export POSTGRES_PASSWORD=$(openssl rand -hex 16)
 docker compose -f docker-compose.ghcr.yml up
 # dashboard on http://localhost:5200 · point your assistant at http://localhost:4318
 ```
