@@ -1,3 +1,4 @@
+using CopilotScope.Collector.Alerting;
 using CopilotScope.Collector.Api;
 using CopilotScope.Collector.Domain;
 using CopilotScope.Collector.Forwarding;
@@ -78,6 +79,16 @@ builder.Services.AddSingleton(historyOptions);
 var outcomeOptions = new OutcomeOptions();
 builder.Configuration.GetSection("CopilotScope:Outcomes").Bind(outcomeOptions);
 builder.Services.AddSingleton(outcomeOptions);
+
+// Outbound alerts and the weekly digest (docs/TUTORIAL.md §11). Off by default: this is the
+// only thing in the collector that sends data anywhere, so it needs an explicit decision rather
+// than a default. Registered only when configured, so a deployment that has not opted in runs
+// no extra loop and holds no HttpClient pointed at anything.
+var alertOptions = new AlertOptions();
+builder.Configuration.GetSection("CopilotScope:Alerts").Bind(alertOptions);
+builder.Services.AddSingleton(alertOptions);
+builder.Services.AddHttpClient<AlertDispatcher>(c => c.Timeout = TimeSpan.FromSeconds(10));
+if (alertOptions.Active) builder.Services.AddHostedService<AlertService>();
 
 // Privacy mode (docs/PRIVACY.md). Off by default; on, it pseudonymizes identity at ingest,
 // drops prompt/response content, applies an aggregation floor to every view, and logs reads.
@@ -494,6 +505,76 @@ api.MapGet("/cohorts", async (int? days, DateTimeOffset? since, DateTimeOffset? 
         : Results.Ok(report);
 });
 
+// ------------------------------------------------------------------- digest
+// The aggregate week, as the artefact a lead forwards instead of a dashboard link. Available
+// on demand whether or not the scheduled webhook is configured — reading it costs nothing and
+// a team that has not set up a webhook still wants the summary.
+api.MapGet("/digest", async (int? days, HttpRequest request, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var window = Math.Clamp(days ?? alertOptions.WindowDays, 1, 365);
+    var until = DateTimeOffset.UtcNow;
+    var since = until.AddDays(-window);
+    var baselineSince = since.AddDays(-window);
+
+    var currentSessions = await sessions.AllInWindowAsync(since, ct, until);
+    var baselineSessions = await sessions.AllInWindowAsync(baselineSince, ct, since);
+
+    var verdict = privacyGuard.Evaluate(currentSessions.Concat(baselineSessions));
+    audit.Record(AccessAuditLog.ActorFor(request), "digest", $"days={window}",
+        verdict.Allowed ? $"served {currentSessions.Count} session(s)" : "withheld (k-anonymity)");
+    if (!verdict.Allowed)
+        return Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    var current = Cohorts.Build(currentSessions, quality, since, until);
+    var baseline = Cohorts.Build(baselineSessions, quality, baselineSince, since);
+    var report = Digest.Build(current, baseline,
+        RegressionDetector.Detect(baseline, current, alertOptions), since, until);
+
+    return Results.Ok(report);
+});
+
+// Sends the digest now, to the configured webhook. Admin scope: it puts the team's numbers on
+// an external service, which is not something a read credential should be able to trigger.
+api.MapPost("/digest/send", async (HttpRequest request, SessionQueryService sessions,
+    AlertDispatcher dispatcher, CancellationToken ct) =>
+{
+    if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
+    if (!alertOptions.Active)
+        return Results.Json(new
+        {
+            error = "No alert webhook is configured.",
+            detail = "Set CopilotScope:Alerts:Enabled and CopilotScope:Alerts:WebhookUrl; " +
+                     "see docs/TUTORIAL.md §11.",
+        }, statusCode: StatusCodes.Status409Conflict);
+
+    var window = alertOptions.WindowDays;
+    var until = DateTimeOffset.UtcNow;
+    var since = until.AddDays(-window);
+    var baselineSince = since.AddDays(-window);
+
+    var currentSessions = await sessions.AllInWindowAsync(since, ct, until);
+    var baselineSessions = await sessions.AllInWindowAsync(baselineSince, ct, since);
+
+    var verdict = privacyGuard.Evaluate(currentSessions.Concat(baselineSessions));
+    audit.Record(AccessAuditLog.ActorFor(request), "digest.send", $"days={window}",
+        verdict.Allowed ? "sent" : "withheld (k-anonymity)");
+    if (!verdict.Allowed)
+        return Results.Json(new { suppressed = true, reason = verdict.Reason },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    var current = Cohorts.Build(currentSessions, quality, since, until);
+    var baseline = Cohorts.Build(baselineSessions, quality, baselineSince, since);
+    var report = Digest.Build(current, baseline,
+        RegressionDetector.Detect(baseline, current, alertOptions), since, until);
+
+    var sent = await dispatcher.SendAsync("digest", report, Digest.ToText(report), ct);
+    return sent
+        ? Results.Ok(new { sent = true, sessions = report.Sessions, regressions = report.Regressions.Count })
+        : Results.Json(new { sent = false, error = "The webhook did not accept the digest; see the collector log." },
+            statusCode: StatusCodes.Status502BadGateway);
+});
+
 // Distinct values worth filtering on, so the UI offers what exists instead of a free-text box
 // that silently matches nothing.
 api.MapGet("/facets", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
@@ -810,6 +891,7 @@ app.MapGet("/", () => Results.Text(
     "Privacy: GET /api/privacy | /api/audit?format=csv (admin)\n" +
     "Friction: GET /api/friction (aggregate; off unless CopilotScope:WorkflowFriction:Enabled)\n" +
     "Team views: GET /api/cohorts | /api/compare | /api/facets (add format=csv to export)\n" +
+    "Digest: GET /api/digest | POST /api/digest/send (admin, needs CopilotScope:Alerts)\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
@@ -823,6 +905,7 @@ app.Logger.LogInformation(
       Persistence      : {Persist}
       Forwarding       : {Fwd}
       Privacy mode     : {Privacy}
+      Alerts           : {Alerts}
     Point VS Code at this endpoint:
       "github.copilot.chat.otel.enabled": true,
       "github.copilot.chat.otel.otlpEndpoint": "<this host>"
@@ -834,6 +917,7 @@ app.Logger.LogInformation(
     apiKeys.Describe(),
     persistenceEnabled ? "Postgres" : "in-memory only",
     forwarder.Enabled ? (forwardRaw ? "enabled" : "blocked by privacy mode") : "disabled",
-    privacyOptions.Describe());
+    privacyOptions.Describe(),
+    alertOptions.Describe());
 
 app.Run();

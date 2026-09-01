@@ -9,6 +9,23 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Quality-regression alerts and a weekly digest — push, not just pull** (#101). A dashboard
+  that must be visited gets abandoned; an output that triggers a decision gets renewed, and
+  session scoring is the only thing that can raise a *quality* regression — a vendor usage
+  dashboard cannot alert on what it does not measure. `CopilotScope:Alerts` (off by default,
+  and the only outbound path in the collector) compares each window against the one before it
+  by repository, assistant and model and posts a webhook, as JSON or as the single `text`
+  field most chat webhooks render. The precision is the feature: a cohort needs enough
+  sessions in **both** windows, session kind is never alerted on, and — the one that matters —
+  a score drop that came with a confidence drop is reported as a *changed measurement basis*
+  rather than a regression, because the composite renormalizes over the components that have
+  data and a cohort that stopped reporting a signal is measured differently, not worse.
+  `GET /api/digest` serves the aggregate week with no webhook configured; `POST /api/digest/send`
+  (Admin) sends it. `grafana/provisioning/alerting/` provisions two equivalent Grafana rules
+  built entirely from gauge ratios — never `rate()` over a family that can decrease — so they
+  sidestep the counter-semantics problem in #70 rather than waiting on it, with a test pinning
+  that. Both surfaces honour the k-anonymity floor, which matters more here than on a screen
+  because the payload leaves the deployment.
 - **Team-lead views: windows, cohorts, before/after, export** (#96). The stated buyer — a
   platform lead evaluating assistants for a team — could not answer a single leadership
   question inside the product: no trends, no cohorts, no comparison, no shareable links, no

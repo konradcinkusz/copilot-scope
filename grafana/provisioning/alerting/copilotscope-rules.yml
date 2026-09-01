@@ -1,0 +1,162 @@
+# CopilotScope alert rules (Grafana unified alerting, provisioned from disk).
+#
+# Two rules, both answering "did the tooling get worse", which is the decision a dashboard
+# cannot trigger and a vendor usage dashboard cannot see at all.
+#
+# ---------------------------------------------------------------------------------------
+# Why every expression here is a ratio of *gauges* and never a rate() over a counter:
+#
+# The collector recomputes its Prometheus families from the capped in-memory session set on
+# every scrape, so families declared `counter` (copilotscope_calls_total,
+# copilotscope_call_errors_total, ...) can DECREASE when sessions age out. rate() and
+# increase() treat a decrease as a counter reset and re-count from zero, so a rule built on
+# them fires on eviction rather than on anything real. That is issue #70.
+#
+# copilotscope_quality_score_sum / _count and copilotscope_quality_component_sum / _count are
+# declared `gauge` and are safe: their ratio is a mean over whatever the collector currently
+# holds, which is exactly what these rules compare across time. So this file does not wait on
+# #70 — it avoids the class of expression #70 is about.
+#
+# The collector-side detector (CopilotScope:Alerts) is the more precise instrument: it compares
+# two explicit windows from Postgres rather than from the in-memory set, and it can tell a
+# quality drop apart from a change in which signals a cohort reports. These rules are for teams
+# that already live in Grafana and want the signal where their other alerts are.
+# ---------------------------------------------------------------------------------------
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: CopilotScope
+    folder: CopilotScope
+    interval: 5m
+    rules:
+      - uid: copilotscope-quality-regression
+        title: CopilotScope — assistant quality regression
+        condition: regression
+        # 15m keeps a single unlucky scrape from firing; the underlying window is
+        # already a mean over the collector's working set.
+        for: 15m
+        annotations:
+          summary: >-
+            Mean composite quality for {{ $labels.emitter }} has fallen more than 5 points
+            below its own 24-hour average.
+          description: >-
+            CopilotScope scores each session 0-100 from telemetry the assistant emits.
+            A sustained fall usually follows a model version bump, an assistant upgrade or a
+            config change. Check /api/compare for the same cohort over two explicit windows
+            before acting: the composite renormalizes over the components that have data, so a
+            cohort that stopped reporting a signal is measured differently rather than worse.
+        labels:
+          severity: warning
+          product: copilotscope
+        data:
+          - refId: current
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: current
+              editorMode: code
+              instant: true
+              expr: >-
+                sum by (emitter) (copilotscope_quality_score_sum)
+                / clamp_min(sum by (emitter) (copilotscope_quality_score_count), 1)
+          - refId: baseline
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: baseline
+              editorMode: code
+              instant: true
+              expr: >-
+                avg_over_time(
+                  (sum by (emitter) (copilotscope_quality_score_sum)
+                   / clamp_min(sum by (emitter) (copilotscope_quality_score_count), 1))[24h:5m]
+                )
+          # Only alert on cohorts with enough sessions to have a mean at all. Without this a
+          # single new session on a quiet assistant swings the average and pages someone.
+          - refId: volume
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: volume
+              editorMode: code
+              instant: true
+              expr: sum by (emitter) (copilotscope_quality_score_count)
+          - refId: drop
+            datasourceUid: __expr__
+            model:
+              refId: drop
+              type: math
+              expression: $baseline - $current
+          - refId: regression
+            datasourceUid: __expr__
+            model:
+              refId: regression
+              type: math
+              expression: ($drop > 5) && ($volume >= 10)
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
+
+      - uid: copilotscope-friction-spike
+        title: CopilotScope — workflow friction spike
+        condition: spike
+        for: 15m
+        annotations:
+          summary: >-
+            The friction component for {{ $labels.emitter }} has fallen more than 0.15
+            below its 24-hour average (higher friction = lower component value).
+          description: >-
+            The friction component is the turn-level repair signal — errors, retries and long
+            turns inside one invoke_agent trace. It is computed from telemetry and needs no
+            prompt content, so it is available on every assistant. A fall here means turns are
+            going worse, which usually shows up before the composite does.
+        labels:
+          severity: warning
+          product: copilotscope
+        data:
+          - refId: current
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: current
+              editorMode: code
+              instant: true
+              expr: >-
+                sum by (emitter) (copilotscope_quality_component_sum{component="friction"})
+                / clamp_min(sum by (emitter) (copilotscope_quality_component_count{component="friction"}), 1)
+          - refId: baseline
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: baseline
+              editorMode: code
+              instant: true
+              expr: >-
+                avg_over_time(
+                  (sum by (emitter) (copilotscope_quality_component_sum{component="friction"})
+                   / clamp_min(sum by (emitter) (copilotscope_quality_component_count{component="friction"}), 1))[24h:5m]
+                )
+          - refId: volume
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: copilotscope-prometheus
+            model:
+              refId: volume
+              editorMode: code
+              instant: true
+              expr: sum by (emitter) (copilotscope_quality_component_count{component="friction"})
+          - refId: drop
+            datasourceUid: __expr__
+            model:
+              refId: drop
+              type: math
+              expression: $baseline - $current
+          - refId: spike
+            datasourceUid: __expr__
+            model:
+              refId: spike
+              type: math
+              expression: ($drop > 0.15) && ($volume >= 10)
+        noDataState: OK
+        execErrState: OK
+        isPaused: false
