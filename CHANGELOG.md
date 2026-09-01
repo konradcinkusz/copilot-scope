@@ -47,7 +47,6 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   longer read transcripts or delete history; `CopilotScope:Dashboard:Auth` adds optional
   viewer/admin sign-in, with transcripts and deletion restricted to admin. Both off by
   default; the legacy single key still grants every scope.
-
 - **Judge calibration (Cohen's κ)** — `src/CopilotScope.JudgeAgent/Calibration/` measures how
   well the judge agrees with human labels, closing the gap the README and
   `JudgeSystemPromptTemplate.txt` have both been stating ("directional, not final… until
