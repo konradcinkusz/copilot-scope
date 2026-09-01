@@ -300,6 +300,24 @@ api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<P
 // Overview aggregates the same window the session list pages through, so "everything you
 // burned" means everything, not just what memory still holds. Defaults to the retention
 // window when one is configured, otherwise all history.
+// Which signals each assistant actually emits, and therefore which quality components it can
+// never populate. Served from the same table the dashboard renders and the tests assert against,
+// so the disclosure cannot drift from the behaviour it describes.
+api.MapGet("/coverage", () => Results.Ok(EmitterCoverage.All.Select(e => new
+{
+    emitter = e.Emitter.ToString(),
+    name = e.DisplayName,
+    traces = e.Traces.ToString(),
+    metrics = e.Metrics.ToString(),
+    events = e.Events.ToString(),
+    editDecisions = e.EditDecisions.ToString(),
+    editSurvival = e.EditSurvival.ToString(),
+    feedback = e.Feedback.ToString(),
+    timeToFirstToken = e.TimeToFirstToken.ToString(),
+    alwaysPrior = e.AlwaysPrior,
+    note = e.Note
+})));
+
 api.MapGet("/overview", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
 {
     var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;

@@ -72,6 +72,19 @@
             </div>
         }
 
+        @if (MixedAssistants)
+        {
+            @* The composite renormalizes over the components that have data, so a score built on
+               four components is not the same measurement as one built on six. Reading them side
+               by side is the obvious mistake, and it used to go unwarned. *@
+            <div class="comparability-note" role="note">
+                This list mixes assistants. Scores are comparable <b>within</b> an assistant and
+                <b>directional across</b> them — different assistants report different signals, so
+                their scores rest on different evidence.
+                <a href="/docs#coverage">What each assistant reports</a>
+            </div>
+        }
+
         <div class="rail-list">
         @if (_sessions is null)
         {
@@ -298,6 +311,18 @@
                     <div class="worst-factor">
                         <span class="dot dot-@TrafficClass(worst)"></span>
                         Biggest drag on quality: <b>@worst.Name</b> (@((worst.Value * 100).ToString("0"))/100) — @worst.Detail
+                    </div>
+                }
+                var priorForEmitter = EmitterCoverage.PriorComponents(s.EmitterKind);
+                @if (priorForEmitter.Count > 0)
+                {
+                    <div class="mode-note">
+                        <b>@EmitterLabel(s.EmitterKind)</b> never reports
+                        @string.Join(", ", priorForEmitter), so
+                        @(priorForEmitter.Count == 1 ? "that component is" : "those components are")
+                        scored as a prior and the composite is renormalized over the rest. This
+                        score is comparable with other @EmitterLabel(s.EmitterKind) sessions, and
+                        directional against other assistants.
                     </div>
                 }
                 @if (q.Mode is SessionMode.Autonomous or SessionMode.SupervisedAgent)

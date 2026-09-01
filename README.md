@@ -47,6 +47,12 @@ every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
 
 Five assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
 Code, Claude Cowork (the agent surface in the Claude desktop app) and Cursor**.
+They do not, however, all report the same *signals* — so scores are comparable
+**within** an assistant and **directional across** them. A Claude Code session has
+no thumbs and no edit-survival signal, so its 80 rests on less evidence than a VS
+Code session's 80; the composite renormalizes over what each one actually sends.
+The full matrix, and how to run a fair bake-off:
+**[docs/SIGNAL_COVERAGE.md](docs/SIGNAL_COVERAGE.md)**.
 `Domain/Sem.cs` normalizes the Copilot-family dialects onto one namespace;
 `Domain/ClaudeCode.cs` maps the Claude surfaces, which speak `claude_code.*`
 metrics and log events rather than `gen_ai.*` spans.

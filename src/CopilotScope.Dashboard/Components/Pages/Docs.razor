@@ -117,6 +117,60 @@
         </p>
     </section>
 
+    <section id="coverage" class="panel doc-section">
+        <h2>Per-assistant signal coverage</h2>
+        <p>
+            <b>Scores are comparable within an assistant, and directional across assistants.</b>
+        </p>
+        <p>
+            The composite only aggregates components that actually have data, and renormalizes the
+            weights across them. That is deliberate — letting empty components contribute a neutral
+            prior at full weight pinned every ordinary session near 80 and destroyed all
+            discrimination. But it has a consequence worth stating plainly: <b>a session scored on
+            four components and a session scored on six are not the same measurement.</b> A Claude
+            Code session has no thumbs and no edit-survival signal, so its 80 rests on a smaller
+            evidence base than a VS Code session's 80. Neither number is wrong; ranking them
+            against each other is.
+        </p>
+        <p>
+            <i>Full</i> = a default install sends it · <i>Conditional</i> = only under a plan, flag
+            or beta channel · <i>None</i> = never sent, so the component it feeds is always a prior.
+        </p>
+        <table class="doc-table">
+            <thead>
+                <tr>
+                    <th>Assistant</th><th>Traces</th><th>Metrics</th><th>Events</th>
+                    <th>Edit decisions</th><th>Edit survival</th><th>Feedback</th><th>TTFT</th>
+                    <th>Always a prior</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>VS Code Copilot</td><td>Full</td><td>Full</td><td>Full</td><td>Full</td><td>Full</td><td>Full</td><td>Full</td><td>—</td></tr>
+                <tr><td>Copilot CLI</td><td>Full</td><td>Full</td><td>Full</td><td>None</td><td>None</td><td>None</td><td>Full</td><td>acceptance, feedback</td></tr>
+                <tr><td>Claude Code</td><td>Conditional</td><td>Full</td><td>Full</td><td>Full</td><td>None</td><td>None</td><td>Conditional</td><td>feedback</td></tr>
+                <tr><td>Claude Cowork</td><td>Conditional</td><td>Full</td><td>Full</td><td>Full</td><td>None</td><td>None</td><td>Conditional</td><td>feedback</td></tr>
+                <tr><td>Cursor</td><td>None</td><td>Conditional</td><td>Conditional</td><td>None</td><td>None</td><td>None</td><td>None</td><td>acceptance, feedback, latency, friction</td></tr>
+            </tbody>
+        </table>
+        <p>
+            Notes worth knowing before a bake-off. <b>Copilot CLI</b> has no editor UI, so no
+            accept/reject and no thumbs. <b>Claude Code</b> does report acceptance — from
+            <code>tool_decision</code> events, excluding permission-mode auto-accepts — but has no
+            survival signal, and its TTFT needs the beta trace channel. <b>Cursor</b>'s export is
+            Enterprise-plan only and sends metrics and logs but <i>no traces</i>; a turn is one
+            <code>invoke_agent</code> trace, so turn-level friction analysis cannot run for it at
+            all, and its support here is unverified (no captured fixtures).
+        </p>
+        <p>
+            To compare fairly across assistants, read the <i>components</i> rather than the
+            composite — reliability, friction and efficiency are available almost everywhere;
+            acceptance and feedback are not. This table is served from one place in the collector
+            (<code>Domain/EmitterCoverage.cs</code>, also at <code>GET /api/coverage</code>) and is
+            asserted against real ingest behaviour by the test suite, so it cannot quietly stop
+            being true.
+        </p>
+    </section>
+
     <section id="quality" class="panel doc-section">
         <h2>Session quality — the composite score</h2>
         <p>
