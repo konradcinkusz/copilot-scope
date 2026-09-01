@@ -9,6 +9,20 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **`GOVERNANCE.md` — the "who maintains it?" answer** (#103). The first question anyone asks
+  before putting a tool in their telemetry path, and until now unanswerable: one maintainer,
+  no stated response posture beyond security reports, and no schema-stability guarantee, so an
+  adopter could not know what an upgrade might break. The document names the stable surfaces
+  (OTLP ingest and its attribute vocabulary, REST DTO fields, Prometheus family and label names,
+  the jsonb snapshot shape, the calibration label schema, `CopilotScope:` config keys) and the
+  ones that may move in any release — including, explicitly, the quality score's weights, which
+  *will* change when calibration happens, and which is why scores are comparable within a
+  version and not across one. It also answers the abandonment scenario head-on rather than
+  hoping nobody raises it: the data is in the adopter's own Postgres with documented export
+  paths for every table, the licence permits forking permanently, and nothing phones home — a
+  self-hosted MIT tool that stops moving keeps working, which is a lower risk than a SaaS vendor
+  that goes away with your data. §6 states what a co-maintainer would actually do, in order of
+  value, and how commit access works.
 - **A GitHub Copilot Metrics archiver, breaking the 28-day window** (#97). GitHub serves 28 days
   of org usage and nothing older; admins have been asking for history since it shipped, and the
   most-used tool in this space had to add a database purely to keep it. `CopilotScope:VendorMetrics`

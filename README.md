@@ -462,6 +462,22 @@ Both are off by default and the legacy single key keeps granting everything, so 
 existing deployment is unchanged until it opts in. Full trust model, including what
 each role can see: **[SECURITY.md](SECURITY.md)**.
 
+## Who maintains this
+
+One person, alongside other things — which is the first thing anyone evaluating a tool for
+their telemetry path needs to know, not the last.
+
+**[GOVERNANCE.md](GOVERNANCE.md)** answers it properly: what response you can expect, which
+surfaces carry a stability contract (OTLP ingest, REST DTOs, Prometheus metric names, the jsonb
+snapshot, the label schema) and which may move in any release, and — head-on — what happens if
+the maintainer stops. The short version of that last one: the data is in *your* Postgres, the
+license is MIT so forking needs no permission, nothing phones home, and there are documented
+export paths for every table. A self-hosted MIT tool that gets abandoned keeps working; a SaaS
+vendor that goes away takes your data with it.
+
+A **co-maintainer would be welcome** — [GOVERNANCE.md §6](GOVERNANCE.md) says what is actually
+needed and how commit access works.
+
 ## Collector API
 
 | Endpoint | Description |
