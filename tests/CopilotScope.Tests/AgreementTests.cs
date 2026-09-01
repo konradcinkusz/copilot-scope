@@ -1,3 +1,4 @@
+using CopilotScope.Collector.Calibration;
 using CopilotScope.JudgeAgent.Calibration;
 using Xunit;
 

@@ -855,3 +855,38 @@ html, body {
   border-color: color-mix(in srgb, var(--copper) 40%, transparent);
   background: color-mix(in srgb, var(--copper) 10%, transparent);
 }
+
+/* ------------------------------------------------------------------ labelling
+   The only write control in the session view. Shown solely when the collector reports
+   labelling on, because it is a calibration study's form, not part of reading a session. */
+.labelling { display: flex; flex-direction: column; gap: 10px; }
+.labelling .label-hint { font-size: 10px; color: var(--dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.label-rater { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.label-rater label { font-size: 11px; color: var(--dim); }
+.label-rater input, .label-note input {
+  font: inherit; font-size: 12px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+}
+.label-note { display: flex; gap: 8px; align-items: center; }
+.label-note input { flex: 1 1 auto; min-width: 0; }
+
+.label-rubric { border-top: 1px solid var(--line); padding-top: 8px; }
+.label-question { font-size: 12px; margin-bottom: 6px; }
+.label-inverted {
+  margin-left: 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--copper); border: 1px solid color-mix(in srgb, var(--copper) 40%, transparent);
+  border-radius: 4px; padding: 1px 5px;
+}
+
+.label-bands { display: flex; gap: 6px; flex-wrap: wrap; }
+.band {
+  font: inherit; font-size: 11px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.band:hover { border-color: var(--copper); }
+.band.active { border-color: var(--copper); color: var(--copper); }
+.band.skip { color: var(--dim); }
+.band.skip.active { border-color: var(--dim); color: var(--dim); }
+
+.label-status { font-size: 11px; color: var(--ok); }

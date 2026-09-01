@@ -1,5 +1,6 @@
 using CopilotScope.Collector.Alerting;
 using CopilotScope.Collector.Api;
+using CopilotScope.Collector.Calibration;
 using CopilotScope.Collector.Domain;
 using CopilotScope.Collector.Forwarding;
 using CopilotScope.Collector.Otlp;
@@ -90,6 +91,18 @@ builder.Services.AddSingleton(alertOptions);
 builder.Services.AddHttpClient<AlertDispatcher>(c => c.Timeout = TimeSpan.FromSeconds(10));
 if (alertOptions.Active) builder.Services.AddHostedService<AlertService>();
 
+// Human session labelling (docs/CALIBRATION.md §8). Off by default: it puts a write control on
+// a read-only surface, and most deployments are not running a labelling study. Without it the
+// calibration machinery in JudgeAgent has nothing to consume, which is why the composite is
+// still "an opinion with a confidence interval" rather than a measurement.
+builder.Services.AddSingleton(sp =>
+{
+    var options = new LabellingOptions();
+    sp.GetRequiredService<IConfiguration>().GetSection("CopilotScope:Labelling").Bind(options);
+    return options;
+});
+builder.Services.AddSingleton<LabelStore>();
+
 // Privacy mode (docs/PRIVACY.md). Off by default; on, it pseudonymizes identity at ingest,
 // drops prompt/response content, applies an aggregation floor to every view, and logs reads.
 // Bound from the built container's IConfiguration rather than from builder.Configuration:
@@ -114,6 +127,10 @@ if (persistenceEnabled)
 
     if (outcomeOptions.Enabled)
         builder.Services.AddSingleton(new OutcomeRepository(connectionString!));
+
+    // Labels are the most expensive data here — a rater's minute per session — so they get a
+    // durable home whenever there is one, restored at startup below.
+    builder.Services.AddSingleton(new LabelRepository(connectionString!));
 
     // The audit record must outlive the sessions it describes, so it gets its own table and
     // is never touched by the session retention sweep. Registered whenever Postgres is
@@ -505,6 +522,88 @@ api.MapGet("/cohorts", async (int? days, DateTimeOffset? since, DateTimeOffset? 
         : Results.Ok(report);
 });
 
+// ---------------------------------------------------------------- labelling
+// The four-band scale and the five rubric questions, served from the same table the judge
+// prompt and the calibration engine read. A rater and the judge have to be answering the same
+// sentence, or the agreement statistic measures the difference between two forms.
+api.MapGet("/labels/rubrics", (LabellingOptions labelling) => Results.Ok(new
+{
+    enabled = labelling.Enabled,
+    categories = RubricScale.Categories,
+    bands = RubricScale.Bands.Select(b => new { b.Level, b.Name, b.Lower, b.Upper, b.Anchor }),
+    rubrics = RubricScale.Rubrics.Values.Select(r => new
+    {
+        algorithm = r.Algorithm,
+        question = r.Question,
+        // Four rubrics ask "how good"; deep-friction asks how much repair was needed and runs
+        // the other way. A rater who reads band 3 as "great session" on that one would be
+        // recorded as maximally disagreeing with a judge that got it right.
+        higherIsBetter = r.HigherIsBetter,
+    }),
+}));
+
+// Existing judgments for a session, so a rater can see what they already recorded rather than
+// re-rating from memory.
+api.MapGet("/labels", (string? sessionId, LabelStore labels) =>
+    Results.Ok(string.IsNullOrEmpty(sessionId) ? labels.All() : labels.ForSession(sessionId)));
+
+// Records one rater's judgments for one session. Read scope, not Admin: a rater is a person
+// with dashboard access running a study, and requiring the credential that can wipe history in
+// order to fill in a form would mean nobody ever does.
+api.MapPost("/labels", async (List<SessionLabel> submitted, HttpRequest request, LabelStore labels,
+    LabellingOptions labelling, CancellationToken ct) =>
+{
+    if (!labelling.Enabled)
+        return Results.Json(new
+        {
+            error = "Labelling is off.",
+            detail = "Set CopilotScope:Labelling:Enabled; see docs/CALIBRATION.md §8.",
+        }, statusCode: StatusCodes.Status409Conflict);
+
+    var labelRepo = app.Services.GetService<LabelRepository>();
+    var accepted = 0;
+    var errors = new List<string>();
+    foreach (var label in submitted)
+    {
+        var stamped = label with { At = DateTimeOffset.UtcNow };
+        if (!labels.Record(stamped, out var error)) { errors.Add($"{label.Algorithm}: {error}"); continue; }
+        accepted++;
+
+        // Awaited, not queued: a human clicking Save is a write rate that can afford a round
+        // trip, and "saved" has to mean saved. A database failure is reported to the rater
+        // rather than swallowed — the label is still in memory and the export still holds it,
+        // but they need to know it will not survive a restart.
+        if (labelRepo is not null)
+        {
+            try { await labelRepo.UpsertAsync(labels.ForSession(stamped.SessionId)
+                    .First(l => l.Algorithm == RubricScale.Canonical(stamped.Algorithm)), ct); }
+            catch (Exception ex)
+            {
+                app.Logger.LogWarning(ex, "Could not persist a label for {Session}.", stamped.SessionId);
+                errors.Add($"{label.Algorithm}: recorded in memory, but the database write failed.");
+            }
+        }
+    }
+
+    audit.Record(AccessAuditLog.ActorFor(request), "labels.write",
+        submitted.FirstOrDefault()?.SessionId, $"accepted {accepted}/{submitted.Count}");
+
+    return errors.Count == 0
+        ? Results.Ok(new { accepted, total = labels.Count })
+        : Results.BadRequest(new { accepted, errors });
+});
+
+// The dataset, in exactly the shape calibration/labels.example.json uses — so a study's output
+// drops into the calibration engine with no hand-editing.
+api.MapGet("/labels/export", (bool? includeSynthetic, string? datasetVersion, HttpRequest request,
+    LabelStore labels) =>
+{
+    var synthetic = includeSynthetic == true;
+    audit.Record(AccessAuditLog.ActorFor(request), "labels.export",
+        synthetic ? "includeSynthetic=true" : null, $"{labels.Count} label(s) held");
+    return Results.Ok(labels.Export(synthetic, datasetVersion));
+});
+
 // ------------------------------------------------------------------- digest
 // The aggregate week, as the artefact a lead forwards instead of a dashboard link. Available
 // on demand whether or not the scheduled webhook is configured — reading it costs nothing and
@@ -853,6 +952,26 @@ api.MapPost("/import", async (ImportRequest req, HttpRequest request, ILogger<Pr
     return Results.Ok(new ImportResult(imported, updated, skipped, rejected));
 });
 
+// Labels are restored before the first request: a rater reopening a session has to see the
+// judgment they already recorded, not a blank form that invites them to disagree with themselves.
+if (app.Services.GetService<LabelRepository>() is { } labelStartupRepo
+    && app.Services.GetRequiredService<LabellingOptions>().Enabled)
+{
+    try
+    {
+        await labelStartupRepo.EnsureSchemaAsync(CancellationToken.None);
+        var restored = await labelStartupRepo.AllAsync(CancellationToken.None);
+        app.Services.GetRequiredService<LabelStore>().Load(restored);
+        app.Logger.LogInformation("Restored {Count} human label(s) from Postgres.", restored.Count);
+    }
+    catch (Exception ex)
+    {
+        // Same posture as every other optional table: an opt-in feature Postgres is not ready
+        // for must not take ingest down. Labels then live in memory for this process.
+        app.Logger.LogError(ex, "Could not restore human labels — labelling will run in memory only.");
+    }
+}
+
 // ------------------------------------------------------------ outcome ingestion
 // Opt-in: set CopilotScope:Outcomes:WebhookSecret and point a GitHub webhook here.
 // Deliberately OUTSIDE the /api key group — GitHub authenticates with its own HMAC
@@ -961,6 +1080,7 @@ app.MapGet("/", () => Results.Text(
     "Team views: GET /api/cohorts | /api/compare | /api/facets (add format=csv to export)\n" +
     "Digest: GET /api/digest | POST /api/digest/send (admin, needs CopilotScope:Alerts)\n" +
     "Import: POST /api/import (admin) — tools/CopilotScope.LogImporter, no OTel setup needed\n" +
+    "Labelling: GET /api/labels/rubrics | POST /api/labels | GET /api/labels/export\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
@@ -975,6 +1095,7 @@ app.Logger.LogInformation(
       Forwarding       : {Fwd}
       Privacy mode     : {Privacy}
       Alerts           : {Alerts}
+      Labelling        : {Labelling}
     Point VS Code at this endpoint:
       "github.copilot.chat.otel.enabled": true,
       "github.copilot.chat.otel.otlpEndpoint": "<this host>"
@@ -987,6 +1108,7 @@ app.Logger.LogInformation(
     persistenceEnabled ? "Postgres" : "in-memory only",
     forwarder.Enabled ? (forwardRaw ? "enabled" : "blocked by privacy mode") : "disabled",
     privacyOptions.Describe(),
-    alertOptions.Describe());
+    alertOptions.Describe(),
+    app.Services.GetRequiredService<LabellingOptions>().Describe());
 
 app.Run();

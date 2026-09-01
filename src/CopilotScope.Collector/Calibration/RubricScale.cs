@@ -1,4 +1,9 @@
-namespace CopilotScope.JudgeAgent.Calibration;
+// Lives in the Collector rather than in JudgeAgent because three things now depend on it: the
+// judge's output vocabulary, the human labelling flow (#102), and the calibration engine that
+// compares them. A rubric question a rater reads and a rubric question the judge is asked have
+// to be the same sentence, or the agreement statistic measures the difference between two
+// forms rather than between a person and a model.
+namespace CopilotScope.Collector.Calibration;
 
 /// <summary>One level of the shared ordinal scale, with the anchor text a labeller grades against.</summary>
 public sealed record RubricBand(int Level, string Name, double Lower, double Upper, string Anchor);
