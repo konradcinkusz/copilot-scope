@@ -22,6 +22,18 @@ public sealed record InsightReport(
 public interface IInsightAnalyzer
 {
     InsightReport Analyze(CopilotSession session);
+
+    /// <summary>
+    /// False when configuration has switched this analyzer off. Defaulted to true, so the
+    /// analyzers that are always safe to run stay one class and one registration.
+    ///
+    /// Gating here rather than at registration is deliberate: options bound from the built
+    /// container's IConfiguration are the only ones that see sources a host wrapper adds
+    /// after CreateBuilder, and an analyzer that silently ran because a flag was read too
+    /// early is the failure mode worth designing out — this one produces a report about
+    /// people from their own prompt text.
+    /// </summary>
+    bool Enabled => true;
 }
 
 /// <summary>Runs every registered analyzer against a session.</summary>
@@ -34,6 +46,12 @@ public sealed class InsightPipeline(IEnumerable<IInsightAnalyzer> analyzers)
         var reports = new List<InsightReport>(_analyzers.Count);
         foreach (var analyzer in _analyzers)
         {
+            // A disabled analyzer produces nothing at all — not an empty report, not a
+            // "disabled" placeholder. The dashboard renders these generically, so a
+            // placeholder would still put the feature's name on screen in a deployment
+            // whose works agreement does not mention it.
+            if (!analyzer.Enabled) continue;
+
             try { reports.Add(analyzer.Analyze(session)); }
             catch (Exception ex)
             {

@@ -40,7 +40,7 @@ Exactly one JSON object, no prose outside it, matching this schema:
     },
     { "name": "SPUR (learned satisfaction rubric)", "algorithm": "SPUR", ... },
     { "name": "RAG component metrics (RAGAS)", "algorithm": "RAGAS", ... },
-    { "name": "Frustration classification (deep)", "algorithm": "deep-frustration", ... },
+    { "name": "Workflow friction (deep)", "algorithm": "deep-friction", ... },
     { "name": "Task-completion detection", "algorithm": "task-completion", ... }
   ]
 }
@@ -62,7 +62,7 @@ terse-but-correct answer.
 ### 2. SPUR (satisfaction rubric)
 Estimate whether the USER (not you) would rate this session SAT or DSAT, reasoning
 from behavioral signals already visible in the transcript: rephrasing, repeated
-corrections, abandonment, explicit thanks/frustration, whether the final turn reads
+corrections, abandonment, explicit thanks or complaints, whether the final turn reads
 like a resolved ask. Score = P(SAT) as 0-1. Note in `findings` that this runs in
 zero-shot rubric mode - true SPUR calibrates against a labeled SAT/DSAT session set,
 which CopilotScope does not yet collect; treat this score as directional, not final,
@@ -77,16 +77,24 @@ report the average as the headline `score`. When `retrievalContext` is absent or
 session is not retrieval-grounded, return `"status": "no-data"` - never fabricate a
 retrieval judgment from a plain chat session.
 
-### 4. Deep frustration classification
-CopilotScope already runs a local lexicon+rephrasing heuristic (report-only, EN/PL,
-sarcasm-blind by design). You receive its flags as part of `localComponents`/context
-where available. Your job is the upgrade: classify frustration accounting for sarcasm,
-tone, and full conversational context, not just keyword matches. Report agreement or
-disagreement with the local heuristic explicitly in `findings` (e.g. "local heuristic
-flagged turn 4 as neutral; deep classification reads it as sarcastic frustration
-given turn 3's unresolved repeat request"). This stays report-only - do not imply it
-should be folded into the composite score; that promotion is a decision made by
-config, not by you.
+### 4. Deep workflow friction
+Score how much REPAIR WORK the user had to do: re-asking, restating, correcting,
+undoing, abandoning a thread and starting over. This is a measurement of observed
+workflow events, NOT of the user's emotional state - do not infer, describe or score
+feelings, mood or affect, and do not use emotional vocabulary in `findings`. (EU AI
+Act Art. 5(1)(f) prohibits workplace emotion recognition outright; this rubric is
+about the work, and must stay that way.)
+
+CopilotScope may run a local lexicon+rephrasing heuristic (report-only, EN/PL,
+keyword-bound by design), whose flags you receive as part of `localComponents`/context
+where available. Your job is the upgrade: recognize repair that keyword matching
+misses - a polite restatement of the same unmet request is repair; "this is great,
+but can you do it again properly" is repair regardless of its tone. Report agreement
+or disagreement with the local heuristic explicitly in `findings` (e.g. "local
+heuristic scored turn 4 as clean; turn 4 restates turn 3's unmet request in different
+words, which is repair"). Higher score = more repair. This stays report-only - do not
+imply it should be folded into the composite score; that promotion is a decision made
+by config, not by you.
 
 ### 5. Task-completion detection
 Reason from the FULL transcript plus any `completionSignals` (build/test exit codes)

@@ -24,12 +24,12 @@ public class SessionFactoryTests
     }
 
     [Fact]
-    public void FrustratedPersonaTriggersFrustrationMarkers()
+    public void RepairLoopPersonaTriggersRepairMarkers()
     {
         var rng = new Random(2);
-        var session = SessionFactory.Build("seed-t-frustrated", PersonaCatalog.Get("frustrated"), DateTimeOffset.UtcNow, rng);
+        var session = SessionFactory.Build("seed-t-repair-loop", PersonaCatalog.Get("repair-loop"), DateTimeOffset.UtcNow, rng);
 
-        var report = new FrustrationAnalyzer().Analyze(session);
+        var report = TestFriction.Analyzer().Analyze(session);
 
         Assert.Equal("ok", report.Status);
         Assert.Contains(report.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
@@ -105,10 +105,10 @@ public class SessionFactoryTests
         Assert.Equal("ok", new LatencyUtilityAnalyzer().Analyze(s).Status);
         Assert.Equal("ok", new TokenEconomicsAnalyzer(new PricingOptions()).Analyze(s).Status);
 
-        // Frustration is scattered in, so it flags on strong markers and rephrasing.
-        var frustration = new FrustrationAnalyzer().Analyze(s);
-        Assert.Equal("ok", frustration.Status);
-        Assert.Contains(frustration.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
+        // Repair markers are scattered in, so it flags on strong markers and rephrasing.
+        var friction = TestFriction.Analyzer().Analyze(s);
+        Assert.Equal("ok", friction.Status);
+        Assert.Contains(friction.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
 
         // Latency variety: a pinned >8s stall turn is always present, so the abandonment-risk
         // bucket in the latency-utility model is never empty.
@@ -227,7 +227,7 @@ public class ScriptedSessionTests
     }
 
     [Fact]
-    public void IncidentSessionHasCliShapeErrorsAndFrustration()
+    public void IncidentSessionHasCliShapeErrorsAndRepairMarkers()
     {
         var rng = new Random(7);
         var script = ScriptedSessionCatalog.All.Single(s => s.Slug == "otlp-incident");
@@ -244,10 +244,10 @@ public class ScriptedSessionTests
         Assert.True(s.ToolErrors > 0);
         Assert.NotEmpty(s.ErrorTypes);
 
-        // The incident carries real frustration ("still doesn't work", "Wrong again").
-        var frustration = new FrustrationAnalyzer().Analyze(s);
-        Assert.Equal("ok", frustration.Status);
-        Assert.Contains(frustration.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
+        // The incident carries real repair markers ("still doesn't work", "Wrong again").
+        var friction = TestFriction.Analyzer().Analyze(s);
+        Assert.Equal("ok", friction.Status);
+        Assert.Contains(friction.Findings, f => f.Contains("strong marker") || f.Contains("rephrasing"));
     }
 
     [Fact]

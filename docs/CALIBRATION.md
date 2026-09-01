@@ -75,7 +75,7 @@ cells empty and κ starts swinging on single items.
 | 3 | full | 0.85 – 1.00 | Fully present; nothing material missing. |
 
 **Label on the rubric's own scale, not on "higher is better".** Four of the five rubrics score
-how *good* the session was; `deep-frustration` scores how *frustrated* the user was and runs
+how *good* the session was; `deep-friction` scores how much *repair work* the user had to do and runs
 the other way. The judge is behaving correctly when it returns 0.1 for a calm session. A
 labeller who reads band 3 there as "great session" would be recorded as maximally disagreeing
 with a judge that got it right — and the report would blame the judge for a broken form. Each
@@ -86,7 +86,7 @@ rubric therefore carries its own question:
 | `G-Eval` | How correct, complete and clear was the assistant's work? | higher = better |
 | `SPUR` | Would the user who ran this session have rated it satisfactory? | higher = better |
 | `RAGAS` | Were the answers faithful to, and supported by, the retrieved context? | higher = better |
-| `deep-frustration` | How frustrated does the user read as being? | **higher = worse** |
+| `deep-friction` | How much did the user have to repair — re-ask, correct, restate? | **higher = worse** |
 | `task-completion` | Was the original ask actually resolved by session end? | higher = better |
 
 ## 4. Verdicts

@@ -75,7 +75,7 @@ flowchart TB
 | `src/CopilotScope.Collector` | ASP.NET minimal API | Everything on the ingest path: OTLP decode, session aggregation, scoring, persistence, REST, Prometheus |
 | `src/CopilotScope.Dashboard` | Blazor Server | Read-only UI over the collector's REST API |
 | `src/CopilotScope.AgentForge` | ASP.NET minimal API | Opt-in persona agent grounded on consented transcripts |
-| `src/CopilotScope.JudgeAgent` | ASP.NET minimal API | Opt-in cloud LLM-as-judge (G-Eval, SPUR, RAGAS, deep frustration) |
+| `src/CopilotScope.JudgeAgent` | ASP.NET minimal API | Opt-in cloud LLM-as-judge (G-Eval, SPUR, RAGAS, deep workflow friction) |
 | `tools/*`, `tests/*`, `research/*` | support | Seeder, telemetry generator, xUnit suite, notebooks + LaTeX |
 
 ---

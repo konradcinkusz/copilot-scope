@@ -44,7 +44,7 @@ public class JudgeFlowTests
               "score": 0.8, "metrics": [], "findings": [ "No rephrasing observed." ] },
             { "name": "RAG component metrics (RAGAS)", "algorithm": "RAGAS", "status": "no-data",
               "score": null, "metrics": [], "findings": [ "No retrieval context." ] },
-            { "name": "Frustration classification (deep)", "algorithm": "deep-frustration", "status": "ok",
+            { "name": "Workflow friction (deep)", "algorithm": "deep-friction", "status": "ok",
               "score": 0.1, "metrics": [], "findings": [ "Agrees with local heuristic." ] },
             { "name": "Task-completion detection", "algorithm": "task-completion", "status": "ok",
               "score": 1.0, "metrics": [], "findings": [ "Final turn confirms the fix works." ] }

@@ -141,7 +141,7 @@ public static class ScriptedSessionCatalog
 
     // ── Session 2 ─────────────────────────────────────────────────────────────────────────────
     // On-call incident: the collector silently drops OTLP batches after a deploy. A real debugging
-    // arc with a wrong first hypothesis, genuine frustration, a rollback, the actual root cause
+    // arc with a wrong first hypothesis, repeated repair, a rollback, the actual root cause
     // (middleware consuming the request body before the streaming decoder), tests, and a
     // postmortem. Claude Code CLI, so no editor signals — the CLI story on the dashboard.
     private static ScriptedSession OtlpIncident => new(

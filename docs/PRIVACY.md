@@ -85,6 +85,14 @@ That is usable for a trial and useless for a deployment.
   arrived — before redaction, by design. Set `AllowRawForwarding: true` only if the
   upstream backend is covered by the same agreement.
 
+### Related: workflow-friction signals
+
+The one analyzer that reads prompt text is documented separately in
+[`WORKFLOW_FRICTION.md`](WORKFLOW_FRICTION.md) — what it measures (observed repair events,
+not emotion), why EU AI Act Art. 5(1)(f) makes that distinction load-bearing, and why it
+ships switched off. Privacy mode makes it moot: with content dropped at ingest the analyzer
+has nothing to read and reports no data.
+
 ---
 
 ## 2. Data map (GDPR Art. 30)
@@ -251,5 +259,6 @@ statement against your actual configuration (`GET /api/privacy` reports it).
 - [ ] `AllowRawForwarding` left off, or the upstream backend covered by the same agreement
 - [ ] Content capture off on every client (belt and braces — privacy mode drops it anyway)
 - [ ] `/metrics` reachable only by the monitoring stack (privacy mode already drops the per-session series)
+- [ ] `CopilotScope:WorkflowFriction:Enabled` left off, or covered by the works agreement (see [WORKFLOW_FRICTION.md](WORKFLOW_FRICTION.md))
 - [ ] `GET /api/privacy` output attached to the works agreement
 - [ ] Art. 30 record filled in from §2, DPO assessment on file

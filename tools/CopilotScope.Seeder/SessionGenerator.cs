@@ -9,7 +9,7 @@ namespace CopilotScope.Seeder;
 public static class SessionGenerator
 {
     private static readonly string[] QuickSlugs =
-        ["showcase", "golden", "error-prone", "laggy", "rejected-edits", "frustrated", "internal-title"];
+        ["showcase", "golden", "error-prone", "laggy", "rejected-edits", "repair-loop", "internal-title"];
 
     public static List<CopilotSession> BuildQuickSet(Random rng)
     {
