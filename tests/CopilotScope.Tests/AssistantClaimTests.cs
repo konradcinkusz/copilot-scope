@@ -116,6 +116,69 @@ public sealed class AssistantClaimTests
         Assert.Contains("demote", adr, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ------------------------------------------------------------------ positioning
+
+    [Fact]
+    public void TheStrategyNoLongerClaimsAnEmptyCategory()
+    {
+        // "Nobody does this" is refuted by a two-minute search since DX, Datadog and New Relic
+        // shipped the category in mid-2026. A strategy document kept in the repo *on purpose*,
+        // as proof of published reasoning, is the first thing a skeptical reader opens — so a
+        // claim that fails there discredits everything else on the page (ADR-003).
+        var strategy = RepoFile("docs/STRATEGY.md");
+
+        Assert.DoesNotContain("the only open-source tool that turns telemetry", strategy, StringComparison.Ordinal);
+        Assert.DoesNotContain("the first is empty and defensible", strategy, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nobody in open source scores", strategy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheStrategyNamesTheCompetitorsItIsPositionedAgainst()
+    {
+        var strategy = RepoFile("docs/STRATEGY.md");
+
+        foreach (var entrant in new[] { "DX Agent Experience", "Datadog Agent Console",
+                                        "New Relic AI Coding Observability" })
+            Assert.Contains(entrant, strategy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSettledStandardClaimIsCorrected()
+    {
+        // Semantic conventions v1.42.0 deprecated gen_ai.* into a separate repository with no
+        // stable release. The standard split rather than settled, and the honest version — a
+        // canary that reports drift — is checkable in a way the original claim never was.
+        var strategy = RepoFile("docs/STRATEGY.md");
+
+        // The old phrase is still on the page — quoted, inside the correction that retracts it.
+        // Retracting a claim by name is better than deleting it: a reader who saw the original
+        // gets told it was wrong rather than finding it silently gone. So the assertion is that
+        // the correction is present, not that the words are absent.
+        Assert.Contains("v1.42.0", strategy, StringComparison.Ordinal);
+        Assert.Contains("did not settle; it split", strategy, StringComparison.Ordinal);
+        Assert.Contains("semantic-conventions-genai", strategy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheComparisonPageIsPublishedAndLinkedFromTheReadme()
+    {
+        Assert.Contains("docs/COMPARISON.md", RepoFile("README.md"), StringComparison.Ordinal);
+        Assert.Contains("CopilotScope vs.", RepoFile("docs/COMPARISON.md"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheComparisonPageSaysWhereTheCompetitorsAreBetter()
+    {
+        // The guard against this page decaying into marketing. A comparison written by one
+        // side that only flatters that side is worth nothing to the reader it is aimed at, and
+        // this project's whole argument is that it tells you the uncomfortable half.
+        var comparison = RepoFile("docs/COMPARISON.md");
+
+        Assert.Contains("simply better", comparison, StringComparison.OrdinalIgnoreCase);
+        // And that it keeps admitting the thing that is genuinely unresolved.
+        Assert.Contains("not calibrated", comparison, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void TheInAppDocsNoLongerTellUsersToGuessAtCursorSetup()
     {

@@ -466,6 +466,28 @@ Both are off by default and the legacy single key keeps granting everything, so 
 existing deployment is unchanged until it opts in. Full trust model, including what
 each role can see: **[SECURITY.md](SECURITY.md)**.
 
+## How this compares to DX, Datadog and New Relic
+
+Three commercial products now score AI coding-assistant sessions: **DX Agent Experience**
+(Atlassian, May 2026), **Datadog Agent Console** (June 2026) and **New Relic AI Coding
+Observability** (June 2026). The category is not empty, and this project does not claim it
+is — three companies with far better market research concluding the problem is real is the
+strongest external evidence the thesis has.
+
+Three reasons to choose this one anyway:
+
+1. **Nothing leaves your infrastructure.** Not a policy — the collector runs on your machine
+   and has no callback of any kind.
+2. **The formula is published and deterministic.** Six weights, renormalized over the
+   components with data, confidence exported next to every score. You can re-derive it by
+   hand. It is also **not calibrated yet**, and [says so](docs/CALIBRATION.md).
+3. **It cannot rank developers.** Enforced, not promised — no developer dimension exists in
+   the cohort filter, and tests assert it.
+
+If you need breadth, production linkage, or a vendor with a support team, one of the other
+three is the right answer. Full comparison, including where they are simply better:
+**[docs/COMPARISON.md](docs/COMPARISON.md)**.
+
 ## Who maintains this
 
 One person, alongside other things — which is the first thing anyone evaluating a tool for

@@ -190,6 +190,26 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   silently moved measuring stick.
 
 ### Changed
+- **Positioning restated for a post-DX/Datadog market** (#99,
+  [ADR-003](docs/architecture/ADR-003-positioning.md)). `docs/STRATEGY.md` claimed this was
+  "the only open-source tool that turns telemetry from any AI coding assistant into a session
+  quality score" and called the category empty. Three commercial entrants shipped it since:
+  DX Agent Experience (Atlassian Team '26, May 2026), Datadog Agent Console (DASH, June 2026)
+  and New Relic AI Coding Observability (2026-06-23) — the last of which is itself
+  open-source, which removes even the fallback claim. A "nobody does this" line that a
+  two-minute search refutes would discredit a project whose brand is radical honesty, on a
+  page kept in the repo specifically so readers can check the reasoning. The landscape section
+  now names all three with dates and treats their arrival as **category validation**: three
+  companies with far better market research concluding the problem is real is the strongest
+  external evidence the thesis has, and it costs only the "empty niche" framing, which was the
+  weakest part of the argument. The claim is re-scoped to what survives all three — open
+  source, **self-hosted**, **published deterministic formula**, and **cannot produce a
+  per-developer ranking** (enforced by #94 and #96, not merely stated). `docs/COMPARISON.md`
+  sets out what each product does, including a section on where the others are simply better.
+  The timing claim ("a standard that had just finished settling") is also corrected: semantic
+  conventions v1.42.0 deprecated `gen_ai.*` into a separate repository with no stable release,
+  so the standard split rather than settled — and the weekly canary from #92 is the honest,
+  checkable version of that argument.
 - **Cursor is demoted from a supported assistant to unverified** (#93,
   [ADR-002](docs/architecture/ADR-002-cursor-support.md)). "Five assistants" in the README
   included one supported by a `service.name` substring check and a namespace rename, with zero
