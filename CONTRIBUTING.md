@@ -85,6 +85,21 @@ tools/
 - No abbreviations in names unless they are domain-standard (`ttft`, `otlp`, `llm`).
 - Prefer records for DTOs and value objects; mutable classes only for aggregates that need lock-guarded mutation.
 
+## Maintenance, stability and who reviews this
+
+[GOVERNANCE.md](GOVERNANCE.md) states what to expect: issue and PR response posture for a
+solo-maintained project, which surfaces are covered by a stability contract (REST DTOs,
+Prometheus metric names, the jsonb snapshot shape, the label schema) versus which may move in
+any release, release cadence, and what happens to your data if the project stops moving.
+
+Worth reading before a large PR: it names the surfaces where a breaking change costs a major
+version, which is usually the difference between a change that can be merged and one that has
+to wait.
+
+**Interested in co-maintaining?** [GOVERNANCE.md §6](GOVERNANCE.md) says what is actually
+needed and how to get commit access. Short version: land two or three non-trivial PRs, then say
+so.
+
 ## Questions / ideas
 
 Open an [Issue](https://github.com/konradcinkusz/copilotscope/issues) for bugs, and for design questions or feature proposals — please raise one before writing a large PR, so we can agree on the approach first.
