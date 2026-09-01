@@ -890,3 +890,18 @@ html, body {
 .band.skip.active { border-color: var(--dim); color: var(--dim); }
 
 .label-status { font-size: 11px; color: var(--ok); }
+
+/* A row describing something the project does NOT claim to support. Dimmed rather than
+   removed: the behaviour exists and someone pointing that assistant at the collector needs
+   to find out what actually happens, which is not the same as being told it works. */
+.doc-table tr.unverified td { color: var(--dim); }
+.doc-table tr.unverified b { color: var(--text); }
+
+/* Fabricated demo data. Deliberately the loudest badge on the row: a seeded session looks
+   exactly like a real one in a screenshot, which is how this project once appeared to have
+   proven support for an assistant it had never received a payload from. */
+.origin-demo {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 45%, transparent);
+  background: color-mix(in srgb, var(--err) 12%, transparent);
+}

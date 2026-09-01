@@ -66,8 +66,9 @@ What CopilotScope has that the list above does not:
    direct counter-metric to the GitClear findings, and the reason acceptance rate
    cannot be gamed here without the gaming showing up.
 4. **Four assistants in one schema.** VS Code Copilot, Copilot CLI, Claude Code and
-   Cursor all normalize onto one namespace (`Domain/Sem.cs`). The 480★ competitor
-   supports one.
+   Claude Cowork all normalize onto one namespace (`Domain/Sem.cs`). The 480★ competitor
+   supports one. (Cursor telemetry is detected and normalized too, but is unverified and
+   deliberately not counted — see [ADR-002](architecture/ADR-002-cursor-support.md).)
 5. **A research layer.** Eight notebooks and a LaTeX paper built into every release.
    Nothing else in this niche has one.
 
@@ -110,7 +111,7 @@ second is crowded and already lost; the first is empty and defensible by the pap
 Three claims, in order:
 
 1. **Quality, not usage.** The score, the components, the turn where it went wrong.
-2. **Every assistant, not just one.** Copilot, Claude Code, Cursor, CLI.
+2. **Every assistant, not just one.** Copilot, Copilot CLI, Claude Code, Claude Cowork.
 3. **Local and private.** No SDK, no account, nothing leaves the machine.
 
 .NET, Blazor and Aspire are implementation details and belong below the fold. The

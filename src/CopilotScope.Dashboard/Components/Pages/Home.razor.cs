@@ -419,6 +419,13 @@ public partial class Home : ComponentBase, IDisposable
             : "The collector rejected the labels — check that labelling is enabled.";
     }
 
+    /// <summary>
+    /// True for a session the Seeder fabricated. The collector enforces this prefix on
+    /// <c>/api/admin/seed</c>, so it is a reliable marker rather than a naming convention —
+    /// which is what makes it safe to badge on.
+    /// </summary>
+    private static bool IsSeeded(string id) => id.StartsWith("seed-", StringComparison.Ordinal);
+
     private static string KindLabel(SessionKind kind) => kind switch
     {
         SessionKind.InternalTitleGeneration => "title-gen",

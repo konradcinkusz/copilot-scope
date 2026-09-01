@@ -167,6 +167,15 @@
                         {
                             <span class="session-kind-badge">@KindLabel(s.Kind)</span>
                         }
+                        @if (IsSeeded(s.Id))
+                        {
+                            @* Fabricated demo data from the Seeder. Badged because a screenshot of
+                               a seeded session is indistinguishable from a real one, and that is
+                               exactly how this project ended up looking like it had proven support
+                               for an assistant it had never received a payload from (ADR-002). *@
+                            <span class="session-kind-badge origin-demo"
+                                  title="Fabricated demo data from tools/CopilotScope.Seeder — not a real session, and not evidence about any assistant.">demo</span>
+                        }
                         @if (s.Origin == SessionOrigin.LogImport)
                         {
                             @* Reconstructed from the assistant's own transcript file rather than

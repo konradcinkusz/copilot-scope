@@ -286,6 +286,7 @@ the Copilot SDK OpenTelemetry docs.)
 | **Visual Studio (2022/2026)** | ❌ | no OTel export as of July 2026 |
 | JetBrains / Xcode / Eclipse plugins | ❌ | no OTel export as of July 2026 |
 | Copilot Studio (Power Platform) | ➖ | exports OTel-aligned spans, but only to Azure Application Insights (admin-configured), not to arbitrary OTLP endpoints |
+| **Cursor** | ⚠️ unverified | Cursor's OTel export is **Enterprise-plan only** and sends metrics and logs but *no traces*. The collector detects `service.name` containing `cursor` and normalizes `cursor.*` attributes — but no payload from a real Cursor session has ever been tested against it, so this is **not a supported assistant**. See [ADR-002](architecture/ADR-002-cursor-support.md). A turn here is one `invoke_agent` trace, so turn-level friction analysis cannot run for it at all even if the export works. |
 
 ## 7. Enterprise: force the configuration centrally
 
