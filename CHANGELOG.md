@@ -9,6 +9,21 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **A GitHub Copilot Metrics archiver, breaking the 28-day window** (#97). GitHub serves 28 days
+  of org usage and nothing older; admins have been asking for history since it shipped, and the
+  most-used tool in this space had to add a database purely to keep it. `CopilotScope:VendorMetrics`
+  (off by default, needs Postgres) polls daily and archives the window indefinitely, keyed
+  `(provider, scope, day)` so a re-poll overwrites rather than accumulating 28 duplicates a day
+  and a restart costs nothing. **The full response document is stored verbatim** alongside the
+  extracted counts — the vendor deletes the original, so a parser that kept only what it
+  understood today would silently discard history that cannot be re-fetched. Served at
+  `GET /api/vendor/metrics` and exported as `copilotscope_vendor_*` gauges, including "days held
+  beyond the vendor's own horizon", with two new provisioned Grafana panels. The connector
+  interface is deliberately narrow (fetch a window, return days) so Anthropic's and Cursor's
+  admin APIs can follow as one class each. Org/enterprise level only: the GitHub API can be
+  asked for a per-developer breakdown and this does not ask. Framed in the payload, the docs and
+  the architecture diagram as **context beside the quality score, never instead of it** —
+  counting usage still does not tell you whether the tooling helped.
 - **An opt-in session labelling flow** (#102). The composite's credibility problem is written
   down in this repo twice over — no calibration has been run, there are no human labels, and the
   product review calls the score "an opinion with a confidence interval, not a measurement" —

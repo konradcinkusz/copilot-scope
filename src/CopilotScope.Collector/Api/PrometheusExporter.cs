@@ -3,6 +3,7 @@ using System.Text;
 using CopilotScope.Collector.Domain;
 using CopilotScope.Collector.Privacy;
 using CopilotScope.Collector.Quality;
+using CopilotScope.Collector.Vendor;
 
 namespace CopilotScope.Collector.Api;
 
@@ -47,7 +48,8 @@ public sealed class PrometheusExporter(
     QualityEngine quality,
     PricingOptions pricing,
     PrometheusOptions options,
-    PrivacyGuard? privacy = null)
+    PrivacyGuard? privacy = null,
+    VendorMetricsSnapshot? vendor = null)
 {
     private static readonly string[] ComponentNames =
         ["reliability", "acceptance", "friction", "latency", "feedback", "efficiency"];
@@ -68,6 +70,7 @@ public sealed class PrometheusExporter(
         RenderCost(sb, rows);
         RenderErrorTypes(sb, rows);
         RenderIngestHealth(sb);
+        RenderVendorUsage(sb);
 
         // Per-session series are an individual-level view of one developer's work, labelled by
         // session id and carrying that session's quality score. Under privacy mode that would
@@ -83,6 +86,50 @@ public sealed class PrometheusExporter(
     /// identity-less signals arrived with no way to tell the sending machines apart,
     /// so they share one fingerprint scope — configure host.name on the emitters.
     /// </summary>
+    /// <summary>
+    /// Archived vendor usage, exported so Grafana can chart a trend longer than the 28 days the
+    /// vendor itself will serve — which is the entire reason the archive exists.
+    ///
+    /// A gauge per day would be a new time series per day and unbounded; these are gauges over
+    /// the archive itself (how much history is held, how far past the vendor's horizon), plus
+    /// the most recent day's counts. Prometheus already has the day axis: what it needs from
+    /// here is the current value, scraped over time.
+    /// </summary>
+    private void RenderVendorUsage(StringBuilder sb)
+    {
+        if (vendor is null || !vendor.Enabled) return;
+
+        Header(sb, "copilotscope_vendor_days_archived", "gauge",
+            "Days of vendor usage held in the archive, including days the vendor no longer serves.");
+        Write(sb, "copilotscope_vendor_days_archived", vendor.DaysArchived,
+            ("provider", vendor.Provider), ("scope", vendor.Scope));
+
+        Header(sb, "copilotscope_vendor_days_beyond_window", "gauge",
+            "Archived days older than the vendor's own 28-day window — history that would otherwise be gone.");
+        Write(sb, "copilotscope_vendor_days_beyond_window", Math.Max(0, vendor.DaysArchived - 28),
+            ("provider", vendor.Provider), ("scope", vendor.Scope));
+
+        if (vendor.Latest is not { } latest) return;
+
+        Header(sb, "copilotscope_vendor_active_users", "gauge",
+            "Vendor-reported users with any Copilot activity on the most recent archived day.");
+        Write(sb, "copilotscope_vendor_active_users", latest.TotalActiveUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope));
+
+        Header(sb, "copilotscope_vendor_engaged_users", "gauge",
+            "Vendor-reported users who engaged with a Copilot surface, by surface, most recent archived day.");
+        Write(sb, "copilotscope_vendor_engaged_users", latest.TotalEngagedUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope), ("surface", "all"));
+        Write(sb, "copilotscope_vendor_engaged_users", latest.CompletionsEngagedUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope), ("surface", "ide_completions"));
+        Write(sb, "copilotscope_vendor_engaged_users", latest.ChatEngagedUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope), ("surface", "ide_chat"));
+        Write(sb, "copilotscope_vendor_engaged_users", latest.DotcomChatEngagedUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope), ("surface", "dotcom_chat"));
+        Write(sb, "copilotscope_vendor_engaged_users", latest.PullRequestEngagedUsers,
+            ("provider", vendor.Provider), ("scope", vendor.Scope), ("surface", "pull_requests"));
+    }
+
     private void RenderIngestHealth(StringBuilder sb)
     {
         Header(sb, "copilotscope_hostless_signals_total", "counter",

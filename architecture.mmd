@@ -4,8 +4,8 @@ flowchart TB
         direction LR
         VSC["VS Code<br/><i>gen_ai.* spans + metrics</i>"]
         CLI["Copilot CLI<br/><i>github.copilot.* dialect</i>"]
-        CC["Claude Code<br/><i>claude_code.* — adapter TBD</i>"]
-        GH["GitHub Metrics API<br/><i>org-level polling — TBD</i>"]
+        CC["Claude Code<br/><i>claude_code.* + local JSONL import</i>"]
+        GH["GitHub Metrics API<br/><i>org-level daily poll — archived past 28d</i>"]
     end
 
     subgraph Local["Local — Docker Compose (today)"]

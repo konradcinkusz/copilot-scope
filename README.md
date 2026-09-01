@@ -122,6 +122,20 @@ Sessions are deep-linkable at `/sessions/{id}`.
 
 No view and no export has a per-developer dimension. Every axis describes the tooling.
 
+### Archiving GitHub's Copilot usage past its 28-day expiry
+
+GitHub's Copilot Metrics API serves 28 days and nothing older. With
+`CopilotScope:VendorMetrics` configured (org or enterprise, a read-only token, Postgres), the
+collector polls daily and keeps the window indefinitely — idempotent per day, and storing the
+full response verbatim so a field the parser does not read yet is still archived. Read it at
+`GET /api/vendor/metrics`; the provisioned Grafana dashboard charts it past the vendor's own
+horizon. Org/team level only — no per-developer breakdown is fetched or stored.
+
+This is **context, not the measurement**. Counting AI usage still does not tell you whether AI
+is helping; the score remains the product. What the archive buys is a denominator for a quality
+trend, and something useful on day one for an org with Copilot seats and no instrumentation.
+See [docs/TUTORIAL.md §12](docs/TUTORIAL.md).
+
 ### Labelling: turning the score from an opinion into a measurement
 
 The composite is not validated. This repo says so twice — the calibration docs state that no
@@ -576,8 +590,8 @@ flowchart TB
         direction LR
         VSC["VS Code<br/><i>gen_ai.* spans + metrics</i>"]
         CLI["Copilot CLI<br/><i>github.copilot.* dialect</i>"]
-        CC["Claude Code<br/><i>claude_code.* — adapter TBD</i>"]
-        GH["GitHub Metrics API<br/><i>org-level polling — TBD</i>"]
+        CC["Claude Code<br/><i>claude_code.* + local JSONL import</i>"]
+        GH["GitHub Metrics API<br/><i>org-level daily poll — archived past 28d</i>"]
     end
 
     subgraph Local["Local — Docker Compose (today)"]

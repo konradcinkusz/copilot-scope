@@ -488,3 +488,59 @@ reset — a rule built that way fires on eviction rather than on anything real (
 collector-side detector above is the more precise instrument regardless: it compares two
 explicit windows out of Postgres, and it can tell a quality drop apart from a change in which
 signals a cohort reports.
+
+
+## 12. Archive GitHub's Copilot usage before it expires
+
+GitHub's Copilot Metrics API returns a **28-day rolling window** and nothing older. Org admins
+have been asking for history since it shipped, and the most-used tool in this space had to add a
+database purely to keep it. CopilotScope can archive it.
+
+This is also the one thing here that delivers on day one to an org that has Copilot seats and no
+OTLP instrumentation anywhere — and it starts accumulating exactly the baseline a later quality
+trend needs a denominator against.
+
+```jsonc
+// appsettings.json on the collector (needs Postgres — there is nowhere to archive to without it)
+{
+  "CopilotScope": {
+    "VendorMetrics": {
+      "Enabled": true,
+      "Organization": "acme",      // or "Enterprise": "acme-inc"
+      "Token": "<read-only token>",
+      "PollInterval": "24:00:00"
+    }
+  }
+}
+```
+
+### Token scopes — least privilege
+
+The token needs exactly **one read scope** and nothing else:
+
+| Scope | For |
+|---|---|
+| `manage_billing:copilot` | organization metrics (classic PAT) |
+| `read:org` | organization metrics (fine-grained PAT / GitHub App) |
+| `read:enterprise` | enterprise metrics |
+
+Nothing here writes. A token with write scopes is a token with more blast radius than this
+feature has any use for. A `403` almost always means the scope is missing; a `404` almost always
+means the org or enterprise slug is wrong, or Copilot metrics are not enabled for it.
+
+### What is stored
+
+One row per day per scope, keyed so a re-poll overwrites rather than accumulating 28 duplicates
+daily. The **full response document is stored verbatim** alongside the extracted counts — the
+vendor deletes the original, so a field added next month is still archived even if today's
+parser does not read it. Read it back at `GET /api/vendor/metrics?days=365`, or chart it in
+Grafana: the provisioned dashboard gains a usage panel and a "history GitHub would have deleted"
+stat, both fed by `copilotscope_vendor_*` metrics.
+
+**Org and team level only.** No per-developer breakdown is fetched, stored or displayed. The
+GitHub API can be asked for one; this deliberately does not ask.
+
+> **This is context, not the measurement.** This project's claim is that counting AI usage does
+> not tell you whether AI is helping — the session quality score remains the product. What the
+> archive buys is a denominator: "seats went up 40% in March" is the sentence that makes a
+> quality trend readable. It is not a usage-dashboard pivot.

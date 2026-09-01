@@ -8,6 +8,7 @@ using CopilotScope.Collector.Outcomes;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Privacy;
 using CopilotScope.Collector.Quality;
+using CopilotScope.Collector.Vendor;
 using CopilotScope.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -91,6 +92,21 @@ builder.Services.AddSingleton(alertOptions);
 builder.Services.AddHttpClient<AlertDispatcher>(c => c.Timeout = TimeSpan.FromSeconds(10));
 if (alertOptions.Active) builder.Services.AddHostedService<AlertService>();
 
+// Vendor usage archiving (docs/TUTORIAL.md §12). GitHub's Copilot Metrics API keeps 28 days and
+// nothing older; this saves the window before it expires. Context beside the quality score, never
+// instead of it — counting usage still does not tell you whether the tooling is helping.
+// Bound from the built container's IConfiguration, like privacy and labelling: sources a host
+// wrapper adds land after CreateBuilder, and binding early would silently leave archiving off in
+// a deployment that configured it — which nobody notices until the vendor's window has expired.
+builder.Services.AddSingleton(sp =>
+{
+    var options = new VendorMetricsOptions();
+    sp.GetRequiredService<IConfiguration>().GetSection("CopilotScope:VendorMetrics").Bind(options);
+    return options;
+});
+builder.Services.AddSingleton<VendorMetricsCache>();
+builder.Services.AddSingleton<VendorMetricsSnapshot>();
+
 // Human session labelling (docs/CALIBRATION.md §8). Off by default: it puts a write control on
 // a read-only surface, and most deployments are not running a labelling study. Without it the
 // calibration machinery in JudgeAgent has nothing to consume, which is why the composite is
@@ -127,6 +143,17 @@ if (persistenceEnabled)
 
     if (outcomeOptions.Enabled)
         builder.Services.AddSingleton(new OutcomeRepository(connectionString!));
+
+    // Archiving needs somewhere to archive to. Without Postgres the poll would fetch a window
+    // and drop it, which is worse than not running: it spends an org's rate limit to keep
+    // nothing.
+    // Registered whenever Postgres is present and switched on at runtime by
+    // VendorMetricsOptions.Active — the options are not yet bound here, and guessing them is how
+    // a deployment ends up with archiving that reports itself configured while polling nothing.
+    builder.Services.AddSingleton(new VendorMetricsRepository(connectionString!));
+    builder.Services.AddHttpClient<IVendorMetricsSource, GitHubCopilotMetricsSource>(
+        c => c.Timeout = TimeSpan.FromSeconds(30));
+    builder.Services.AddHostedService<VendorMetricsArchiver>();
 
     // Labels are the most expensive data here — a rater's minute per session — so they get a
     // durable home whenever there is one, restored at startup below.
@@ -520,6 +547,58 @@ api.MapGet("/cohorts", async (int? days, DateTimeOffset? since, DateTimeOffset? 
     return IsCsv(format)
         ? Results.Text(CohortExport.ToCsv(report), "text/csv; charset=utf-8")
         : Results.Ok(report);
+});
+
+// --------------------------------------------------------------- vendor usage
+// The archive, including everything past the vendor's own 28-day horizon. Framed in the payload
+// itself as context rather than as the measurement: this project's claim is that counting usage
+// does not tell you whether the tooling is helping, and an endpoint that quietly implied
+// otherwise would undercut the thing it sits next to.
+api.MapGet("/vendor/metrics", async (int? days, HttpRequest request, VendorMetricsOptions vendorOptions,
+    CancellationToken ct) =>
+{
+    if (!vendorOptions.Active)
+        return Results.Json(new
+        {
+            enabled = false,
+            reason = "Vendor usage archiving is off. Set CopilotScope:VendorMetrics with a scope " +
+                     "and a read-only token; see docs/TUTORIAL.md §12.",
+        }, statusCode: StatusCodes.Status409Conflict);
+
+    if (app.Services.GetService<VendorMetricsRepository>() is not { } vendorRepo)
+        return Results.Json(new { enabled = false, reason = "Archiving needs Postgres." },
+            statusCode: StatusCodes.Status409Conflict);
+
+    var window = Math.Clamp(days ?? 90, 1, 3650);
+    var archive = await vendorRepo.ReadAsync("github", vendorOptions.Scope, window, ct);
+    var cache = app.Services.GetRequiredService<VendorMetricsCache>();
+
+    audit.Record(AccessAuditLog.ActorFor(request), "vendor.metrics", $"days={window}",
+        $"served {archive.Count} day(s)");
+
+    return Results.Ok(new
+    {
+        enabled = true,
+        provider = "github",
+        scope = vendorOptions.Scope,
+        lastPoll = cache.LastPoll,
+        vendorWindowDays = cache.LastWindowDays,
+        // The number that says what the archive is for: days held beyond what the vendor still
+        // serves. Zero means archiving has not outrun the window yet.
+        daysBeyondVendorWindow = Math.Max(0, archive.Count - 28),
+        note = "Vendor usage counts, archived past their 28-day expiry. Context for the quality " +
+               "score, not a substitute for it — usage volume does not say whether the tooling helped.",
+        days = archive.Select(d => new
+        {
+            day = d.Day,
+            totalActiveUsers = d.TotalActiveUsers,
+            totalEngagedUsers = d.TotalEngagedUsers,
+            completionsEngagedUsers = d.CompletionsEngagedUsers,
+            chatEngagedUsers = d.ChatEngagedUsers,
+            dotcomChatEngagedUsers = d.DotcomChatEngagedUsers,
+            pullRequestEngagedUsers = d.PullRequestEngagedUsers,
+        }),
+    });
 });
 
 // ---------------------------------------------------------------- labelling
@@ -1081,6 +1160,7 @@ app.MapGet("/", () => Results.Text(
     "Digest: GET /api/digest | POST /api/digest/send (admin, needs CopilotScope:Alerts)\n" +
     "Import: POST /api/import (admin) — tools/CopilotScope.LogImporter, no OTel setup needed\n" +
     "Labelling: GET /api/labels/rubrics | POST /api/labels | GET /api/labels/export\n" +
+    "Vendor usage: GET /api/vendor/metrics (archives GitHub's 28-day window indefinitely)\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 
@@ -1096,6 +1176,7 @@ app.Logger.LogInformation(
       Privacy mode     : {Privacy}
       Alerts           : {Alerts}
       Labelling        : {Labelling}
+      Vendor archive   : {Vendor}
     Point VS Code at this endpoint:
       "github.copilot.chat.otel.enabled": true,
       "github.copilot.chat.otel.otlpEndpoint": "<this host>"
@@ -1109,6 +1190,7 @@ app.Logger.LogInformation(
     forwarder.Enabled ? (forwardRaw ? "enabled" : "blocked by privacy mode") : "disabled",
     privacyOptions.Describe(),
     alertOptions.Describe(),
-    app.Services.GetRequiredService<LabellingOptions>().Describe());
+    app.Services.GetRequiredService<LabellingOptions>().Describe(),
+    app.Services.GetRequiredService<VendorMetricsOptions>().Describe());
 
 app.Run();
