@@ -41,7 +41,28 @@ builder.Services.AddSingleton<CalibrationEngine>();
 
 builder.Services.AddSingleton<SessionJudgeContextBuilder>();
 builder.Services.AddSingleton<JudgePromptBuilder>();
-builder.Services.AddSingleton<IJudgeChatClient, AzureFoundryJudgeChatClient>();
+
+// Judge backend. Default stays Azure AI Foundry, so an existing deployment is unchanged;
+// setting Backend=OpenAiCompatible points the same rubric pipeline at Ollama, vLLM, LM Studio
+// or any in-region OpenAI-compatible gateway. That is what lets a self-hosted or regulated
+// deployment run the judge at all — it is the one feature that sends real transcript text
+// somewhere, and until now the only somewhere was a cloud vendor.
+var backendOptions = new JudgeBackendOptions();
+builder.Configuration.GetSection("CopilotScope:JudgeAgent").Bind(backendOptions);
+builder.Services.AddSingleton(backendOptions);
+builder.Services.AddSingleton(backendOptions.OpenAiCompatible);
+
+if (backendOptions.Backend == JudgeBackend.OpenAiCompatible)
+{
+    // A local model on CPU can take minutes for a 40-turn transcript, so the timeout is
+    // configurable and generous rather than HttpClient's 100s default.
+    builder.Services.AddHttpClient<IJudgeChatClient, OpenAiCompatibleJudgeChatClient>(c =>
+        c.Timeout = TimeSpan.FromSeconds(backendOptions.OpenAiCompatible.TimeoutSeconds));
+}
+else
+{
+    builder.Services.AddSingleton<IJudgeChatClient, AzureFoundryJudgeChatClient>();
+}
 
 var app = builder.Build();
 
@@ -58,6 +79,13 @@ app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
     collectorAuthConfigured = !string.IsNullOrEmpty(collectorApiKey),
+    judgeBackend = backendOptions.Backend.ToString(),
+    // "Is the backend I selected actually configured?" — the Azure fields are irrelevant when
+    // running locally, and vice versa, so report the one that is in play.
+    judgeBackendConfigured = backendOptions.Backend == JudgeBackend.OpenAiCompatible
+        ? !string.IsNullOrWhiteSpace(backendOptions.OpenAiCompatible.BaseUrl)
+          && !string.IsNullOrWhiteSpace(backendOptions.OpenAiCompatible.Model)
+        : !string.IsNullOrEmpty(azureAiOptions.Endpoint),
     azureAiConfigured = !string.IsNullOrEmpty(azureAiOptions.Endpoint)
 }));
 
@@ -87,7 +115,19 @@ app.MapPost("/api/sessions/{id}/judge", async (string id, HttpRequest request,
     if (!IsAuthorized(request)) return Results.Unauthorized();
 
     var results = await JudgeSessionAsync(id, collector, contextBuilder, promptBuilder, chatClient, ct);
-    return results is null ? Results.NotFound() : Results.Ok(new { results });
+    if (results is null) return Results.NotFound();
+
+    // Provenance travels with the verdict. Calibration runs already record which deployment and
+    // rubric produced a score; a per-session result without the same fields is a number whose
+    // origin nobody can reconstruct — and two backends grading the same rubric are not
+    // interchangeable evidence.
+    return Results.Ok(new
+    {
+        results,
+        backend = chatClient.BackendName,
+        model = chatClient.ModelName,
+        judgePromptVersion = promptBuilder.TemplateFingerprint
+    });
 });
 
 // ------------------------------------------------------------------- calibration

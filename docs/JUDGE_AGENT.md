@@ -1,9 +1,12 @@
-# JudgeAgent — opt-in, cloud-only session quality judge
+# JudgeAgent — opt-in session quality judge
 
-`src/CopilotScope.JudgeAgent` is an opt-in, cloud-only sibling service to the Collector. It grades
-one session at a time using LLM-graded rubrics (G-Eval, SPUR, RAGAS, deep frustration
-classification, task-completion detection) via Azure AI Foundry + Microsoft Agent Framework
-(MAF). This is the "judge agent" the main README and `docs/STRATEGY.md` have described as planned
+`src/CopilotScope.JudgeAgent` is an opt-in sibling service to the Collector. It grades one session
+at a time using LLM-graded rubrics (G-Eval, SPUR, RAGAS, deep frustration classification,
+task-completion detection).
+
+It needs an **LLM endpoint** — not a cloud account. Point it at Azure AI Foundry, or at Ollama,
+vLLM or LM Studio running on the same machine as the Collector, and nothing leaves your
+infrastructure. This is the "judge agent" the main README and `docs/STRATEGY.md` have described as planned
 since before this service existed — the five algorithms in the README's "Evaluation algorithms"
 table marked `❌ not implemented` / `🔜 planned` were blocked on exactly this.
 
@@ -17,14 +20,17 @@ compare people. There is no per-developer view here either, and none is planned.
 no concept of "who ran this session" at all; the Collector stores no per-person identity, and
 JudgeAgent doesn't add one.
 
-## Why this is cloud-only
+## Why this needs an LLM endpoint
 
 Local analyzers (`Quality/Insights.cs`'s `IInsightAnalyzer` implementations in the Collector) run
 synchronously, in-process, on metadata the Collector already has. The five algorithms here need an
 LLM call against real transcript content, which means:
-- **Model access** — a deployed Azure AI Foundry model and the credentials to call it.
+- **Model access** — an OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, a self-hosted
+  gateway) or a deployed Azure AI Foundry model with credentials.
 - **A prompt/token budget** — every judge call sends up to ~40 transcript turns of prompt/response
-  text, which local-only analyzers never do.
+  text, which local-only analyzers never do. That is also precisely why the local backend matters:
+  a regulated or air-gapped deployment cannot send those turns to a vendor, and until it existed
+  those deployments could not run the judge at all.
 - **Judge-bias awareness and calibration** — see `docs/ANALYSIS.md` §8/§8a for why SPUR in
   particular is explicitly "directional, not final" until CopilotScope collects labeled SAT/DSAT
   session data to calibrate against. The machinery for that measurement now exists
@@ -33,9 +39,9 @@ LLM call against real transcript content, which means:
   below is still directional.
 
 That's why this lives in its own deployable service rather than as another `IInsightAnalyzer`
-registered into the Collector's `InsightPipeline` — that interface is synchronous and local-only;
-a judge call is an async network call to Azure. A local-only deployment simply never runs this
-service, and the five algorithms it covers stay unavailable, exactly as the README's table says.
+registered into the Collector's `InsightPipeline` — that interface is synchronous and in-process,
+while a judge call is an async network call to a model server. "Opt-in" means it is a service you
+choose to deploy and configure; it no longer means you have to hand your transcripts to a cloud.
 
 ## The five algorithms
 
@@ -136,7 +142,7 @@ you supply real Azure AI Foundry credentials.
 
 - Doesn't modify anything in `src/CopilotScope.Collector` — a strictly read-only, additive sibling
   service, same non-invasive pattern as AgentForge.
-- Doesn't recompute or replace `QualityEngine`'s composite score — it adds cloud-only signals
+- Doesn't recompute or replace `QualityEngine`'s composite score — it adds LLM-graded signals
   alongside it. Promoting any of them (e.g. deep frustration) into the composite is a future,
   separate decision made by config, not something this service does on its own.
 - Doesn't retry or cache judge calls — every `POST /judge` is a fresh model call. Add caching at
@@ -178,6 +184,68 @@ Configure Azure AI Foundry (e.g. in `appsettings.Development.json` or environmen
 
 `ApiKey: null` (the default) uses `DefaultAzureCredential` (managed identity / `az login`) instead
 of a key, same as AgentForge.
+
+### Judging on your own hardware (no cloud credentials)
+
+The default backend is Azure AI Foundry. Switch it and the same rubric pipeline talks to a local
+model server instead — same prompts, same fingerprint, same parser, only the transport changes:
+
+```json
+{
+  "CopilotScope": {
+    "JudgeAgent": {
+      "CollectorBaseUrl": "http://localhost:4318",
+      "Backend": "OpenAiCompatible",
+      "OpenAiCompatible": {
+        "BaseUrl": "http://localhost:11434/v1",
+        "Model": "qwen2.5-coder:14b"
+      }
+    }
+  }
+}
+```
+
+End to end, with nothing leaving the machine:
+
+```bash
+ollama serve &                                  # or vLLM / LM Studio on its own port
+ollama pull qwen2.5-coder:14b
+
+dotnet run --project src/CopilotScope.Collector          # OTLP on :4318
+dotnet run --project tools/CopilotScope.Seeder -- quick  # a dozen sessions to judge
+dotnet run --project src/CopilotScope.JudgeAgent         # :5400
+
+curl -s -X POST http://localhost:5400/api/sessions/seed-quick-01-golden/judge | jq
+# { "results": [ { "algorithm": "G-Eval", "score": 0.82, ... }, ...4 more ],
+#   "backend": "openai-compatible",
+#   "model": "qwen2.5-coder:14b",
+#   "judgePromptVersion": "a1b2c3…" }
+```
+
+Every judge response carries that provenance block. A score is only interpretable if you know
+what produced it, and **two backends grading the same rubric are not interchangeable evidence** —
+a κ measured against one model does not transfer to another, so a calibration run records the
+backend for the same reason.
+
+Options under `OpenAiCompatible`:
+
+| Setting | Default | Notes |
+|---|---|---|
+| `BaseUrl` | — | e.g. `http://localhost:11434/v1` (Ollama), `http://localhost:8000/v1` (vLLM). A trailing `/` or a full `/chat/completions` path both work. |
+| `Model` | — | as the server names it, e.g. `qwen2.5-coder:14b` |
+| `ApiKey` | none | omit for local servers; set it for a shared gateway |
+| `UseJsonResponseFormat` | `true` | sends `response_format: json_object`. A few servers reject the field with a 400 — set `false` there and rely on the rubric's own "emit bare JSON" instruction. |
+| `Temperature` | `0` | a judge that answers differently on identical input cannot be calibrated |
+| `TimeoutSeconds` | `180` | a local model on CPU can take minutes over a 40-turn transcript |
+
+`GET /api/health` reports `judgeBackend` and `judgeBackendConfigured`, so a half-configured
+backend is visible before the first judge call rather than as an exception inside it.
+
+**A caveat worth stating plainly:** a small local model is not the same judge as a frontier
+model. The rubrics were written against the latter, and no calibration has been run for either
+(see [docs/CALIBRATION.md](CALIBRATION.md)). Running locally makes the judge *available* to
+deployments that could not use it before; it does not make its scores validated. Calibrate
+against human labels on the backend you actually run.
 
 ### Two keys, in opposite directions
 

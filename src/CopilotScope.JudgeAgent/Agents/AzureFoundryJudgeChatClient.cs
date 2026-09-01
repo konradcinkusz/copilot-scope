@@ -20,6 +20,9 @@ namespace CopilotScope.JudgeAgent.Agents;
 /// </summary>
 public sealed class AzureFoundryJudgeChatClient(AzureAiOptions options) : IJudgeChatClient
 {
+    public string BackendName => "azure-foundry";
+    public string ModelName => options.DeploymentName ?? "unknown";
+
     public async Task<string> JudgeAsync(string systemPrompt, string sessionPayloadJson, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(options.Endpoint) || string.IsNullOrEmpty(options.DeploymentName))

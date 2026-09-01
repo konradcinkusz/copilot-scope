@@ -91,7 +91,7 @@ is the best developer". Goodhart's law applies to this repo too.
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
 | `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
-| `src/CopilotScope.JudgeAgent` | Opt-in, cloud-only session quality judge — G-Eval, SPUR, RAGAS, deep frustration classification, task-completion detection via Azure AI Foundry + Microsoft Agent Framework, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
+| `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep frustration classification, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
 
 ## Quick start — no clone, just pull
 
@@ -300,9 +300,9 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 
 | # | Algorithm | Status | Local | Cloud | Where |
 |---|---|---|---|---|---|
-| 1 | LLM-as-a-Judge (G-Eval) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — `POST /api/sessions/{id}/judge`, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) |
-| 2 | SPUR (learned satisfaction rubrics) | ✅ **implemented**, zero-shot (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — directional until CopilotScope collects labelled SAT/DSAT sessions to calibrate against; the measurement itself now exists, see [docs/CALIBRATION.md](docs/CALIBRATION.md) |
-| 3 | RAG component metrics (RAGAS) | ✅ **implemented** (cloud, opt-in) | ❌ | ✅ | `CopilotScope.JudgeAgent` — only meaningful for retrieval-based Copilot flows; `no-data` until the Collector captures retrieval context |
+| 1 | LLM-as-a-Judge (G-Eval) | ✅ **implemented** (opt-in, needs an LLM endpoint) | ✅ via local model | ✅ | `CopilotScope.JudgeAgent` — `POST /api/sessions/{id}/judge`, see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) |
+| 2 | SPUR (learned satisfaction rubrics) | ✅ **implemented**, zero-shot (opt-in, needs an LLM endpoint) | ✅ via local model | ✅ | `CopilotScope.JudgeAgent` — directional until CopilotScope collects labelled SAT/DSAT sessions to calibrate against; the measurement itself now exists, see [docs/CALIBRATION.md](docs/CALIBRATION.md) |
+| 3 | RAG component metrics (RAGAS) | ✅ **implemented** (opt-in, needs an LLM endpoint) | ✅ via local model | ✅ | `CopilotScope.JudgeAgent` — only meaningful for retrieval-based Copilot flows; `no-data` until the Collector captures retrieval context |
 | 4 | Edit Survival Analysis | ✅ **full** | ✅ | ✅ | `EditSurvivalAnalyzer` — four-gram & no-revert split (0.4/0.6); also feeds the *acceptance* component |
 | 5 | Acceptance-weighted throughput | ✅ **full** | ✅ | ✅ | `ThroughputAnalyzer` — accepted LOC/turn, LOC per 1k output tokens, rejection-discounted |
 | 6 | Turn-level Friction & Repair (TFRA) | ✅ **full** | ✅ | ✅ | `SegmentAnalyzer` (Turn analysis panel) + *friction* component in the composite |
@@ -330,7 +330,7 @@ Labels are versioned JSON in `calibration/`, reviewed like code.
 judge score in the table above is still directional and gates nothing. Full method, scale
 anchors and how to read a bad result: **[docs/CALIBRATION.md](docs/CALIBRATION.md)**.
 
-Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. The cloud-only algorithms (#1–#3, plus the deep variants of #9/#10) are **not** in-process `IInsightAnalyzer`s — they live in the separate, opt-in `CopilotScope.JudgeAgent` service (`POST /api/sessions/{id}/judge`), which reaches the Azure AI Foundry judge agent; a local-only setup simply never calls it. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
+Analyzers #4–#9 (local column) run as a pluggable insight pipeline (`Quality/Insights.cs`): one `IInsightAnalyzer` class + one DI registration = a new algorithm, zero UI work. The LLM-graded algorithms (#1–#3, plus the deep variants of #9/#10) are **not** in-process `IInsightAnalyzer`s — that interface is synchronous and in-process, while a judge call is an async network call to a model server — so they live in the separate, opt-in `CopilotScope.JudgeAgent` service (`POST /api/sessions/{id}/judge`). That server can be Azure AI Foundry **or** an OpenAI-compatible endpoint on your own hardware (Ollama, vLLM, LM Studio), so a self-hosted deployment can now run them without transcripts leaving the box. Full survey with design rationale: `docs/ANALYSIS.md` §8–8b (Polish).
 
 Each of the ten is also written up as a **standalone thesis topic** — one A4 page
 per topic with scope, methodology, acceptance criteria and a code entry point, split
