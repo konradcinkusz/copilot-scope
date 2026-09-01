@@ -1,0 +1,69 @@
+# Watches the OpenTelemetry GenAI semantic conventions for changes to the attributes,
+# metrics and events CopilotScope actually consumes.
+#
+# Why: semantic-conventions v1.42.0 (2026-06-12) deprecated the whole gen_ai.* set in the main
+# repository and moved it to open-telemetry/semantic-conventions-genai, where nothing is Stable
+# yet. When one of those names changes, nothing in this repository notices — ingest keeps
+# returning 200 while the counters those names feed quietly go to zero. Silent wrongness is the
+# worst failure mode a measurement tool has, so this job makes the rename loud.
+#
+# It is intentionally a canary, not a gate: it opens an issue rather than failing anyone's PR.
+name: semconv canary
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, early — a rename found on Monday is fixed before it ships
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compare consumed conventions against upstream
+        id: check
+        run: |
+          python3 scripts/semconv_canary.py --format github >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue when a consumed name is gone
+        if: steps.check.outputs.missing != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const missing = `${{ steps.check.outputs.missing }}`.split(',').filter(Boolean);
+            const title = 'semconv drift: upstream no longer defines names CopilotScope consumes';
+            // One open issue at a time — a weekly job must not file the same report every Monday.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'semconv-drift',
+            });
+            const body = [
+              'The scheduled canary found attribute/metric/event names that `Domain/Sem.cs` reads',
+              'but the upstream GenAI semantic conventions no longer define:',
+              '',
+              ...missing.map(n => `- \`${n}\``),
+              '',
+              'Ingest will keep returning 200 while whatever these feed goes to zero, so this is',
+              'a silent-scoring bug rather than an outage. Map the new name alongside the old one',
+              '(both must keep working — emitters upgrade at their own pace) and add a fixture.',
+              '',
+              'Source: https://github.com/open-telemetry/semantic-conventions-genai',
+            ].join('\n');
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['semconv-drift', 'bug'],
+              });
+            }
