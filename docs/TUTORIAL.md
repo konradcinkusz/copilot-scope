@@ -272,6 +272,9 @@ renders for fewer than *k* developers, and every read is logged.
 }
 ```
 
+Once it is running, set up alerts too — see §11. A dashboard nobody visits is the most common
+way a tool like this quietly dies.
+
 Check what a running deployment enforces with `GET /api/privacy`. The full data map,
 retention behaviour and a template works-agreement annex are in
 [`docs/PRIVACY.md`](PRIVACY.md) — read it before the first team deployment, not after the
@@ -365,3 +368,76 @@ floor on every view, and an access log — regardless of how the clients are con
 any deployment with more than one developer on it, see
 [`docs/PRIVACY.md`](PRIVACY.md), which also carries the GDPR Art. 30 data map, the
 retention and deletion behaviour, and a template works-agreement annex.
+
+
+## 11. Get alerted, not just dashboards
+
+A dashboard that has to be visited gets abandoned; an output that triggers a decision gets
+renewed. The decision worth triggering here is a **quality regression** after a model version
+bump, an assistant upgrade or a config change — and session scoring is the only thing that can
+raise it, because a vendor usage dashboard cannot alert on quality it does not measure.
+
+Off by default: this is the only part of the collector that sends data anywhere, so it needs a
+deliberate decision rather than a default.
+
+```jsonc
+// appsettings.json on the collector
+{
+  "CopilotScope": {
+    "Alerts": {
+      "Enabled": true,
+      "WebhookUrl": "https://hooks.example.com/services/…",
+      "Format": "slack",          // "slack" = one `text` field; "json" = the full document
+      "WindowDays": 7,            // compared against the 7 days before it
+      "ScoreDropPoints": 5,       // composite points; ~one grade band
+      "MinSessionsPerWindow": 10, // below this a mean is anecdote, not a measurement
+      "Cooldown": "24:00:00",
+      "Digest": true,
+      "DigestDay": "Monday",
+      "DigestHourUtc": 8
+    }
+  }
+}
+```
+
+**What fires.** Every hour the collector compares the last `WindowDays` against the window
+immediately before it, by repository, assistant and model. A cohort whose mean composite fell
+by at least `ScoreDropPoints` — with at least `MinSessionsPerWindow` sessions in *both* windows
+— is reported once, then goes quiet for `Cooldown`.
+
+**What deliberately does not fire.** A drop that came with a *confidence* drop is reported as a
+changed measurement basis rather than as a regression. The composite renormalizes over the
+components that have data (see [SIGNAL_COVERAGE.md](SIGNAL_COVERAGE.md)), so a cohort that
+stopped reporting feedback or edit decisions is being measured on different evidence, not
+performing worse. Sending a team to hunt a change that never happened is how an alert channel
+gets muted — and a muted channel is worth less than no channel, because the team believes they
+have coverage.
+
+**The weekly digest** is the artefact a lead forwards instead of a dashboard link: the week's
+sessions, token burn, mean quality by assistant / model / repository, and the biggest
+regressions. Aggregate by construction — it is built from cohort rollups, so there is no
+per-session or per-developer row that could be included. Read it any time at
+`GET /api/digest?days=7`, or send it on demand with `POST /api/digest/send` (Admin scope —
+it puts the team's numbers on an external service).
+
+Under [privacy mode](PRIVACY.md) both the alert and the digest are subject to the same
+k-anonymity floor as every screen. If anything the floor matters more here, since the payload
+leaves the deployment.
+
+### Grafana alert rules
+
+For teams that already live in Grafana, `grafana/provisioning/alerting/copilotscope-rules.yml`
+provisions two rules alongside the dashboard — a composite-score regression and a friction
+spike, both per assistant:
+
+```bash
+docker compose -f docker-compose.grafana.yml up
+```
+
+Every expression there is a **ratio of gauges**, never `rate()` over a counter. The collector
+recomputes its Prometheus families from a capped in-memory session set, so families declared
+`counter` can *decrease* when sessions age out, and `rate()` reads a decrease as a counter
+reset — a rule built that way fires on eviction rather than on anything real (issue #70). The
+collector-side detector above is the more precise instrument regardless: it compares two
+explicit windows out of Postgres, and it can tell a quality drop apart from a change in which
+signals a cohort reports.

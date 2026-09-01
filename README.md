@@ -105,6 +105,20 @@ Sessions are deep-linkable at `/sessions/{id}`.
 
 No view and no export has a per-developer dimension. Every axis describes the tooling.
 
+### Alerts and the weekly digest
+
+Off by default. When configured (`CopilotScope:Alerts`), the collector compares each week
+against the one before it by repository, assistant and model, and posts a webhook when a
+cohort's mean composite falls — JSON, or a `text` field most chat webhooks render. A drop
+that came with a *confidence* drop is reported as a changed measurement basis rather than a
+regression: the composite renormalizes over the components that have data, so a cohort that
+stopped reporting a signal is measured differently, not worse.
+
+`GET /api/digest` is the aggregate week — sessions, burn, mean quality by assistant/model/repo,
+biggest regressions — as the artefact a lead forwards instead of a dashboard link.
+`grafana/provisioning/alerting/` provisions equivalent Grafana rules. See
+[docs/TUTORIAL.md §11](docs/TUTORIAL.md).
+
 ## Projects
 
 | Project | Role | NuGet deps |
