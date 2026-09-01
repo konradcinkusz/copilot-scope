@@ -24,6 +24,11 @@ namespace CopilotScope.Collector.Quality;
 ///
 /// Confidence = (weight coverage of informative components) × (sample ramp),
 /// so "score 91 at confidence 0.2" reads as "early but promising", not "certain".
+///
+/// Those base weights describe an *interactive* session. A delegated agent run has no
+/// human waiting on the first token and no human accepting edits, so scoring it on
+/// latency and acceptance measures a person who is not there — see
+/// <see cref="ScoringProfile"/>, which supplies the weights for the session's mode.
 /// </summary>
 public sealed class QualityEngine
 {
@@ -33,7 +38,14 @@ public sealed class QualityEngine
 
     private static QualityReport Compute(CopilotSession s)
     {
+        var mode = SessionModeClassifier.Classify(s);
+        var profile = ScoringProfile.For(mode);
         var components = new List<QualityComponent>();
+
+        // Every component carries the weight its mode's profile assigns; a zero weight
+        // means "computed and reported, but it does not measure anything here".
+        void Add(string name, double value, int samples, string detail) =>
+            components.Add(new(name, profile.WeightOf(name), value, samples, detail));
 
         // ---- Reliability -----------------------------------------------------
         var calls = s.ChatCalls + s.ToolCalls;
@@ -42,23 +54,26 @@ public sealed class QualityEngine
             var weightedErrors = s.ChatErrors * 2.0 + s.ToolErrors;
             var weightedCalls = s.ChatCalls * 2.0 + s.ToolCalls;
             var errorFree = Math.Clamp(1.0 - weightedErrors / Math.Max(1, weightedCalls), 0, 1);
-            components.Add(new("reliability", 0.25, errorFree * errorFree, calls,
-                $"{s.ChatErrors} LLM err / {s.ChatCalls} calls, {s.ToolErrors} tool err / {s.ToolCalls} calls"));
+            Add("reliability", errorFree * errorFree, calls,
+                $"{s.ChatErrors} LLM err / {s.ChatCalls} calls, {s.ToolErrors} tool err / {s.ToolCalls} calls");
         }
-        else components.Add(new("reliability", 0.25, Prior, 0, "no calls yet"));
+        else Add("reliability", Prior, 0, "no calls yet");
 
         // ---- Acceptance --------------------------------------------------------
+        // EditsAccepted/Rejected are human decisions only; permission-mode auto-accepts
+        // are counted in EditsAutoAccepted and reported in the detail, never scored.
         var editSamples = s.EditsAccepted + s.EditsRejected;
+        var autoNote = s.EditsAutoAccepted > 0 ? $", {s.EditsAutoAccepted} auto-applied (not scored)" : "";
         if (editSamples > 0 || s.SurvivalScores.Count > 0)
         {
             var accRatio = editSamples > 0 ? (double)s.EditsAccepted / editSamples : Prior;
             var survival = s.SurvivalScores.Count > 0 ? s.SurvivalScores.Average() : accRatio;
-            components.Add(new("acceptance", 0.20, Math.Clamp(0.6 * accRatio + 0.4 * survival, 0, 1),
+            Add("acceptance", Math.Clamp(0.6 * accRatio + 0.4 * survival, 0, 1),
                 editSamples + s.SurvivalScores.Count,
                 $"{s.EditsAccepted}✓ / {s.EditsRejected}✗ edits" +
-                (s.SurvivalScores.Count > 0 ? $", survival {s.SurvivalScores.Average():P0}" : "")));
+                (s.SurvivalScores.Count > 0 ? $", survival {s.SurvivalScores.Average():P0}" : "") + autoNote);
         }
-        else components.Add(new("acceptance", 0.20, Prior, 0, "no edit telemetry"));
+        else Add("acceptance", Prior, 0, "no edit telemetry" + autoNote);
 
         // ---- Friction (turn-level, TFRA-aligned) -------------------------------
         var turns = s.TurnList.Where(t => t.ChatCalls + t.ToolCalls > 0).ToList();
@@ -66,10 +81,10 @@ public sealed class QualityEngine
         {
             var friction = turns.Average(TurnScore);
             var worst = turns.Min(TurnScore);
-            components.Add(new("friction", 0.20, Math.Clamp(friction, 0, 1), turns.Count,
-                $"{turns.Count} turns, mean {friction:P0}, worst {worst:P0}"));
+            Add("friction", Math.Clamp(friction, 0, 1), turns.Count,
+                $"{turns.Count} turns, mean {friction:P0}, worst {worst:P0}");
         }
-        else components.Add(new("friction", 0.20, Prior, 0, "no completed turns"));
+        else Add("friction", Prior, 0, "no completed turns");
 
         // ---- Latency -----------------------------------------------------------
         if (s.TtftMs.Count > 0)
@@ -79,17 +94,15 @@ public sealed class QualityEngine
             var latency = p50 <= 300 ? 1.0
                         : p50 >= 10_000 ? 0.0
                         : 1.0 - Math.Log(p50 / 300.0) / Math.Log(10_000.0 / 300.0);
-            components.Add(new("latency", 0.15, Math.Clamp(latency, 0, 1), s.TtftMs.Count,
-                $"TTFT p50 {p50:F0} ms"));
+            Add("latency", Math.Clamp(latency, 0, 1), s.TtftMs.Count, $"TTFT p50 {p50:F0} ms");
         }
-        else components.Add(new("latency", 0.15, Prior, 0, "no TTFT samples"));
+        else Add("latency", Prior, 0, "no TTFT samples");
 
         // ---- Explicit feedback -------------------------------------------------
         var votes = s.ThumbsUp + s.ThumbsDown;
         if (votes > 0)
-            components.Add(new("feedback", 0.10, (double)s.ThumbsUp / votes, votes,
-                $"👍{s.ThumbsUp} 👎{s.ThumbsDown}"));
-        else components.Add(new("feedback", 0.10, Prior, 0, "no votes"));
+            Add("feedback", (double)s.ThumbsUp / votes, votes, $"👍{s.ThumbsUp} 👎{s.ThumbsDown}");
+        else Add("feedback", Prior, 0, "no votes");
 
         // ---- Efficiency ----------------------------------------------------------
         var promptTokens = s.InputTokens + s.CacheReadTokens;
@@ -103,15 +116,17 @@ public sealed class QualityEngine
                 parts.Add(turnsPerInvocation <= 8 ? 1.0
                         : Math.Clamp(1.0 - (turnsPerInvocation - 8) / 17.0, 0, 1));
             }
-            components.Add(new("efficiency", 0.10, Math.Clamp(parts.Average(), 0, 1),
+            Add("efficiency", Math.Clamp(parts.Average(), 0, 1),
                 (int)Math.Min(int.MaxValue, promptTokens),
                 $"cache hit {(promptTokens > 0 ? (double)s.CacheReadTokens / promptTokens : 0):P0}, " +
-                $"{(s.AgentInvocations > 0 ? (double)s.Turns / s.AgentInvocations : 0):F1} turns/invocation"));
+                $"{(s.AgentInvocations > 0 ? (double)s.Turns / s.AgentInvocations : 0):F1} turns/invocation");
         }
-        else components.Add(new("efficiency", 0.10, Prior, 0, "no token data"));
+        else Add("efficiency", Prior, 0, "no token data");
 
         // ---- Composite: informative components only, weights renormalized -------
-        var informative = components.Where(c => c.Samples > 0).ToList();
+        // A component needs both data AND a non-zero weight under this profile: a
+        // zero-weighted one must not drag the coverage denominator either.
+        var informative = components.Where(c => c.Samples > 0 && c.Weight > 0).ToList();
         double score, confidence;
         if (informative.Count == 0)
         {
@@ -130,7 +145,9 @@ public sealed class QualityEngine
             Math.Round(score, 1),
             Math.Round(confidence, 2),
             Grade(score),
-            components);
+            components,
+            Mode: mode,
+            Profile: profile.Name);
     }
 
     /// <summary>Per-turn friction score — same penalty model as <see cref="SegmentAnalyzer"/>.</summary>
@@ -165,8 +182,15 @@ public sealed record QualityReport(
     double? PercentileRank = null,
     int? HistoryCount = null,
     double? HistoryMean = null,
-    double? HistoryStdDev = null)
+    double? HistoryStdDev = null,
+    /// <summary>How the session was driven — decides which components carry weight.</summary>
+    SessionMode Mode = SessionMode.Unknown,
+    /// <summary>Name of the <see cref="ScoringProfile"/> the weights above came from.</summary>
+    string Profile = "interactive")
 {
+    /// <summary>Human-readable session mode, for the API and dashboard.</summary>
+    public string ModeLabel => SessionModeClassifier.Label(Mode);
+
     /// <summary>z-score relative to the history window (null when HistoryStdDev is zero or unavailable).</summary>
     public double? ZScore =>
         HistoryMean is { } mu && HistoryStdDev is > 0 ? (Score - mu) / HistoryStdDev : null;

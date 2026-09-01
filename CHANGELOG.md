@@ -9,6 +9,34 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Session history is served from Postgres** (#84). `/api/sessions` and `/api/overview`
+  read the database with the live in-memory aggregates layered on top, instead of reading
+  the bounded in-memory store alone — a team churned past that cap in hours, after which
+  its history vanished from every surface despite being safely persisted. Endpoints take
+  `days`/`since`/`until`, `limit` and `offset` and return `{sessions, total, limit, offset,
+  durable}`; `/api/sessions/{id}` falls back to Postgres so a link to last week's session
+  keeps working. Without Postgres the same paths serve memory and report `durable: false`.
+  Retention is configurable (`CopilotScope:History:RetentionDays`, default 0 = keep
+  everything) and the percentile baseline is computed over a fixed trailing window rather
+  than whatever survived in memory.
+- **Per-mode scoring profiles** (#88). Sessions are classified interactive /
+  supervised-agent / autonomous from telemetry shape, and `ScoringProfile` supplies the
+  weights. Interactive keeps the published v2 weights exactly; autonomous zeroes latency
+  and acceptance — nobody waits on a background run's first token, and an agent under
+  `acceptEdits` applies its own edits — and moves that weight to friction and reliability.
+  Excluded components are still computed and shown as "not scored" with the reason.
+- **Delivered-outcome linkage** (#87, opt-in). A HMAC-verified GitHub webhook at
+  `POST /api/outcomes/github` records pull-request outcomes (merged, closed, reverted,
+  time to first review, time to merge), joined to sessions by repository, branch and time
+  with an explicit confidence. Shown beside the score, never folded into it: the score has
+  not been validated against outcomes yet, and collecting them is what makes that possible.
+  Repository-level only — no author, no reviewer.
+- **Scoped collector API keys and dashboard sign-in** (#86). `CopilotScope:Keys` splits the
+  single shared secret into Ingest / Read / Admin, so the key every editor holds can no
+  longer read transcripts or delete history; `CopilotScope:Dashboard:Auth` adds optional
+  viewer/admin sign-in, with transcripts and deletion restricted to admin. Both off by
+  default; the legacy single key still grants every scope.
+
 - **Judge calibration (Cohen's κ)** — `src/CopilotScope.JudgeAgent/Calibration/` measures how
   well the judge agrees with human labels, closing the gap the README and
   `JudgeSystemPromptTemplate.txt` have both been stating ("directional, not final… until
@@ -28,7 +56,28 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
   silently moved measuring stick.
 
+### Fixed
+- **Cross-developer session contamination behind a shared collector** (#85). Process- and
+  service-scoped resource fingerprints are unique only within one machine, so two
+  developers running the same assistant had their identity-less metrics merged into one
+  conversation. Those fingerprint forms are now scoped by host (or by the source
+  connection), and `copilotscope_hostless_signals_total` reports when neither is available.
+- **Trimming a session could destroy its persisted snapshot** (#84). Late telemetry for an
+  evicted session recreated it as an empty aggregate, and the next write-behind flush wrote
+  that over the stored row. Evictions are now tracked and the stored snapshot is merged back
+  before flushing. Trim also releases the evicted session's trace mappings, which previously
+  outlived it.
+- **Permission-mode auto-accepts inflated the acceptance score** (#88). Claude Code's
+  `tool_decision` events carry a `source`; under `acceptEdits` or `bypassPermissions` that
+  is `config`, not a human. Those now count as `EditsAutoAccepted` — reported, never scored.
+- **README quick start could not work as written** (#89). The headline snippet omitted the
+  `COPILOTSCOPE_API_KEY` and `POSTGRES_PASSWORD` exports that `docker-compose.ghcr.yml`
+  hard-requires via `${VAR:?}` guards, so a first-time reader's very first command failed.
+
 ### Changed
+- **`GET /api/sessions` returns a page object**, `{sessions, total, limit, offset, durable}`,
+  rather than a bare array (#84). The dashboard client is updated; an external consumer
+  reading the array directly needs a one-line change.
 - **Retargeted every project to `net10.0`** and aligned the container base images
   (`sdk:10.0` / `aspnet:10.0`) with the TFM, so the published GHCR images start.
   `Aspire.AppHost.Sdk` aligned with `Aspire.Hosting.*` (13.4.6). CI builds on a

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CopilotScope.Dashboard.Services;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
@@ -10,8 +11,25 @@ public partial class Home : ComponentBase, IDisposable
 {
     [Inject] public required CollectorClient Collector { get; set; }
     [Inject] public required IJSRuntime JS { get; set; }
+    [Inject] public required DashboardAuthOptions Auth { get; set; }
+
+    /// <summary>Supplied by AddCascadingAuthenticationState; null-safe when auth is off.</summary>
+    [CascadingParameter] public Task<AuthenticationState>? AuthState { get; set; }
+
+    // Resolved once per render from the signed-in principal. With sign-in disabled both are
+    // true, so a local run behaves exactly as it did before roles existed.
+    private bool _canReadTranscripts = true;
+    private bool _canDelete = true;
+
+    /// <summary>Sessions held in the rail. History beyond this lives in Postgres and is
+    /// reachable by id; the rail is a working set, not the archive.</summary>
+    private const int RailPageSize = 200;
 
     private List<SessionSummaryDto>? _sessions;
+
+    /// <summary>Total sessions matching the current query, which may exceed the rail page.
+    /// Whether that history is durable is already on the health chip (Postgres / in-memory).</summary>
+    private int _sessionTotal;
     // Stable display order for the rail. The collector returns sessions newest-first,
     // which reshuffles the rail under the cursor every 2 s poll while a session is
     // live. We freeze the order a user has seen — existing rows keep their position,
@@ -95,6 +113,15 @@ public partial class Home : ComponentBase, IDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve the caller's permissions before the first render, so a viewer never sees
+        // a transcript button flash into existence and then disappear.
+        if (AuthState is not null)
+        {
+            var user = (await AuthState).User;
+            _canReadTranscripts = Auth.CanReadTranscripts(user);
+            _canDelete = Auth.CanDelete(user);
+        }
+
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
     }
@@ -193,7 +220,12 @@ public partial class Home : ComponentBase, IDisposable
         try
         {
             _health = await Collector.GetHealthAsync(_cts.Token);
-            var fetched = await Collector.GetSessionsAsync(_showInternal, _cts.Token);
+            // Explicit page size: the collector now serves history from Postgres, so an
+            // unbounded request would pull a team's whole archive into the rail. The rail
+            // shows the newest page; _sessionTotal reports what that page is a page of.
+            var page = await Collector.GetSessionPageAsync(_showInternal, limit: RailPageSize, ct: _cts.Token);
+            var fetched = page.Sessions;
+            _sessionTotal = page.Total;
 
             // Freeze the rail order: keep known sessions where they are, prepend new
             // ones (server order = newest-first) at the top, drop ones that vanished.
@@ -234,7 +266,9 @@ public partial class Home : ComponentBase, IDisposable
 
     private async Task DeleteAsync()
     {
-        if (_selectedId is null) return;
+        // The control is hidden for viewers; re-check anyway so the destructive path is
+        // never guarded by markup alone.
+        if (_selectedId is null || !_canDelete) return;
         var deleted = await Collector.DeleteSessionAsync(_selectedId, _cts.Token);
         if (deleted)
         {
@@ -318,6 +352,12 @@ public partial class Home : ComponentBase, IDisposable
              : d.TotalHours   < 24 ? $"{d.TotalHours:0}h ago"
              : $"{d.TotalDays:0}d ago";
     }
+
+    /// <summary>Elapsed hours in the units a reviewer thinks in — minutes, hours, then days.</summary>
+    private static string FormatHours(double hours) =>
+        hours < 1 ? $"{hours * 60:0}m"
+        : hours < 48 ? $"{hours:0.#}h"
+        : $"{hours / 24:0.#}d";
 
     /// <summary>Wall-clock span the session covered, from first to last telemetry.</summary>
     private static string Duration(SessionSummaryDto s)

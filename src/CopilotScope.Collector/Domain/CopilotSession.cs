@@ -39,8 +39,19 @@ public sealed class CopilotSession
     public int ToolErrors;
     public int AgentInvocations;
     public int Turns;
+    /// <summary>Edits a human accepted. Never includes permission-mode auto-accepts — see
+    /// <see cref="EditsAutoAccepted"/> — so the acceptance component stays a measure of
+    /// human judgment rather than of how the assistant was configured.</summary>
     public int EditsAccepted;
     public int EditsRejected;
+
+    /// <summary>
+    /// Edits applied without a human decision, because the assistant was running under a
+    /// permission mode that auto-approves them (Claude Code reports <c>source=config</c> on
+    /// the tool_decision event). Reported, never scored: counting these as acceptance would
+    /// let a permission flag raise the quality score.
+    /// </summary>
+    public int EditsAutoAccepted;
     public int ThumbsUp;
     public int ThumbsDown;
     public double LinesAdded;
@@ -114,6 +125,7 @@ public sealed class CopilotSession
             s.ToolCalls += o.ToolCalls; s.ToolErrors += o.ToolErrors;
             s.AgentInvocations += o.AgentInvocations; s.Turns += o.Turns;
             s.EditsAccepted += o.EditsAccepted; s.EditsRejected += o.EditsRejected;
+            s.EditsAutoAccepted += o.EditsAutoAccepted;
             s.ThumbsUp += o.ThumbsUp; s.ThumbsDown += o.ThumbsDown;
             s.LinesAdded += o.LinesAdded; s.LinesRemoved += o.LinesRemoved;
 

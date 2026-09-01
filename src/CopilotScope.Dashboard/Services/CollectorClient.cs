@@ -9,8 +9,23 @@ namespace CopilotScope.Dashboard.Services;
 /// </summary>
 public sealed class CollectorClient(HttpClient http)
 {
+    /// <summary>
+    /// One page of session history. The collector serves this from Postgres with live
+    /// sessions layered on top, so the list is no longer bounded by what its memory holds.
+    /// </summary>
+    public async Task<SessionPageDto> GetSessionPageAsync(bool includeInternal = false, int? days = null,
+        int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        var query = $"/api/sessions?includeInternal={includeInternal}"
+            + (days is > 0 ? $"&days={days}" : "")
+            + (limit is > 0 ? $"&limit={limit}" : "")
+            + (offset is > 0 ? $"&offset={offset}" : "");
+        return await http.GetFromJsonAsync<SessionPageDto>(query, ct)
+            ?? new SessionPageDto([], 0, 0, 0, false);
+    }
+
     public async Task<List<SessionSummaryDto>> GetSessionsAsync(bool includeInternal = false, CancellationToken ct = default)
-        => await http.GetFromJsonAsync<List<SessionSummaryDto>>($"/api/sessions?includeInternal={includeInternal}", ct) ?? [];
+        => (await GetSessionPageAsync(includeInternal, ct: ct)).Sessions;
 
     public async Task<SessionDetailDto?> GetSessionAsync(string id, CancellationToken ct = default)
     {
@@ -40,6 +55,11 @@ public sealed class CollectorClient(HttpClient http)
 
 // --- DTOs mirroring CopilotScope.Collector.Api (deserialized with Web defaults) ---
 
+/// <summary>One page of session history. <c>Durable</c> is false when the collector is
+/// running without Postgres, i.e. the window is bounded by memory rather than by the query.</summary>
+public sealed record SessionPageDto(
+    List<SessionSummaryDto> Sessions, int Total, int Limit, int Offset, bool Durable);
+
 public enum SessionKind
 {
     UserChat,
@@ -50,6 +70,9 @@ public enum SessionKind
 }
 
 public enum EmitterKind { Unknown, VSCode, CLI, ClaudeCode, Cursor, Cowork }
+
+/// <summary>Mirrors the collector's SessionMode — how the session was driven.</summary>
+public enum SessionMode { Unknown, Interactive, SupervisedAgent, Autonomous }
 
 public sealed record SessionSummaryDto(
     string Id, string? Agent, string? Repository, string? Branch,
@@ -63,7 +86,9 @@ public sealed record SessionSummaryDto(
     Dictionary<string, int> Models,
     QualityReportDto Quality,
     SessionKind Kind,
-    EmitterKind EmitterKind = EmitterKind.Unknown);
+    EmitterKind EmitterKind = EmitterKind.Unknown,
+    /// <summary>Edits applied under a permission mode rather than by a human decision.</summary>
+    int EditsAutoAccepted = 0);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -72,7 +97,18 @@ public sealed record SessionDetailDto(
     List<SessionEventDto> Events,
     List<TranscriptEntryDto> Transcript,
     TurnAnalysisDto Turns,
-    List<InsightReportDto> Insights);
+    List<InsightReportDto> Insights,
+    /// <summary>Pull requests this session plausibly produced; null unless outcome
+    /// ingestion is configured on the collector.</summary>
+    List<OutcomeLinkDto>? Outcomes = null);
+
+/// <summary>One session→pull-request link and how much it can be trusted.</summary>
+public sealed record OutcomeLinkDto(
+    string Repository, int Number, string Branch, string Title,
+    string State, string Confidence, string Reason,
+    DateTimeOffset OpenedAt, DateTimeOffset? MergedAt,
+    double? HoursToFirstReview, double? HoursToMerge,
+    int Additions, int Deletions, int ChangedFiles);
 
 public sealed record InsightMetricDto(string Label, string Value);
 
@@ -98,10 +134,23 @@ public sealed record SessionEventDto(DateTimeOffset Time, string Kind, string Su
 
 public sealed record QualityReportDto(
     double Score, double Confidence, string Grade, List<QualityComponentDto> Components,
-    double? PercentileRank = null, int? HistoryCount = null, double? HistoryMean = null, double? HistoryStdDev = null)
+    double? PercentileRank = null, int? HistoryCount = null, double? HistoryMean = null, double? HistoryStdDev = null,
+    /// <summary>How the session was driven; decides which components carried weight.</summary>
+    SessionMode Mode = SessionMode.Unknown,
+    /// <summary>Name of the scoring profile the weights came from.</summary>
+    string Profile = "interactive")
 {
     public double? ZScore =>
         HistoryMean is { } mu && HistoryStdDev is > 0 ? (Score - mu) / HistoryStdDev : null;
+
+    /// <summary>Human-readable session mode, mirroring the collector's own label.</summary>
+    public string ModeLabel => Mode switch
+    {
+        SessionMode.Interactive => "interactive",
+        SessionMode.SupervisedAgent => "supervised agent",
+        SessionMode.Autonomous => "autonomous agent",
+        _ => "unknown"
+    };
     public string? RelativeGrade => PercentileRank switch
     {
         >= 0.75 => "above baseline",

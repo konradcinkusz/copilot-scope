@@ -1,4 +1,5 @@
 using CopilotScope.Collector.Domain;
+using CopilotScope.Collector.Outcomes;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Quality;
 
@@ -21,7 +22,10 @@ public sealed record SessionSummaryDto(
     Dictionary<string, int> Models,
     QualityReport Quality,
     SessionKind Kind,
-    EmitterKind EmitterKind = EmitterKind.Unknown);
+    EmitterKind EmitterKind = EmitterKind.Unknown,
+    /// <summary>Edits applied under a permission mode rather than by a human decision.
+    /// Reported so a high "accepted" count can be read correctly; never scored.</summary>
+    int EditsAutoAccepted = 0);
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -30,7 +34,31 @@ public sealed record SessionDetailDto(
     List<SessionEvent> Events,
     List<TranscriptEntry> Transcript,
     TurnAnalysis Turns,
-    List<InsightReport> Insights);
+    List<InsightReport> Insights,
+    /// <summary>Pull requests this session plausibly produced. Empty unless outcome
+    /// ingestion is configured. Displayed alongside the score, never folded into it —
+    /// the link is a heuristic and the score has not been validated against it yet.</summary>
+    List<OutcomeLinkDto>? Outcomes = null);
+
+/// <summary>One session→pull-request link, with the confidence that it is the right one.</summary>
+public sealed record OutcomeLinkDto(
+    string Repository, int Number, string Branch, string Title,
+    string State, string Confidence, string Reason,
+    DateTimeOffset OpenedAt, DateTimeOffset? MergedAt,
+    double? HoursToFirstReview, double? HoursToMerge,
+    int Additions, int Deletions, int ChangedFiles)
+{
+    public static OutcomeLinkDto From(OutcomeLink link) => new(
+        link.PullRequest.Repository, link.PullRequest.Number, link.PullRequest.Branch,
+        link.PullRequest.Title,
+        link.PullRequest.State.ToString().ToLowerInvariant(),
+        link.Confidence.ToString().ToLowerInvariant(),
+        link.Reason,
+        link.PullRequest.OpenedAt, link.PullRequest.MergedAt,
+        link.PullRequest.TimeToFirstReview?.TotalHours,
+        link.PullRequest.TimeToMerge?.TotalHours,
+        link.PullRequest.Additions, link.PullRequest.Deletions, link.PullRequest.ChangedFiles);
+}
 
 public sealed record ToolStatDto(string Name, int Calls, int Errors, double AvgMs);
 
@@ -136,10 +164,12 @@ public static class Dto
             new Dictionary<string, int>(x.ModelCalls),
             report,
             SessionClassifier.Classify(x),
-            x.EmitterKind));
+            x.EmitterKind,
+            x.EditsAutoAccepted));
     }
 
-    public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights, IReadOnlyList<double>? allScores = null)
+    public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights,
+        IReadOnlyList<double>? allScores = null, IReadOnlyList<OutcomeLink>? outcomes = null)
     {
         var summary = Summary(s, quality, allScores);
         var turns = SegmentAnalyzer.Analyze(s);
@@ -152,7 +182,8 @@ public static class Dto
             x.RecentEvents.Reverse().Take(120).ToList(),
             x.Transcript.AsEnumerable().Reverse().Take(50).Reverse().ToList(),
             turns,
-            reports));
+            reports,
+            outcomes?.Select(OutcomeLinkDto.From).ToList()));
     }
 
     private static string? Anonymize(string? repoUrl)

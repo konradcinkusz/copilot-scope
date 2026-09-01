@@ -19,6 +19,15 @@ public sealed class SessionStore
     // forever instead of enriching the conversation they belong to.
     private readonly ConcurrentDictionary<string, string> _resourceToSession = new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _removed = new();
+    private long _hostlessSignals;
+
+    /// <summary>
+    /// Count of identity-less signals that arrived with neither a host resource attribute
+    /// nor a source-connection identity, and were therefore fingerprinted under a shared
+    /// <c>nohost</c> scope. Non-zero behind a shared collector means emitter configuration
+    /// needs fixing — see docs/TUTORIAL.md §8.
+    /// </summary>
+    public long HostlessSignals => Interlocked.Read(ref _hostlessSignals);
 
     /// <summary>Ids of bucket sessions consumed by a merge since the last drain (for persistence cleanup).</summary>
     public List<string> DrainRemoved()
@@ -27,6 +36,29 @@ public sealed class SessionStore
         while (_removed.TryDequeue(out var id)) list.Add(id);
         return list;
     }
+
+    // Sessions trimmed from memory still exist in Postgres. If late telemetry arrives for
+    // one, Resolve would create an empty aggregate and the next write-behind upsert would
+    // overwrite the populated snapshot with it — destroying persisted history by design.
+    // Tracking the eviction lets the caller merge the stored snapshot back in first.
+    private readonly ConcurrentDictionary<string, byte> _evicted = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _evictionOrder = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _resurrected = new();
+    private const int MaxEvictedTracked = 10_000;
+
+    /// <summary>
+    /// Ids of trimmed sessions that ingest has just recreated in memory. Their persisted
+    /// snapshot must be merged back in before the next flush, or the flush replaces a full
+    /// session with a near-empty one. Draining clears the eviction marker, so each
+    /// resurrection is reported exactly once.
+    /// </summary>
+    public List<string> DrainResurrected()
+    {
+        var list = new List<string>();
+        while (_resurrected.TryDequeue(out var id)) list.Add(id);
+        return list;
+    }
+
     private const int MaxSessions = 200;
 
     public IReadOnlyCollection<CopilotSession> All => (IReadOnlyCollection<CopilotSession>)_sessions.Values;
@@ -47,7 +79,11 @@ public sealed class SessionStore
 
     /// <summary>Inserts or replaces a session unconditionally (used by admin seeding — unlike
     /// <see cref="Rehydrate"/>'s add-if-absent semantics, a reseed must overwrite stale data).</summary>
-    public void Put(CopilotSession session) => _sessions[session.Id] = session;
+    public void Put(CopilotSession session)
+    {
+        _sessions[session.Id] = session;
+        _evicted.TryRemove(session.Id, out _); // present in memory again — nothing to rehydrate
+    }
 
     /// <summary>Removes every session whose id matches the predicate. Returns the count removed.</summary>
     public int RemoveWhere(Func<string, bool> predicate)
@@ -61,6 +97,9 @@ public sealed class SessionStore
     public bool Remove(string id)
     {
         var removed = _sessions.TryRemove(id, out _);
+        // Clear any eviction marker even when the session was not in memory: a deliberate
+        // delete must not later be "repaired" by merging the row it just deleted.
+        _evicted.TryRemove(id, out _);
         if (removed)
             foreach (var kv in _traceToSession.Where(kv => kv.Value == id).ToList())
                 _traceToSession.TryRemove(kv.Key, out _);
@@ -68,7 +107,15 @@ public sealed class SessionStore
     }
 
     /// <summary>Ingests a decoded batch; returns ids of sessions that were touched.</summary>
-    public HashSet<string> Ingest(OtlpBatch batch)
+    /// <param name="batch">The decoded OTLP batch.</param>
+    /// <param name="sourceId">
+    /// Identity of the connection the batch arrived on (the remote address, for HTTP ingest).
+    /// Process- and service-scoped resource fingerprints are only unique within one machine,
+    /// so behind a shared team collector this is what keeps two developers' identity-less
+    /// signals from resolving to the same conversation. Null is accepted (in-process callers,
+    /// tests) and falls back to a shared scope, counted in <see cref="HostlessSignals"/>.
+    /// </param>
+    public HashSet<string> Ingest(OtlpBatch batch, string? sourceId = null)
     {
         var touched = new HashSet<string>(StringComparer.Ordinal);
 
@@ -80,7 +127,7 @@ public sealed class SessionStore
             if (span.Attr(Sem.ConversationId) is { } conv)
             {
                 if (span.TraceId.Length > 0) _traceToSession[span.TraceId] = conv;
-                if (ResourceFingerprint(span.Resource) is { } fp)
+                if (ResourceFingerprint(span.Resource, sourceId) is { } fp)
                     RegisterResource(fp, conv, span.Resource);
             }
 
@@ -89,12 +136,12 @@ public sealed class SessionStore
         // whatever the metrics dropped into the "unattributed" bucket for that emitter.
         foreach (var log in batch.Logs)
             if (ClaudeCode.SessionKey(log.EventName, log.Attributes) is { } claudeSession
-                && ResourceFingerprint(log.Resource) is { } fp)
+                && ResourceFingerprint(log.Resource, sourceId) is { } fp)
                 RegisterResource(fp, claudeSession, log.Resource);
 
-        foreach (var span in batch.Spans) IngestSpan(span, touched);
-        foreach (var point in batch.Metrics) IngestMetric(point, touched);
-        foreach (var log in batch.Logs) IngestLog(log, touched);
+        foreach (var span in batch.Spans) IngestSpan(span, touched, sourceId);
+        foreach (var point in batch.Metrics) IngestMetric(point, touched, sourceId);
+        foreach (var log in batch.Logs) IngestLog(log, touched, sourceId);
 
         TrimIfNeeded();
         return touched;
@@ -102,9 +149,9 @@ public sealed class SessionStore
 
     // ------------------------------------------------------------------ spans
 
-    private void IngestSpan(OtlpSpan span, HashSet<string> touched)
+    private void IngestSpan(OtlpSpan span, HashSet<string> touched, string? sourceId)
     {
-        var session = Resolve(SessionKeyFor(span), span.Resource);
+        var session = Resolve(SessionKeyFor(span, sourceId), span.Resource);
         if (span.TraceId.Length > 0) _traceToSession[span.TraceId] = session.Id;
         touched.Add(session.Id);
         session.AddSpan(span);
@@ -220,9 +267,9 @@ public sealed class SessionStore
 
     // ---------------------------------------------------------------- metrics
 
-    private void IngestMetric(OtlpMetricPoint point, HashSet<string> touched)
+    private void IngestMetric(OtlpMetricPoint point, HashSet<string> touched, string? sourceId)
     {
-        var session = Resolve(SessionKeyFor(point.MetricName, point.Attributes, point.Resource), point.Resource);
+        var session = Resolve(SessionKeyFor(point.MetricName, point.Attributes, point.Resource, sourceId), point.Resource);
         touched.Add(session.Id);
 
         session.Apply(s =>
@@ -281,9 +328,9 @@ public sealed class SessionStore
 
     // ------------------------------------------------------------------- logs
 
-    private void IngestLog(OtlpLogEvent log, HashSet<string> touched)
+    private void IngestLog(OtlpLogEvent log, HashSet<string> touched, string? sourceId)
     {
-        string? key = SessionKeyFor(log.EventName, log.Attributes, log.Resource);
+        string? key = SessionKeyFor(log.EventName, log.Attributes, log.Resource, sourceId);
         if (key is null && log.TraceId is not null && _traceToSession.TryGetValue(log.TraceId, out var mapped))
             key = mapped;
 
@@ -334,16 +381,17 @@ public sealed class SessionStore
 
     // ---------------------------------------------------------------- helpers
 
-    private string? SessionKeyFor(OtlpSpan span) =>
+    private string? SessionKeyFor(OtlpSpan span, string? sourceId) =>
         span.Attr(Sem.ConversationId)
         ?? ClaudeCode.SessionKey(span.Name, span.Attributes)
         ?? (span.TraceId.Length > 0 && _traceToSession.TryGetValue(span.TraceId, out var mapped) ? mapped : null)
-        ?? ResourceFallback(span.Resource);
+        ?? ResourceFallback(span.Resource, sourceId);
 
-    private string? SessionKeyFor(string? signalName, Dictionary<string, AttrValue> attrs, Dictionary<string, AttrValue> resource) =>
+    private string? SessionKeyFor(string? signalName, Dictionary<string, AttrValue> attrs,
+        Dictionary<string, AttrValue> resource, string? sourceId) =>
         (attrs.TryGetValue(Sem.ConversationId, out var c) ? c.ToString() : null)
         ?? ClaudeCode.SessionKey(signalName, attrs)
-        ?? ResourceFallback(resource);
+        ?? ResourceFallback(resource, sourceId);
 
     /// <summary>
     /// Identity-less signals resolve through the fingerprint mapping to the most
@@ -351,20 +399,62 @@ public sealed class SessionStore
     /// they wait in a per-emitter "unattributed:" bucket that gets merged into the
     /// conversation session as soon as one identifies itself.
     /// </summary>
-    private string? ResourceFallback(Dictionary<string, AttrValue> resource)
+    private string? ResourceFallback(Dictionary<string, AttrValue> resource, string? sourceId)
     {
-        if (ResourceFingerprint(resource) is not { } fp) return null; // → plain "unattributed"
+        if (ResourceFingerprint(resource, sourceId) is not { } fp) return null; // → plain "unattributed"
         return _resourceToSession.TryGetValue(fp, out var mapped) ? mapped : $"unattributed:{fp}";
     }
 
-    private static string? ResourceFingerprint(Dictionary<string, AttrValue> resource)
+    /// <summary>
+    /// Stable identity for the emitter a signal came from, used to attach identity-less
+    /// metrics and logs to the conversation they belong to.
+    ///
+    /// The first two forms are session-scoped and globally unique on their own — a VS Code
+    /// window id or a Claude Code session id names one conversation on one machine. Every
+    /// form below them is process- or service-scoped, and therefore unique only *within* a
+    /// machine: two developers running the same assistant produce the same
+    /// <c>service.name</c>, and independent machines hand out the same pids routinely.
+    /// Behind a shared team collector those would collide and "last active conversation
+    /// wins" would cross-attribute one developer's tokens, edits and feedback to another's
+    /// conversation, so the weak forms are scoped by host.
+    /// </summary>
+    private string? ResourceFingerprint(Dictionary<string, AttrValue> resource, string? sourceId)
     {
         if (resource.TryGetValue(Sem.SessionId, out var sid)) return $"vscode:{sid}";
         if (resource.TryGetValue(Sem.ClaudeCodeSessionId, out var ccSid)) return $"claude:{ccSid}";
-        if (resource.TryGetValue("service.instance.id", out var inst)) return $"inst:{inst}";
+
         var svc = resource.TryGetValue(Sem.ServiceName, out var name) ? name.ToString() : null;
-        if (resource.TryGetValue("process.pid", out var pid) && svc is not null) return $"proc:{svc}:{pid}";
-        return svc is not null ? $"svc:{svc}" : null;
+        var hasWeakForm = resource.ContainsKey("service.instance.id") || svc is not null;
+        if (!hasWeakForm) return null;
+
+        var host = HostScope(resource, sourceId);
+        if (host is null)
+        {
+            // No host attributes and no source connection: cannot tell machines apart.
+            // Preserves single-host behavior; on a shared collector the counter is the
+            // operator's signal that emitters need host.name (or a proxy is hiding it).
+            Interlocked.Increment(ref _hostlessSignals);
+            host = "nohost";
+        }
+
+        if (resource.TryGetValue("service.instance.id", out var inst)) return $"inst:{host}:{inst}";
+        if (resource.TryGetValue("process.pid", out var pid) && svc is not null) return $"proc:{host}:{svc}:{pid}";
+        return $"svc:{host}:{svc}";
+    }
+
+    /// <summary>
+    /// Machine discriminator for the weak fingerprint forms. Prefers the emitter's own
+    /// host attributes; falls back to the connection the batch arrived on. The connection
+    /// fallback is weaker — clients behind one NAT or reverse proxy share an address — so
+    /// <c>host.name</c> is what a shared deployment should configure.
+    /// </summary>
+    private static string? HostScope(Dictionary<string, AttrValue> resource, string? sourceId)
+    {
+        if (resource.TryGetValue("host.id", out var hostId)) return $"host:{hostId}";
+        if (resource.TryGetValue("host.name", out var hostName)) return $"host:{hostName}";
+        if (resource.TryGetValue("k8s.pod.name", out var pod)) return $"pod:{pod}";
+        if (resource.TryGetValue("container.id", out var container)) return $"ctr:{container}";
+        return string.IsNullOrEmpty(sourceId) ? null : $"src:{sourceId}";
     }
 
     /// <param name="signalName">
@@ -396,14 +486,20 @@ public sealed class SessionStore
         return EmitterKind.Unknown;
     }
 
-    private void RegisterResource(string fingerprint, string conversationId, Dictionary<string, AttrValue> resource)
+    private void RegisterResource(string fingerprint, string conversationId,
+        Dictionary<string, AttrValue> resource)
     {
         _resourceToSession[fingerprint] = conversationId; // last active conversation wins
 
-        // Claim anything that piled up before the conversation identified itself.
-        foreach (var bucketId in new[] { $"unattributed:{fingerprint}", "unattributed" })
+        // Claim anything that piled up under THIS fingerprint before the conversation
+        // identified itself. The plain "unattributed" bucket is deliberately not claimed:
+        // it holds signals whose emitter could not be fingerprinted at all, so merging it
+        // would hand one arbitrary conversation another machine's telemetry — the same
+        // cross-attribution the host scoping above exists to prevent. An orphan bucket is
+        // the safer failure: it stays visible and wrong-for-nobody.
+        var bucketId = $"unattributed:{fingerprint}";
+        if (_sessions.TryRemove(bucketId, out var bucket))
         {
-            if (!_sessions.TryRemove(bucketId, out var bucket)) continue;
             var target = Resolve(conversationId, resource);
             target.MergeFrom(bucket);
             _removed.Enqueue(bucketId);
@@ -413,11 +509,28 @@ public sealed class SessionStore
     private CopilotSession Resolve(string? key, Dictionary<string, AttrValue> resource)
     {
         key ??= "unattributed";
-        return _sessions.GetOrAdd(key, id => new CopilotSession
+        var created = false;
+        var session = _sessions.GetOrAdd(key, id =>
         {
-            Id = id,
-            VsCodeSessionId = resource.TryGetValue(Sem.SessionId, out var s) ? s.ToString() : null
+            created = true;
+            return new CopilotSession
+            {
+                Id = id,
+                VsCodeSessionId = resource.TryGetValue(Sem.SessionId, out var s) ? s.ToString() : null
+            };
         });
+
+        // Recreating a session that was trimmed from memory: flag it so its persisted
+        // snapshot gets merged back before the next flush overwrites it.
+        if (created && _evicted.TryRemove(key, out _))
+        {
+            _resurrected.Enqueue(key);
+            // Only PersistenceWriter drains this, and it exists only when Postgres is
+            // configured — so bound it, or an in-memory-only collector grows the queue
+            // for the life of the process with nothing ever reading it.
+            while (_resurrected.Count > MaxEvictedTracked) _resurrected.TryDequeue(out _);
+        }
+        return session;
     }
 
     /// <summary>Appends to a bounded distribution list, keeping the most recent 1000 samples.</summary>
@@ -427,10 +540,26 @@ public sealed class SessionStore
         if (list.Count > 1000) list.RemoveRange(0, list.Count - 1000);
     }
 
+    /// <summary>
+    /// Caps memory by evicting the least recently active sessions. Eviction is not deletion:
+    /// the snapshots stay in Postgres and the API reads them from there. Each evicted id is
+    /// remembered so that late telemetry for it rehydrates instead of clobbering, and its
+    /// trace mappings go with it — otherwise _traceToSession grows without bound.
+    /// </summary>
     private void TrimIfNeeded()
     {
         if (_sessions.Count <= MaxSessions) return;
         foreach (var stale in _sessions.Values.OrderBy(s => s.LastSeen).Take(_sessions.Count - MaxSessions))
-            _sessions.TryRemove(stale.Id, out _);
+        {
+            if (!_sessions.TryRemove(stale.Id, out _)) continue;
+            foreach (var kv in _traceToSession.Where(kv => kv.Value == stale.Id).ToList())
+                _traceToSession.TryRemove(kv.Key, out _);
+            if (_evicted.TryAdd(stale.Id, 0)) _evictionOrder.Enqueue(stale.Id);
+        }
+
+        // Bound the eviction memory itself. Dropping the oldest marker only means a very
+        // long-dormant session could still clobber — acceptable next to unbounded growth.
+        while (_evictionOrder.Count > MaxEvictedTracked && _evictionOrder.TryDequeue(out var old))
+            _evicted.TryRemove(old, out _);
     }
 }

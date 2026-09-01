@@ -27,14 +27,64 @@ one setting:
   credentials a developer pasted into a chat, and customer data. Treat the Postgres
   volume and the dashboard as carrying whatever your developers typed.
 
+## Trust model
+
+Two independent credentials: API keys guard the collector, a password guards the
+dashboard UI. Both are off by default, which suits a laptop and nothing else.
+
+**Collector — scoped API keys.** Three scopes, configured under `CopilotScope:Keys`:
+
+| Scope | Grants | Held by |
+|---|---|---|
+| `Ingest` | `POST /v1/traces\|metrics\|logs` | every developer's editor / CLI |
+| `Read` | `/api/*` queries and `/metrics` | the dashboard, Prometheus |
+| `Admin` | `DELETE`, `/api/admin/seed`, plus everything `Read` grants | operators |
+
+`Admin` implies `Read`; `Ingest` is orthogonal, so an admin key is not silently a
+valid telemetry writer and an emitter key cannot reach captured transcripts. Each
+scope takes a list, so a key can be rotated by adding the new one, moving clients
+over, then removing the old.
+
+```jsonc
+"CopilotScope": {
+  "Keys": {
+    "Ingest": ["emitter-key"],
+    "Read":   ["dashboard-key", "prometheus-key"],
+    "Admin":  ["operator-key"]
+  }
+}
+```
+
+The legacy single key (`CopilotScope__Ingest__ApiKey`) still works and still grants
+**every** scope — an upgrade never locks a running deployment out of itself. Scoping
+only takes effect once `CopilotScope:Keys` is populated. **With no key set at all,
+ingest and the query API are open**; that default suits localhost, not a shared host.
+
+**Dashboard — sign-in with two roles.** Set a password to turn it on:
+
+```jsonc
+"CopilotScope": { "Dashboard": { "Auth": {
+  "ViewerPassword": "…",
+  "AdminPassword":  "…"
+} } }
+```
+
+- *Viewer* — scores, turn analysis, aggregates. **No conversation transcripts, no delete.**
+- *Admin* — everything, including reading captured prompts/responses and deleting sessions.
+
+Transcripts are admin-only because that text is the sensitive payload: it is the
+conversation itself, including whatever a developer pasted into it. With no password
+configured the dashboard is unauthenticated exactly as before — do not expose it
+beyond localhost in that state.
+
+The dashboard authenticates its *own* users; it still presents a collector API key
+(`CopilotScope__Ingest__ApiKey`) for its calls, and that key should be a `Read`-scoped
+one so a dashboard compromise cannot delete history.
+
+Neither compose file terminates TLS. Put a reverse proxy in front of anything shared —
+these credentials travel in a header and a cookie.
 ## Deployment notes
 
-- `/v1/*`, `/api/admin/seed` and `/metrics` are guarded by
-  `CopilotScope__Ingest__ApiKey` when it is set. **When it is not set, ingest is
-  open** — the default suits localhost, not a shared host.
-- `/api/sessions`, `/api/overview` and the dashboard have no authentication of
-  their own. Do not expose them beyond localhost without putting your own
-  authentication in front.
 - `docker-compose.grafana.yml` runs Grafana with anonymous Admin and no login form.
   That is a local-demo convenience; remove the `GF_AUTH_ANONYMOUS_*` settings for
   anything shared.

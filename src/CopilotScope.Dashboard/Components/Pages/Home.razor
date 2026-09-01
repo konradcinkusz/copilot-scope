@@ -28,12 +28,27 @@
             <text>@_health.Environment · @_health.Sessions sessions · @(_health.Persistence ? "Postgres" : "in-memory")@(_health.Forwarding ? " · forwarding" : "")</text>
         }
     </div>
+    @if (Auth.Enabled)
+    {
+        @* Plain form post: signing out clears an HTTP cookie, which the interactive
+           circuit cannot do on its own. *@
+        <form method="post" action="/logout" class="signout-form">
+            <span class="signout-role">@(_canDelete ? "admin" : "viewer")</span>
+            <button class="signout-btn" type="submit">Sign out</button>
+        </form>
+    }
 </header>
 
 <div class="grid">
     <aside class="rail">
         <div class="rail-title">
-            <span>Sessions @if (_sessions is { Count: > 0 }) { <em class="rail-count">@FilteredSessions.Count</em> }</span>
+            @* When history exceeds the rail page, say so — the rest is in Postgres, not lost. *@
+            <span>Sessions @if (_sessions is { Count: > 0 })
+                {
+                    <em class="rail-count" title="@(_sessionTotal > FilteredSessions.Count ? $"Showing the newest {FilteredSessions.Count} of {_sessionTotal} stored sessions" : "")">
+                        @FilteredSessions.Count@(_sessionTotal > FilteredSessions.Count ? $" / {_sessionTotal}" : "")
+                    </em>
+                }</span>
             @if (_viewMode != ViewMode.Basic)
             {
                 <div class="rail-controls">
@@ -136,14 +151,19 @@
                             }
                             var maturity = SessionMaturity(s.Turns);
                             <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
-                            if (_confirmDelete)
+                            @* Deletion is irreversible, so it stays with the admin role when
+                               sign-in is enabled. With auth off this is unchanged. *@
+                            if (_canDelete)
                             {
-                                <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
-                                <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
-                            }
-                            else
-                            {
-                                <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                                if (_confirmDelete)
+                                {
+                                    <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
+                                    <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+                                }
+                                else
+                                {
+                                    <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                                }
                             }
                         }
                     </div>
@@ -280,18 +300,33 @@
                         Biggest drag on quality: <b>@worst.Name</b> (@((worst.Value * 100).ToString("0"))/100) — @worst.Detail
                     </div>
                 }
+                @if (q.Mode is SessionMode.Autonomous or SessionMode.SupervisedAgent)
+                {
+                    <div class="mode-note">
+                        Scored as an <b>@q.ModeLabel</b> run. Time-to-first-token and edit acceptance
+                        measure a person waiting and deciding; on a delegated run neither is present,
+                        so this session is weighted on friction and reliability instead.
+                    </div>
+                }
                 <div class="components">
                     @foreach (var c in q.Components)
                     {
                         // Certain factors are VS Code–only; mark them clearly for CLI sessions
                         var isCliNa = IsCli(s) && c.Samples == 0 && c.Name is "acceptance" or "feedback";
-                        <div class="component @(isCliNa ? "component-na" : "")">
+                        // A zero weight means this session's mode excludes the factor: it was
+                        // computed but does not measure anything here (see the mode note above).
+                        var notScored = c.Weight == 0;
+                        <div class="component @(isCliNa || notScored ? "component-na" : "")">
                             <div class="component-head">
-                                <span><span class="dot dot-@(isCliNa ? "unknown" : TrafficClass(c))"></span>@c.Name <em>w=@c.Weight.ToString("0.00")</em></span>
+                                <span><span class="dot dot-@(isCliNa || notScored ? "unknown" : TrafficClass(c))"></span>@c.Name <em>@(notScored ? "not scored" : $"w={c.Weight:0.00}")</em></span>
                                 <span>@(isCliNa ? "—" : (c.Value * 100).ToString("0"))</span>
                             </div>
                             @if (!isCliNa) { <div class="bar"><span style="width:@(Pct(c.Value))%"></span></div> }
-                            <div class="component-detail">@(isCliNa ? "not emitted by CLI" : c.Detail + (c.Samples == 0 ? " · prior" : ""))</div>
+                            <div class="component-detail">
+                                @(isCliNa ? "not emitted by CLI"
+                                  : notScored ? $"{c.Detail} · excluded for {q.ModeLabel} sessions"
+                                  : c.Detail + (c.Samples == 0 ? " · prior" : ""))
+                            </div>
                         </div>
                     }
                 </div>
@@ -563,17 +598,61 @@
             </div>
             }
 
+            @* ---- What shipped: the session joined to its pull requests ---- *@
+            @if (_detail.Outcomes is { Count: > 0 })
+            {
+                <div class="panel">
+                    <div class="panel-head">
+                        <div class="panel-label">Delivered outcome</div>
+                        <div class="panel-sub">shown beside the score, not folded into it</div>
+                    </div>
+                    <div class="outcomes">
+                        @foreach (var o in _detail.Outcomes)
+                        {
+                            <div class="outcome">
+                                <div class="outcome-head">
+                                    <span class="outcome-state state-@o.State">@o.State</span>
+                                    <span class="outcome-title">#@o.Number @o.Title</span>
+                                    <span class="outcome-confidence conf-@o.Confidence" title="@o.Reason">@o.Confidence confidence</span>
+                                </div>
+                                <div class="outcome-meta">
+                                    @o.Branch · +@o.Additions/−@o.Deletions in @o.ChangedFiles file@(o.ChangedFiles == 1 ? "" : "s")
+                                    @if (o.HoursToFirstReview is { } review)
+                                    {
+                                        <text> · first review after @FormatHours(review)</text>
+                                    }
+                                    @if (o.HoursToMerge is { } merge)
+                                    {
+                                        <text> · merged after @FormatHours(merge)</text>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
             @if (_viewMode != ViewMode.Basic)
             {
                 <div class="panel">
                     <div class="panel-head">
                         <div class="panel-label">Prompts &amp; responses</div>
-                        @if (_detail.Transcript.Count > 0)
+                        @if (_detail.Transcript.Count > 0 && _canReadTranscripts)
                         {
                             <button class="btn" @onclick="() => _showChat = true">Open conversation</button>
                         }
                     </div>
-                    @if (_detail.Transcript.Count == 0)
+                    @if (!_canReadTranscripts)
+                    {
+                        @* Transcript text is the sensitive payload — the conversation itself,
+                           including anything pasted into it. Scores and turns stay visible. *@
+                        <div class="empty">
+                            Conversation content is restricted. Sign in with the admin password to read
+                            captured prompts and responses; scores, turn analysis and aggregates are
+                            available to every signed-in user.
+                        </div>
+                    }
+                    else if (_detail.Transcript.Count == 0)
                     {
                         <div class="empty">
                             No captured content — Copilot only sends prompt/response text when content capture is enabled on the client, and only for chats started after enabling it.
@@ -609,7 +688,7 @@
                     </div>
                 </div>
             }
-            @if (_showChat)
+            @if (_showChat && _canReadTranscripts)
             {
                 <div class="modal-backdrop" @onclick="() => _showChat = false">
                     <div class="chat-window" role="dialog" aria-modal="true" aria-label="Conversation transcript, read only"

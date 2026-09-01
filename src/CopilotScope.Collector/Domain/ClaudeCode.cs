@@ -173,8 +173,20 @@ public static class ClaudeCode
                 // tools mean what "edit acceptance" means everywhere else in the scoring.
                 if (!EditTools.Contains(Attr(log, "tool_name") ?? "")) break;
                 var decision = Attr(log, "decision");
-                if (string.Equals(decision, "accept", StringComparison.OrdinalIgnoreCase)) s.EditsAccepted++;
-                else if (string.Equals(decision, "reject", StringComparison.OrdinalIgnoreCase)) s.EditsRejected++;
+                // The event's `source` says who decided. Under acceptEdits or
+                // bypassPermissions the answer is "the config did" (source=config), and
+                // treating that as a human accepting the code would let a permission flag
+                // inflate the acceptance component. Absent source stays human: emitters
+                // that predate the attribute only fire the event on a real prompt.
+                var source = Attr(log, "source");
+                var byHuman = source is null || source.StartsWith("user", StringComparison.OrdinalIgnoreCase);
+                if (string.Equals(decision, "accept", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (byHuman) s.EditsAccepted++;
+                    else s.EditsAutoAccepted++;
+                }
+                else if (string.Equals(decision, "reject", StringComparison.OrdinalIgnoreCase) && byHuman)
+                    s.EditsRejected++;
                 break;
         }
 

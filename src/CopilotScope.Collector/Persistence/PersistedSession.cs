@@ -33,7 +33,10 @@ public sealed record PersistedSession(
     List<double>? SurvivalFourGram = null,
     List<double>? SurvivalNoRevert = null,
     Dictionary<string, PersistedModelStat>? ModelUsage = null,
-    EmitterKind EmitterKind = EmitterKind.Unknown)
+    EmitterKind EmitterKind = EmitterKind.Unknown,
+    /// <summary>Permission-mode auto-accepts. Defaulted so snapshots written before this
+    /// field existed still deserialize — they simply report no auto-applied edits.</summary>
+    int EditsAutoAccepted = 0)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -58,7 +61,8 @@ public sealed record PersistedSession(
         new List<double>(x.SurvivalNoRevert),
         x.ModelUsage.ToDictionary(kv => kv.Key, kv => new PersistedModelStat(
             kv.Value.Calls, kv.Value.InputTokens, kv.Value.OutputTokens, kv.Value.CacheReadTokens)),
-        x.EmitterKind));
+        x.EmitterKind,
+        x.EditsAutoAccepted));
 
     public CopilotSession ToSession()
     {
@@ -84,6 +88,7 @@ public sealed record PersistedSession(
             Turns = Turns,
             EditsAccepted = EditsAccepted,
             EditsRejected = EditsRejected,
+            EditsAutoAccepted = EditsAutoAccepted,
             ThumbsUp = ThumbsUp,
             ThumbsDown = ThumbsDown,
             LinesAdded = LinesAdded,

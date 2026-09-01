@@ -24,6 +24,9 @@ that score to Prometheus and Grafana if you already run them.
 
 ```bash
 curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+# Two secrets, no defaults — the compose file fails loudly rather than shipping a known key:
+export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
+export POSTGRES_PASSWORD=$(openssl rand -hex 16)
 docker compose -f docker-compose.ghcr.yml up
 # dashboard on http://localhost:5200 · point your assistant at http://localhost:4318
 ```
@@ -193,6 +196,38 @@ per second (telemetry bursts ≠ write storms). On startup the collector
 **rehydrates** sessions from the database. A Postgres outage degrades to
 in-memory and never blocks ingest.
 
+Read path: `GET /api/sessions` and `/api/overview` are served **from Postgres**,
+with the live in-memory aggregates layered on top — so the API answers over the
+whole archive while a session being typed into right now is still current. The
+in-memory store is a bounded working set of the most recently active sessions,
+not the extent of your history; a team churns past that cap in hours. Endpoints
+take `days` (or `since`/`until`), `limit` and `offset`; the response carries
+`total` so a client can tell what it is paging through. Without Postgres the
+same endpoints serve memory alone and report `durable: false`.
+
+Sessions evicted from memory are **not** deleted: their snapshots stay in
+Postgres, `GET /api/sessions/{id}` still resolves them, and late telemetry for an
+evicted session merges the stored snapshot back in before the next flush rather
+than overwriting it.
+
+Retention is off by default — history grows until you set a policy:
+
+```jsonc
+"CopilotScope": {
+  "History": {
+    "RetentionDays": 0,       // 0 = keep everything; N = delete sessions idle N+ days
+    "DefaultPageSize": 100,
+    "MaxPageSize": 500,
+    "BaselineDays": 30,       // window the percentile rank is computed over
+    "BaselineMaxSamples": 5000
+  }
+}
+```
+
+`BaselineDays` is what makes a percentile comparable over time: the rank is
+against a fixed trailing window of user sessions, not against whatever happened
+to still be in memory when you looked.
+
 `POST /api/admin/seed` takes the same route into a **running** collector:
 `tools/CopilotScope.Seeder` builds full session snapshots and posts them there
 directly, so seeding never needs a database connection of its own or a restart
@@ -205,6 +240,41 @@ CopilotScope stores it in the snapshot (bounded to the last 100 entries, each
 truncated at 4 000 chars) — enough to review a session later, not a verbatim
 archive. For a complete raw-telemetry archive, use the forwarder to a full
 backend.
+
+## Did the code actually ship? (opt-in)
+
+Every signal above stops at the session boundary. A session can run cleanly, have its
+edits accepted, and still produce a change nobody merged — which is the same critique
+this project levels at usage counters, turned back on itself. Outcome linkage closes
+that loop by joining sessions to the pull requests they produced.
+
+```jsonc
+"CopilotScope": { "Outcomes": { "WebhookSecret": "<the secret you set on the webhook>" } }
+```
+
+Then point a GitHub webhook at `POST /api/outcomes/github` with events
+**pull_request**, **pull_request_review** and **push**, using the same secret. Deliveries
+are verified by HMAC (`X-Hub-Signature-256`) over the raw body — without a secret the
+endpoint is not mapped at all, because it writes into the very data the score is about
+to be validated against.
+
+The join is a heuristic — telemetry carries a repository and a branch, never a commit —
+so every link ships with its confidence and the reason for it:
+
+| Confidence | When |
+|---|---|
+| `high` | repo and branch match, PR opened inside the session's window |
+| `medium` | repo and branch match, timing is looser |
+| `low` | repo matches only — shown, but excluded from any correlation |
+
+Sessions then carry a **Delivered outcome** panel: merged, closed or reverted, time to
+first review, time to merge, size of the change. It sits *beside* the quality score and
+is deliberately not folded into it — the score has not been validated against outcomes
+yet, and that validation is the point of collecting them.
+
+**Privacy.** Outcomes are repository-level. No author, no reviewer, no commit message
+beyond detecting a revert. A merged pull request is a fact about a change, not about a
+person, and the "not a developer scoreboard" non-goal applies here as much as anywhere.
 
 ## Session quality
 
@@ -240,6 +310,7 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
 | 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
+| 11 | Delivered-outcome linkage | ✅ **implemented** (local, opt-in) | ✅ | ✅ | `Outcomes/` — GitHub webhook → `pull_request_outcomes`, joined to sessions by repo/branch/time with an explicit confidence. Reported beside the score; **not** a scored component until the correlation study exists |
 
 ### Calibrating the judge — Cohen's κ against human labels
 
@@ -280,15 +351,38 @@ matches the table above.
 In Production mode `/v1/*` requires `x-api-key` (`CopilotScope__Ingest__ApiKey`);
 clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 
+For a shared deployment, split that one key into scopes and put a password on the
+dashboard — the key every editor holds should not also be the key that reads
+transcripts and deletes history:
+
+```jsonc
+// collector
+"CopilotScope": { "Keys": {
+  "Ingest": ["emitter-key"],       // POST /v1/* only
+  "Read":   ["dashboard-key"],     // /api/* + /metrics
+  "Admin":  ["operator-key"]       // DELETE, seed — implies Read
+} }
+
+// dashboard: viewers get scores and turns, admins also get transcripts and delete
+"CopilotScope": { "Dashboard": { "Auth": {
+  "ViewerPassword": "…", "AdminPassword": "…"
+} } }
+```
+
+Both are off by default and the legacy single key keeps granting everything, so an
+existing deployment is unchanged until it opts in. Full trust model, including what
+each role can see: **[SECURITY.md](SECURITY.md)**.
+
 ## Collector API
 
 | Endpoint | Description |
 |---|---|
 | `POST /v1/traces` `/v1/metrics` `/v1/logs` | OTLP/HTTP ingest (protobuf; gzip/deflate supported) |
-| `GET /api/sessions` | session list with quality scores |
-| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis |
-| `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions |
+| `GET /api/sessions` | paged session list with quality scores — `days`/`since`/`until`, `limit`, `offset`; returns `{sessions, total, limit, offset, durable}` |
+| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis (falls back to Postgres for sessions no longer in memory) |
+| `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions — accepts `days` |
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
+| `POST /api/outcomes/github` | GitHub webhook for PR outcomes (HMAC-verified; only mapped when a secret is configured) |
 | `GET /api/health` | health incl. persistence status |
 | `GET /metrics` | Prometheus scrape endpoint — see below |
 
