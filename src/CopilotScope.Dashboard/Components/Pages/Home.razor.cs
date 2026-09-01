@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CopilotScope.Dashboard.Services;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
@@ -10,6 +11,15 @@ public partial class Home : ComponentBase, IDisposable
 {
     [Inject] public required CollectorClient Collector { get; set; }
     [Inject] public required IJSRuntime JS { get; set; }
+    [Inject] public required DashboardAuthOptions Auth { get; set; }
+
+    /// <summary>Supplied by AddCascadingAuthenticationState; null-safe when auth is off.</summary>
+    [CascadingParameter] public Task<AuthenticationState>? AuthState { get; set; }
+
+    // Resolved once per render from the signed-in principal. With sign-in disabled both are
+    // true, so a local run behaves exactly as it did before roles existed.
+    private bool _canReadTranscripts = true;
+    private bool _canDelete = true;
 
     /// <summary>Sessions held in the rail. History beyond this lives in Postgres and is
     /// reachable by id; the rail is a working set, not the archive.</summary>
@@ -103,6 +113,15 @@ public partial class Home : ComponentBase, IDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        // Resolve the caller's permissions before the first render, so a viewer never sees
+        // a transcript button flash into existence and then disappear.
+        if (AuthState is not null)
+        {
+            var user = (await AuthState).User;
+            _canReadTranscripts = Auth.CanReadTranscripts(user);
+            _canDelete = Auth.CanDelete(user);
+        }
+
         await RefreshAsync();
         _ = PollAsync(); // fire-and-forget refresh loop for the lifetime of the circuit
     }
@@ -247,7 +266,9 @@ public partial class Home : ComponentBase, IDisposable
 
     private async Task DeleteAsync()
     {
-        if (_selectedId is null) return;
+        // The control is hidden for viewers; re-check anyway so the destructive path is
+        // never guarded by markup alone.
+        if (_selectedId is null || !_canDelete) return;
         var deleted = await Collector.DeleteSessionAsync(_selectedId, _cts.Token);
         if (deleted)
         {

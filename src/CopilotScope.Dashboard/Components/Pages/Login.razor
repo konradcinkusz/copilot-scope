@@ -1,0 +1,50 @@
+@page "/login"
+@using Microsoft.AspNetCore.Authorization
+@using CopilotScope.Dashboard.Services
+@attribute [AllowAnonymous]
+@inject DashboardAuthOptions Auth
+@inject NavigationManager Nav
+
+<PageTitle>CopilotScope — Sign in</PageTitle>
+
+@* Static server render: the form posts to the /login minimal-API endpoint, because the
+   auth cookie has to be written to an HTTP response that an interactive circuit no
+   longer owns. No @rendermode here on purpose. *@
+
+<div class="login-shell">
+    <form class="login-card" method="post" action="/login">
+        <h1 class="brand">Copilot<span>Scope</span></h1>
+        <p class="login-lede">This dashboard shows captured AI coding sessions. Sign in to continue.</p>
+
+        @if (_failed)
+        {
+            <p class="login-error" role="alert">That password was not recognised.</p>
+        }
+
+        <label class="login-label" for="password">Password</label>
+        <input class="login-input" id="password" name="password" type="password"
+               autocomplete="current-password" autofocus required />
+
+        <button class="login-button" type="submit">Sign in</button>
+
+        <p class="login-note">
+            Viewers see scores, turns and aggregates. Reading conversation transcripts and
+            deleting sessions require the admin password.
+        </p>
+    </form>
+</div>
+
+@code {
+    private bool _failed;
+
+    protected override void OnInitialized()
+    {
+        // The sign-in endpoint redirects back with ?error=1 rather than rendering the
+        // failure itself, so a refresh does not re-submit the password.
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        _failed = uri.Query.Contains("error=1", StringComparison.Ordinal);
+
+        // Nothing to sign in to — don't show a password box that cannot succeed.
+        if (!Auth.Enabled) Nav.NavigateTo("/", replace: true);
+    }
+}

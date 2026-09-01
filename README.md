@@ -312,6 +312,28 @@ matches the table above.
 In Production mode `/v1/*` requires `x-api-key` (`CopilotScope__Ingest__ApiKey`);
 clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 
+For a shared deployment, split that one key into scopes and put a password on the
+dashboard — the key every editor holds should not also be the key that reads
+transcripts and deletes history:
+
+```jsonc
+// collector
+"CopilotScope": { "Keys": {
+  "Ingest": ["emitter-key"],       // POST /v1/* only
+  "Read":   ["dashboard-key"],     // /api/* + /metrics
+  "Admin":  ["operator-key"]       // DELETE, seed — implies Read
+} }
+
+// dashboard: viewers get scores and turns, admins also get transcripts and delete
+"CopilotScope": { "Dashboard": { "Auth": {
+  "ViewerPassword": "…", "AdminPassword": "…"
+} } }
+```
+
+Both are off by default and the legacy single key keeps granting everything, so an
+existing deployment is unchanged until it opts in. Full trust model, including what
+each role can see: **[SECURITY.md](SECURITY.md)**.
+
 ## Collector API
 
 | Endpoint | Description |

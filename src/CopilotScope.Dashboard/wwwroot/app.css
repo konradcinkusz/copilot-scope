@@ -683,3 +683,49 @@ html, body {
 }
 .doc-table td { padding: 7px 8px; border-bottom: 1px dotted var(--line); vertical-align: top; line-height: 1.5; }
 .doc-table td:first-child { font-family: var(--mono); white-space: nowrap; color: var(--copper); }
+
+/* ------------------------------------------------------------------- sign-in */
+/* Shown only when CopilotScope:Dashboard:Auth is configured. Deliberately plain:
+   a login screen is a door, not a landing page. */
+.login-shell {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--bg);
+}
+.login-card {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; max-width: 360px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 28px 26px;
+}
+.login-card .brand { margin: 0 0 2px; }
+.login-lede { margin: 0 0 8px; font-size: 13px; color: var(--dim); line-height: 1.5; }
+.login-label { font-size: 12px; color: var(--dim); letter-spacing: .04em; text-transform: uppercase; }
+.login-input {
+  font: inherit; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+}
+.login-input:focus-visible { outline: 2px solid var(--copper); outline-offset: 1px; }
+.login-button {
+  font: inherit; font-weight: 600; cursor: pointer; margin-top: 4px;
+  padding: 9px 14px; border-radius: 8px;
+  border: 1px solid var(--copper); background: var(--copper); color: #1a1712;
+}
+.login-button:hover { filter: brightness(1.07); }
+.login-button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.login-error {
+  margin: 0; padding: 8px 11px; border-radius: 8px; font-size: 13px;
+  background: color-mix(in srgb, var(--err) 16%, transparent);
+  border: 1px solid var(--err); color: var(--text);
+}
+.login-note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--dim); }
+.signout-form { display: flex; align-items: center; gap: 8px; }
+.signout-role {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px;
+}
+.signout-btn {
+  font: inherit; font-size: 12px; cursor: pointer; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+}
+.signout-btn:hover { color: var(--text); border-color: var(--copper); }
+.signout-btn:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }

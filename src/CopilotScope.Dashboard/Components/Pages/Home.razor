@@ -28,6 +28,15 @@
             <text>@_health.Environment · @_health.Sessions sessions · @(_health.Persistence ? "Postgres" : "in-memory")@(_health.Forwarding ? " · forwarding" : "")</text>
         }
     </div>
+    @if (Auth.Enabled)
+    {
+        @* Plain form post: signing out clears an HTTP cookie, which the interactive
+           circuit cannot do on its own. *@
+        <form method="post" action="/logout" class="signout-form">
+            <span class="signout-role">@(_canDelete ? "admin" : "viewer")</span>
+            <button class="signout-btn" type="submit">Sign out</button>
+        </form>
+    }
 </header>
 
 <div class="grid">
@@ -142,14 +151,19 @@
                             }
                             var maturity = SessionMaturity(s.Turns);
                             <span class="status-chip @maturity.Css" title="Session maturity based on @s.Turns turn@(s.Turns == 1 ? "" : "s")">@maturity.Label</span>
-                            if (_confirmDelete)
+                            @* Deletion is irreversible, so it stays with the admin role when
+                               sign-in is enabled. With auth off this is unchanged. *@
+                            if (_canDelete)
                             {
-                                <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
-                                <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
-                            }
-                            else
-                            {
-                                <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                                if (_confirmDelete)
+                                {
+                                    <button class="btn danger" @onclick="DeleteAsync">Confirm delete</button>
+                                    <button class="btn" @onclick="() => _confirmDelete = false">Cancel</button>
+                                }
+                                else
+                                {
+                                    <button class="btn" @onclick="() => _confirmDelete = true">Delete session</button>
+                                }
                             }
                         }
                     </div>
@@ -589,12 +603,22 @@
                 <div class="panel">
                     <div class="panel-head">
                         <div class="panel-label">Prompts &amp; responses</div>
-                        @if (_detail.Transcript.Count > 0)
+                        @if (_detail.Transcript.Count > 0 && _canReadTranscripts)
                         {
                             <button class="btn" @onclick="() => _showChat = true">Open conversation</button>
                         }
                     </div>
-                    @if (_detail.Transcript.Count == 0)
+                    @if (!_canReadTranscripts)
+                    {
+                        @* Transcript text is the sensitive payload — the conversation itself,
+                           including anything pasted into it. Scores and turns stay visible. *@
+                        <div class="empty">
+                            Conversation content is restricted. Sign in with the admin password to read
+                            captured prompts and responses; scores, turn analysis and aggregates are
+                            available to every signed-in user.
+                        </div>
+                    }
+                    else if (_detail.Transcript.Count == 0)
                     {
                         <div class="empty">
                             No captured content — Copilot only sends prompt/response text when content capture is enabled on the client, and only for chats started after enabling it.
@@ -630,7 +654,7 @@
                     </div>
                 </div>
             }
-            @if (_showChat)
+            @if (_showChat && _canReadTranscripts)
             {
                 <div class="modal-backdrop" @onclick="() => _showChat = false">
                     <div class="chat-window" role="dialog" aria-modal="true" aria-label="Conversation transcript, read only"

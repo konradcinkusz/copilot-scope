@@ -68,21 +68,16 @@ var app = builder.Build();
 app.MapDefaultEndpoints(); // /health (readiness) + /alive (liveness)
 
 var ingestApiKey = app.Configuration["CopilotScope:Ingest:ApiKey"]; // null/empty → open (dev mode)
+var scopedKeys = new ApiKeyOptions();
+app.Configuration.GetSection("CopilotScope:Keys").Bind(scopedKeys);
 
-// Single, constant-time key check used by every gated surface (/v1, /api, /metrics).
-// An empty configured key means dev/open mode. Keeping this in one place is what
-// lets the whole /api group be gated deny-by-default instead of endpoint-by-endpoint —
-// which is how the destructive DELETE used to sit unauthenticated.
-bool KeyAuthorized(HttpRequest request)
-{
-    if (string.IsNullOrEmpty(ingestApiKey)) return true;
-    var provided = request.Headers["x-api-key"].FirstOrDefault()
-                ?? request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "");
-    if (string.IsNullOrEmpty(provided)) return false;
-    return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-        System.Text.Encoding.UTF8.GetBytes(provided),
-        System.Text.Encoding.UTF8.GetBytes(ingestApiKey));
-}
+// Scoped, constant-time key check used by every gated surface (/v1, /api, /metrics).
+// Keeping it in one place is what lets the whole /api group be gated deny-by-default
+// instead of endpoint-by-endpoint — which is how the destructive DELETE used to sit
+// unauthenticated. The legacy single key still grants every scope, so an existing
+// deployment is unaffected until it opts into CopilotScope:Keys.
+var apiKeys = ApiKeyRegistry.Build(ingestApiKey, scopedKeys);
+bool KeyAuthorized(HttpRequest request, ApiScope scope = ApiScope.Read) => apiKeys.Authorized(request, scope);
 
 var store = app.Services.GetRequiredService<SessionStore>();
 var quality = app.Services.GetRequiredService<QualityEngine>();
@@ -99,7 +94,7 @@ var otlp = app.MapGroup("/v1");
 // Ingest is gated deny-by-default; the filter logs the client hint on rejection.
 otlp.AddEndpointFilter(async (ctx, next) =>
 {
-    if (!KeyAuthorized(ctx.HttpContext.Request))
+    if (!KeyAuthorized(ctx.HttpContext.Request, ApiScope.Ingest))
     {
         app.Logger.LogWarning("Rejected {Path}: missing or wrong x-api-key/Authorization header " +
             "from {RemoteIp}. Set OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=<key>\" on the client.",
@@ -225,13 +220,14 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
 
 var api = app.MapGroup("/api");
 
-// Deny-by-default: the whole query/admin surface is gated by the ingest key when one
-// is set. Reads expose captured transcripts and DELETE is destructive, so an open key
-// must not leave them reachable. /api/health is deliberately mapped OUTSIDE this group
-// (below) so liveness probes stay unauthenticated.
+// Deny-by-default: the whole query/admin surface needs at least the Read scope. Reads
+// expose captured transcripts, so an ingest-only key — the one handed to every developer's
+// editor — must not reach them. Destructive and administrative endpoints re-check for
+// Admin below. /api/health is deliberately mapped OUTSIDE this group (further down) so
+// liveness probes stay unauthenticated.
 api.AddEndpointFilter(async (ctx, next) =>
 {
-    if (!KeyAuthorized(ctx.HttpContext.Request)) return Results.Unauthorized();
+    if (!KeyAuthorized(ctx.HttpContext.Request, ApiScope.Read)) return Results.Unauthorized();
     return await next(ctx);
 });
 
@@ -256,8 +252,10 @@ api.MapGet("/sessions/{id}", async (string id, SessionQueryService sessions, Can
     return Results.Ok(Dto.Detail(s, quality, insightPipeline, baseline));
 });
 
-api.MapDelete("/sessions/{id}", async (string id, ILogger<Program> logger) =>
+api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<Program> logger) =>
 {
+    // Destroying history needs the strongest credential, not merely a readable one.
+    if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
     var key = Uri.UnescapeDataString(id);
     var removed = store.Remove(key);
     if (app.Services.GetService<SessionRepository>() is { } repo)
@@ -288,9 +286,11 @@ api.MapGet("/overview", async (int? days, SessionQueryService sessions, Cancella
 // touches real captured sessions.
 const string SeedIdPrefix = "seed-";
 
-api.MapPost("/admin/seed", async (SeedRequest req, ILogger<Program> logger) =>
+api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<Program> logger) =>
 {
-    // (Auth is handled by the /api group filter above.)
+    // Fabricating session data is an administrative act; the group filter above only
+    // established that the caller may read.
+    if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
     // Enforce the seed- prefix server-side: the "namespaced" guarantee was only a
     // Seeder convention, so a key holder could otherwise Put over a real captured
     // session. Refuse the whole batch if any id is out of namespace.
@@ -348,7 +348,9 @@ if (prometheusOptions.Enabled)
 
     app.MapGet("/metrics", (HttpRequest request) =>
     {
-        if (!KeyAuthorized(request)) return Results.Unauthorized();
+        // Read scope: with per-session series enabled this exposes session ids, so it must
+        // not be more open than the API that summarizes the same data.
+        if (!KeyAuthorized(request, ApiScope.Read)) return Results.Unauthorized();
 
         // version=0.0.4 is what Prometheus negotiates for the text exposition format.
         return Results.Text(exporter.Render(), "text/plain; version=0.0.4; charset=utf-8");
@@ -379,7 +381,7 @@ app.Logger.LogInformation(
     prometheusOptions.Enabled
         ? $"GET /metrics (per-session series: {(prometheusOptions.PerSession ? "on" : "off")})"
         : "disabled",
-    string.IsNullOrEmpty(ingestApiKey) ? "disabled (dev)" : "x-api-key required",
+    apiKeys.Describe(),
     persistenceEnabled ? "Postgres" : "in-memory only",
     forwarder.Enabled ? "enabled" : "disabled");
 
