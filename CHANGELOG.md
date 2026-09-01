@@ -9,6 +9,19 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Team-lead views: windows, cohorts, before/after, export** (#96). The stated buyer — a
+  platform lead evaluating assistants for a team — could not answer a single leadership
+  question inside the product: no trends, no cohorts, no comparison, no shareable links, no
+  export. Both pages now take a time window and a cohort (repository / assistant / model),
+  filtered in SQL rather than after the page is fetched. `GET /api/cohorts` rolls a window up
+  by each axis; `GET /api/compare` puts two windows side by side for one cohort, defaulting
+  the baseline to the equally long window before the current one, and reports its caveats
+  (small samples, mismatched window lengths) next to the deltas instead of folding them in.
+  Sessions are deep-linkable at `/sessions/{id}`, and Overview's top-session links now
+  resolve to the named session instead of dropping the reader on the list. Any filtered
+  rollup or comparison exports as CSV — group rows only, no session ids — and the Overview
+  page prints to a one-page utilization / impact / cost summary. **No view and no export has
+  a per-developer dimension**, which is asserted by tests rather than assumed.
 - **Privacy mode: works-council and GDPR controls that are enforced, not documented** (#94).
   The "not for performance reviews" promise was a convention — nothing stopped an operator
   reading one developer's transcripts, and German BetrVG §87(1)(6) grants co-determination

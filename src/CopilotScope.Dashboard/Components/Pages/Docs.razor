@@ -23,6 +23,7 @@
         <a href="/docs#algorithms">Algorithms</a>
         <a href="/docs#transcript">Prompts &amp; responses</a>
         <a href="/docs#privacy">Privacy &amp; works councils</a>
+        <a href="/docs#teamviews">Team views</a>
         <a href="/docs#overview">Overview page</a>
         <a href="/docs#limits">Limitations</a>
     </nav>
@@ -169,6 +170,49 @@
             (<code>Domain/EmitterCoverage.cs</code>, also at <code>GET /api/coverage</code>) and is
             asserted against real ingest behaviour by the test suite, so it cannot quietly stop
             being true.
+        </p>
+    </section>
+
+    <section id="teamviews" class="panel doc-section">
+        <h2>Team views — windows, cohorts, comparison, export</h2>
+        <p>
+            <b>The question this product exists to answer is "is the tooling we are paying for
+            working".</b> That is a question about a fleet over a period, not about one session,
+            so both pages take a <i>window</i> (7 / 30 / 90 days / all) and a <i>cohort</i>
+            (repository, assistant, model). Filters are applied in the database, not after the
+            page is fetched — filtering after a <code>LIMIT</code> under-fills every page and,
+            past the first few, returns nothing at all.
+        </p>
+        <p>
+            <b>Cohort rollups</b> (<code>GET /api/cohorts</code>) break the window down by
+            repository, assistant, model and session kind: tokens, calls, error rate and mean
+            quality per slice. Two reading notes that are easy to get wrong, so they are stated
+            on the export too — a session that called two models is counted in <i>both</i> model
+            rows, so those rows do not sum to the session total; and a group of fewer than three
+            sessions shows no average, because a mean over two sessions is one session wearing a
+            mean's clothes.
+        </p>
+        <p>
+            <b>Before/after</b> (<code>GET /api/compare</code>) is the buying question: did the
+            model upgrade help, is the new assistant better. Same cohort, two windows, one table.
+            The baseline defaults to the equally long window immediately before the current one.
+            Caveats are reported next to the deltas rather than folded into them — a comparison
+            over four sessions is anecdote, and windows of very different lengths compare the
+            windows rather than the change.
+        </p>
+        <p>
+            <b>Export and print.</b> Any filtered rollup or comparison downloads as CSV, because
+            the decision gets made in a spreadsheet by people who will never open this dashboard.
+            The export contains group rows only — no session ids, no origins, nothing individual;
+            there is nothing individual in scope to leak, because the input is already a rollup.
+            <i>Print summary</i> reduces the page to the headline row, the comparison and the
+            rollups, in utilization / impact / cost language.
+        </p>
+        <p>
+            <b>There is no per-developer dimension, on any view or export, and adding one is not
+            on the roadmap.</b> Every axis here describes the tooling. See
+            <a href="/docs#privacy">Privacy &amp; works councils</a> for the controls that make
+            that a property of the software rather than of its documentation.
         </p>
     </section>
 
