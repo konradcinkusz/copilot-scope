@@ -43,12 +43,29 @@ those sessions any good, and where did they go wrong".
 | GitHub, natively | Copilot usage metrics API and dashboard | 28-day retention, org-level only |
 | DX, Jellyfish, LinearB, Faros, Swarmia | engineering intelligence, ROI reporting | commercial |
 
-Two things stand out. First, the open-source field is entirely **usage
-dashboards** — seats, tokens, cost, acceptance rate. Second, the commercial
-platforms work from git and ticket metadata, which means they can tell you a PR
-took three days but not that turn 23 burned four tool calls in a repair loop.
+The open-source field here is entirely **usage dashboards** — seats, tokens, cost,
+acceptance rate. That much still holds.
 
-Nobody in open source scores the *quality of a session*.
+### The category stopped being empty in mid-2026
+
+An earlier version of this document said *"nobody scores the quality of a session"*.
+That is no longer true, and pretending otherwise would fail on the first search anyone
+runs. Three commercial entrants shipped the category:
+
+| Product | Shipped | What it is |
+|---|---|---|
+| **DX Agent Experience** (DX is now part of Atlassian) | Atlassian Team '26, May 2026 | An agent-effectiveness score, filterable by team, with a per-session view surfacing bottlenecks — missing context, ambiguous instructions, scope drift. Scored by a separate evaluation model across three dimensions. |
+| **Datadog Agent Console** | DASH, June 2026 | Unified view across Claude Code, Cursor and GitHub Copilot: adoption analytics, engineering-impact metrics, spend attribution, automated waste detection. Leads with *"who is using coding agents the most?"* |
+| **New Relic AI Coding Observability** | announced 2026-06-08, available 2026-06-23 | Telemetry normalization across Claude Code, Cursor, Copilot, Windsurf and Amazon Q. Announced as an **open-source** feature at no additional cost — standard ingest rates apply, with a local-only mode announced as coming later. |
+
+**Read this as validation, not as a eulogy.** Three companies with vastly better market
+research than this project independently concluded the problem is real and worth building
+for. That is the strongest external evidence the thesis has ever had. What it costs is the
+"empty niche" framing, which was the weakest part of the argument anyway — a category
+nobody has entered is usually a category nobody wants.
+
+See [`COMPARISON.md`](COMPARISON.md) for what each does next to what CopilotScope does, and
+[ADR-003](architecture/ADR-003-positioning.md) for the decision this landscape forced.
 
 ## 3. The wedge
 
@@ -72,13 +89,24 @@ What CopilotScope has that the list above does not:
 5. **A research layer.** Eight notebooks and a LaTeX paper built into every release.
    Nothing else in this niche has one.
 
-Timing helps: VS Code Copilot, Claude Code and Codex now emit OTel GenAI semantic
-conventions natively, and OpenTelemetry graduated in CNCF in May 2026. An
-OTLP-ingesting design landed on the right side of a standard that had just
-finished settling.
+6. **No per-developer dimension, enforced rather than promised.** The cohort filter has
+   no developer axis by construction (`Api/CohortFilter.cs`), privacy mode applies a
+   k-anonymity floor to every view *and* every outbound payload, and per-session Prometheus
+   series are refused under it. Datadog Agent Console leads with "who is using coding agents
+   the most"; this cannot answer that question, and tests assert it cannot.
 
-**One sentence:** *the only open-source tool that turns telemetry from any AI
-coding assistant into a session quality score, instead of a usage count.*
+On standards: VS Code Copilot, Claude Code and Codex emit OTel GenAI semantic conventions
+natively, and OpenTelemetry graduated in CNCF in May 2026. An earlier version of this
+document called that "a standard that had just finished settling" — which was wrong.
+Semantic conventions **v1.42.0 (2026-06-12) deprecated the `gen_ai.*` conventions** and
+federated them to a separate `open-telemetry/semantic-conventions-genai` repository, with no
+stable release yet. The standard did not settle; it split. The honest version is better
+anyway: a weekly canary (`.github/workflows/semconv-canary.yml`) diffs the attributes this
+project consumes against upstream and opens an issue when they drift. Tracking a moving
+standard, and saying so, beats betting on a settled one — and it is checkable.
+
+**One sentence:** *the open-source, self-hosted session-quality scorer with a published,
+deterministic formula — and the only one that cannot produce a per-developer ranking.*
 
 ## 4. What this project deliberately is not
 
@@ -105,14 +133,29 @@ exported alongside it.
 
 ## 5. Positioning
 
-Category to compete in: **session quality scoring**, not "Copilot dashboard". The
-second is crowded and already lost; the first is empty and defensible by the paper.
+Category to compete in: **session quality scoring**, not "Copilot dashboard". The second is
+crowded and already lost. The first is no longer empty either — DX, Datadog and New Relic all
+entered it in mid-2026 (§2) — so the position is not "the only one" but **the only one with
+these three properties**.
 
-Three claims, in order:
+Three claims, in order, each scoped to survive a reader who has just come from a competitor's
+landing page:
 
-1. **Quality, not usage.** The score, the components, the turn where it went wrong.
-2. **Every assistant, not just one.** Copilot, Copilot CLI, Claude Code, Claude Cowork.
-3. **Local and private.** No SDK, no account, nothing leaves the machine.
+1. **Local and private.** The collector runs on your machine, writes to your Postgres, and
+   has no callback of any kind. Every commercial alternative is SaaS; New Relic's local-only
+   mode was announced as coming later. This is the claim that leads now, because it is the
+   one none of them can match today.
+2. **A published, deterministic formula.** Six weights, renormalized over the components that
+   have data, with a confidence figure exported next to every score — re-derivable by hand and
+   diffable between versions. DX scores with an evaluation model, which reads nuance this
+   cannot; the trade is auditability, and it is a trade rather than a win.
+3. **Cannot rank developers.** Not a policy: no developer dimension exists in the cohort
+   filter, privacy mode applies a k-anonymity floor to every view and outbound payload, and
+   tests assert both. Datadog leads with "who is using coding agents the most". This is the
+   answer to a different question, on purpose.
+
+"Quality, not usage" and "every assistant, not just one" are still true and still matter —
+they are just no longer *distinguishing*, because the three entrants do both.
 
 .NET, Blazor and Aspire are implementation details and belong below the fold. The
 advertised path is `docker compose up`; a reader should never need to know what the
