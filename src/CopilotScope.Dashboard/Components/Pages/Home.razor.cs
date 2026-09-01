@@ -11,7 +11,15 @@ public partial class Home : ComponentBase, IDisposable
     [Inject] public required CollectorClient Collector { get; set; }
     [Inject] public required IJSRuntime JS { get; set; }
 
+    /// <summary>Sessions held in the rail. History beyond this lives in Postgres and is
+    /// reachable by id; the rail is a working set, not the archive.</summary>
+    private const int RailPageSize = 200;
+
     private List<SessionSummaryDto>? _sessions;
+
+    /// <summary>Total sessions matching the current query, which may exceed the rail page.
+    /// Whether that history is durable is already on the health chip (Postgres / in-memory).</summary>
+    private int _sessionTotal;
     // Stable display order for the rail. The collector returns sessions newest-first,
     // which reshuffles the rail under the cursor every 2 s poll while a session is
     // live. We freeze the order a user has seen — existing rows keep their position,
@@ -193,7 +201,12 @@ public partial class Home : ComponentBase, IDisposable
         try
         {
             _health = await Collector.GetHealthAsync(_cts.Token);
-            var fetched = await Collector.GetSessionsAsync(_showInternal, _cts.Token);
+            // Explicit page size: the collector now serves history from Postgres, so an
+            // unbounded request would pull a team's whole archive into the rail. The rail
+            // shows the newest page; _sessionTotal reports what that page is a page of.
+            var page = await Collector.GetSessionPageAsync(_showInternal, limit: RailPageSize, ct: _cts.Token);
+            var fetched = page.Sessions;
+            _sessionTotal = page.Total;
 
             // Freeze the rail order: keep known sessions where they are, prepend new
             // ones (server order = newest-first) at the top, drop ones that vanished.

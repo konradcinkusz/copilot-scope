@@ -9,8 +9,23 @@ namespace CopilotScope.Dashboard.Services;
 /// </summary>
 public sealed class CollectorClient(HttpClient http)
 {
+    /// <summary>
+    /// One page of session history. The collector serves this from Postgres with live
+    /// sessions layered on top, so the list is no longer bounded by what its memory holds.
+    /// </summary>
+    public async Task<SessionPageDto> GetSessionPageAsync(bool includeInternal = false, int? days = null,
+        int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        var query = $"/api/sessions?includeInternal={includeInternal}"
+            + (days is > 0 ? $"&days={days}" : "")
+            + (limit is > 0 ? $"&limit={limit}" : "")
+            + (offset is > 0 ? $"&offset={offset}" : "");
+        return await http.GetFromJsonAsync<SessionPageDto>(query, ct)
+            ?? new SessionPageDto([], 0, 0, 0, false);
+    }
+
     public async Task<List<SessionSummaryDto>> GetSessionsAsync(bool includeInternal = false, CancellationToken ct = default)
-        => await http.GetFromJsonAsync<List<SessionSummaryDto>>($"/api/sessions?includeInternal={includeInternal}", ct) ?? [];
+        => (await GetSessionPageAsync(includeInternal, ct: ct)).Sessions;
 
     public async Task<SessionDetailDto?> GetSessionAsync(string id, CancellationToken ct = default)
     {
@@ -39,6 +54,11 @@ public sealed class CollectorClient(HttpClient http)
 }
 
 // --- DTOs mirroring CopilotScope.Collector.Api (deserialized with Web defaults) ---
+
+/// <summary>One page of session history. <c>Durable</c> is false when the collector is
+/// running without Postgres, i.e. the window is bounded by memory rather than by the query.</summary>
+public sealed record SessionPageDto(
+    List<SessionSummaryDto> Sessions, int Total, int Limit, int Offset, bool Durable);
 
 public enum SessionKind
 {

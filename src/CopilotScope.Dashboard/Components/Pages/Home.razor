@@ -33,7 +33,13 @@
 <div class="grid">
     <aside class="rail">
         <div class="rail-title">
-            <span>Sessions @if (_sessions is { Count: > 0 }) { <em class="rail-count">@FilteredSessions.Count</em> }</span>
+            @* When history exceeds the rail page, say so — the rest is in Postgres, not lost. *@
+            <span>Sessions @if (_sessions is { Count: > 0 })
+                {
+                    <em class="rail-count" title="@(_sessionTotal > FilteredSessions.Count ? $"Showing the newest {FilteredSessions.Count} of {_sessionTotal} stored sessions" : "")">
+                        @FilteredSessions.Count@(_sessionTotal > FilteredSessions.Count ? $" / {_sessionTotal}" : "")
+                    </em>
+                }</span>
             @if (_viewMode != ViewMode.Basic)
             {
                 <div class="rail-controls">

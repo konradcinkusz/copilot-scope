@@ -36,6 +36,29 @@ public sealed class SessionStore
         while (_removed.TryDequeue(out var id)) list.Add(id);
         return list;
     }
+
+    // Sessions trimmed from memory still exist in Postgres. If late telemetry arrives for
+    // one, Resolve would create an empty aggregate and the next write-behind upsert would
+    // overwrite the populated snapshot with it — destroying persisted history by design.
+    // Tracking the eviction lets the caller merge the stored snapshot back in first.
+    private readonly ConcurrentDictionary<string, byte> _evicted = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _evictionOrder = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _resurrected = new();
+    private const int MaxEvictedTracked = 10_000;
+
+    /// <summary>
+    /// Ids of trimmed sessions that ingest has just recreated in memory. Their persisted
+    /// snapshot must be merged back in before the next flush, or the flush replaces a full
+    /// session with a near-empty one. Draining clears the eviction marker, so each
+    /// resurrection is reported exactly once.
+    /// </summary>
+    public List<string> DrainResurrected()
+    {
+        var list = new List<string>();
+        while (_resurrected.TryDequeue(out var id)) list.Add(id);
+        return list;
+    }
+
     private const int MaxSessions = 200;
 
     public IReadOnlyCollection<CopilotSession> All => (IReadOnlyCollection<CopilotSession>)_sessions.Values;
@@ -56,7 +79,11 @@ public sealed class SessionStore
 
     /// <summary>Inserts or replaces a session unconditionally (used by admin seeding — unlike
     /// <see cref="Rehydrate"/>'s add-if-absent semantics, a reseed must overwrite stale data).</summary>
-    public void Put(CopilotSession session) => _sessions[session.Id] = session;
+    public void Put(CopilotSession session)
+    {
+        _sessions[session.Id] = session;
+        _evicted.TryRemove(session.Id, out _); // present in memory again — nothing to rehydrate
+    }
 
     /// <summary>Removes every session whose id matches the predicate. Returns the count removed.</summary>
     public int RemoveWhere(Func<string, bool> predicate)
@@ -70,6 +97,9 @@ public sealed class SessionStore
     public bool Remove(string id)
     {
         var removed = _sessions.TryRemove(id, out _);
+        // Clear any eviction marker even when the session was not in memory: a deliberate
+        // delete must not later be "repaired" by merging the row it just deleted.
+        _evicted.TryRemove(id, out _);
         if (removed)
             foreach (var kv in _traceToSession.Where(kv => kv.Value == id).ToList())
                 _traceToSession.TryRemove(kv.Key, out _);
@@ -479,11 +509,21 @@ public sealed class SessionStore
     private CopilotSession Resolve(string? key, Dictionary<string, AttrValue> resource)
     {
         key ??= "unattributed";
-        return _sessions.GetOrAdd(key, id => new CopilotSession
+        var created = false;
+        var session = _sessions.GetOrAdd(key, id =>
         {
-            Id = id,
-            VsCodeSessionId = resource.TryGetValue(Sem.SessionId, out var s) ? s.ToString() : null
+            created = true;
+            return new CopilotSession
+            {
+                Id = id,
+                VsCodeSessionId = resource.TryGetValue(Sem.SessionId, out var s) ? s.ToString() : null
+            };
         });
+
+        // Recreating a session that was trimmed from memory: flag it so its persisted
+        // snapshot gets merged back before the next flush overwrites it.
+        if (created && _evicted.TryRemove(key, out _)) _resurrected.Enqueue(key);
+        return session;
     }
 
     /// <summary>Appends to a bounded distribution list, keeping the most recent 1000 samples.</summary>
@@ -493,10 +533,26 @@ public sealed class SessionStore
         if (list.Count > 1000) list.RemoveRange(0, list.Count - 1000);
     }
 
+    /// <summary>
+    /// Caps memory by evicting the least recently active sessions. Eviction is not deletion:
+    /// the snapshots stay in Postgres and the API reads them from there. Each evicted id is
+    /// remembered so that late telemetry for it rehydrates instead of clobbering, and its
+    /// trace mappings go with it — otherwise _traceToSession grows without bound.
+    /// </summary>
     private void TrimIfNeeded()
     {
         if (_sessions.Count <= MaxSessions) return;
         foreach (var stale in _sessions.Values.OrderBy(s => s.LastSeen).Take(_sessions.Count - MaxSessions))
-            _sessions.TryRemove(stale.Id, out _);
+        {
+            if (!_sessions.TryRemove(stale.Id, out _)) continue;
+            foreach (var kv in _traceToSession.Where(kv => kv.Value == stale.Id).ToList())
+                _traceToSession.TryRemove(kv.Key, out _);
+            if (_evicted.TryAdd(stale.Id, 0)) _evictionOrder.Enqueue(stale.Id);
+        }
+
+        // Bound the eviction memory itself. Dropping the oldest marker only means a very
+        // long-dormant session could still clobber — acceptable next to unbounded growth.
+        while (_evictionOrder.Count > MaxEvictedTracked && _evictionOrder.TryDequeue(out var old))
+            _evicted.TryRemove(old, out _);
     }
 }

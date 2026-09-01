@@ -193,6 +193,38 @@ per second (telemetry bursts ≠ write storms). On startup the collector
 **rehydrates** sessions from the database. A Postgres outage degrades to
 in-memory and never blocks ingest.
 
+Read path: `GET /api/sessions` and `/api/overview` are served **from Postgres**,
+with the live in-memory aggregates layered on top — so the API answers over the
+whole archive while a session being typed into right now is still current. The
+in-memory store is a bounded working set of the most recently active sessions,
+not the extent of your history; a team churns past that cap in hours. Endpoints
+take `days` (or `since`/`until`), `limit` and `offset`; the response carries
+`total` so a client can tell what it is paging through. Without Postgres the
+same endpoints serve memory alone and report `durable: false`.
+
+Sessions evicted from memory are **not** deleted: their snapshots stay in
+Postgres, `GET /api/sessions/{id}` still resolves them, and late telemetry for an
+evicted session merges the stored snapshot back in before the next flush rather
+than overwriting it.
+
+Retention is off by default — history grows until you set a policy:
+
+```jsonc
+"CopilotScope": {
+  "History": {
+    "RetentionDays": 0,       // 0 = keep everything; N = delete sessions idle N+ days
+    "DefaultPageSize": 100,
+    "MaxPageSize": 500,
+    "BaselineDays": 30,       // window the percentile rank is computed over
+    "BaselineMaxSamples": 5000
+  }
+}
+```
+
+`BaselineDays` is what makes a percentile comparable over time: the rank is
+against a fixed trailing window of user sessions, not against whatever happened
+to still be in memory when you looked.
+
 `POST /api/admin/seed` takes the same route into a **running** collector:
 `tools/CopilotScope.Seeder` builds full session snapshots and posts them there
 directly, so seeding never needs a database connection of its own or a restart
@@ -285,9 +317,9 @@ clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
 | Endpoint | Description |
 |---|---|
 | `POST /v1/traces` `/v1/metrics` `/v1/logs` | OTLP/HTTP ingest (protobuf; gzip/deflate supported) |
-| `GET /api/sessions` | session list with quality scores |
-| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis |
-| `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions |
+| `GET /api/sessions` | paged session list with quality scores — `days`/`since`/`until`, `limit`, `offset`; returns `{sessions, total, limit, offset, durable}` |
+| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis (falls back to Postgres for sessions no longer in memory) |
+| `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions — accepts `days` |
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
 | `GET /api/health` | health incl. persistence status |
 | `GET /metrics` | Prometheus scrape endpoint — see below |

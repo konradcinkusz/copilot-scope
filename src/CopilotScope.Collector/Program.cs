@@ -15,6 +15,13 @@ builder.AddServiceDefaults();
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<QualityEngine>();
+// Registered with an optional SessionRepository so the same read path serves the
+// Postgres-backed and in-memory-only deployments.
+builder.Services.AddSingleton(sp => new SessionQueryService(
+    sp.GetRequiredService<SessionStore>(),
+    sp.GetRequiredService<QualityEngine>(),
+    sp.GetRequiredService<HistoryOptions>(),
+    sp.GetService<SessionRepository>()));
 
 // Insight pipeline — pluggable per-algorithm analyzers (docs/ANALYSIS.md §8).
 var pricing = new PricingOptions();
@@ -42,6 +49,13 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<OtlpForwarder>());
 // so `dotnet run` on a bare machine still works.
 var connectionString = builder.Configuration.GetConnectionString("copilotdb");
 var persistenceEnabled = !string.IsNullOrEmpty(connectionString);
+
+// History/retention knobs. Bound even without Postgres so the paging limits below
+// behave identically in the in-memory fallback.
+var historyOptions = new HistoryOptions();
+builder.Configuration.GetSection("CopilotScope:History").Bind(historyOptions);
+builder.Services.AddSingleton(historyOptions);
+
 if (persistenceEnabled)
 {
     builder.Services.AddSingleton(new SessionRepository(connectionString!));
@@ -221,41 +235,25 @@ api.AddEndpointFilter(async (ctx, next) =>
     return await next(ctx);
 });
 
-api.MapGet("/sessions", (bool? includeInternal) =>
+// Reads go through SessionQueryService, which serves Postgres with the live in-memory
+// aggregates layered on top. Reading memory alone made a team's history disappear within
+// hours of being written, because the store only ever keeps the most recent sessions.
+// `days` is the friendly form of the window; `since`/`until` are the precise one.
+api.MapGet("/sessions", async (bool? includeInternal, int? days, DateTimeOffset? since, DateTimeOffset? until,
+    int? limit, int? offset, SessionQueryService sessions, CancellationToken ct) =>
 {
-    // Build per-repo quality score pools so the list can show relative rank within each repo.
-    var userSessions = store.All
-        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0)
-        .ToList();
-    var repoScores = userSessions
-        .Where(x => x.Repository is not null)
-        .GroupBy(x => x.Repository!, StringComparer.Ordinal)
-        .ToDictionary(g => g.Key, g => g.Select(x => quality.Evaluate(x).Score).ToList(), StringComparer.Ordinal);
-
-    return Results.Ok(store.All
-        .Where(s => includeInternal == true || !SessionClassifier.IsInternal(s.Kind))
-        .OrderByDescending(s => s.LastSeen)
-        .Select(s =>
-        {
-            var scores = s.Repository is { } repo
-                && repoScores.TryGetValue(repo, out var rs) && rs.Count >= 3 ? rs : null;
-            return Dto.Summary(s, quality, scores);
-        }));
+    var from = since ?? (days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : null);
+    var page = await sessions.PageAsync(includeInternal == true, from, until, limit, offset, ct);
+    return Results.Ok(page);
 });
 
-api.MapGet("/sessions/{id}", (string id) =>
+api.MapGet("/sessions/{id}", async (string id, SessionQueryService sessions, CancellationToken ct) =>
 {
-    if (store.Get(Uri.UnescapeDataString(id)) is not { } s) return Results.NotFound();
-    var userSessions = store.All
-        .Where(x => !SessionClassifier.IsInternal(x.Kind) && x.ChatCalls > 0);
-    // Prefer repo-scoped peer group; fall back to all sessions when fewer than 3 peers share the repo.
-    var repoScores = s.Repository is { } repo
-        ? userSessions.Where(x => x.Repository == repo).Select(x => quality.Evaluate(x).Score).ToList()
-        : null;
-    var allScores = repoScores is { Count: >= 3 }
-        ? repoScores
-        : userSessions.Select(x => quality.Evaluate(x).Score).ToList();
-    return Results.Ok(Dto.Detail(s, quality, insightPipeline, allScores));
+    // Falls back to Postgres for sessions trimmed from memory — a link to last week's
+    // session has to keep working.
+    if (await sessions.FindAsync(Uri.UnescapeDataString(id), ct) is not { } s) return Results.NotFound();
+    var baseline = await sessions.BaselineAsync(ct);
+    return Results.Ok(Dto.Detail(s, quality, insightPipeline, baseline));
 });
 
 api.MapDelete("/sessions/{id}", async (string id, ILogger<Program> logger) =>
@@ -271,7 +269,15 @@ api.MapDelete("/sessions/{id}", async (string id, ILogger<Program> logger) =>
     return removed ? Results.NoContent() : Results.NotFound();
 });
 
-api.MapGet("/overview", () => Results.Ok(DtoOverview.Build(store.All, quality)));
+// Overview aggregates the same window the session list pages through, so "everything you
+// burned" means everything, not just what memory still holds. Defaults to the retention
+// window when one is configured, otherwise all history.
+api.MapGet("/overview", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
+{
+    var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
+    var all = await sessions.AllInWindowAsync(from, ct);
+    return Results.Ok(DtoOverview.Build(all, quality));
+});
 
 // ------------------------------------------------------------ admin / seeding
 // Lets tools/CopilotScope.Seeder push a local-dev or demo dataset straight into
@@ -309,7 +315,8 @@ api.MapPost("/admin/seed", async (SeedRequest req, ILogger<Program> logger) =>
         if (repo is not null)
         {
             var report = quality.Evaluate(session);
-            await repo.UpsertAsync(persisted, report.Score, report.Grade, CancellationToken.None);
+            await repo.UpsertAsync(persisted, report.Score, report.Grade, CancellationToken.None,
+                session.Kind.ToString());
         }
     }
 
