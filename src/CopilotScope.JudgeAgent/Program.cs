@@ -229,7 +229,7 @@ app.MapPost("/api/calibration/run", async (CalibrationRunRequest? run, HttpReque
 
 app.MapGet("/", () => Results.Text(
     "CopilotScope JudgeAgent — opt-in, cloud-only session quality judge (G-Eval, SPUR, RAGAS,\n" +
-    "deep frustration classification, task-completion detection).\n" +
+    "deep workflow-friction scoring, task-completion detection).\n" +
     "See docs/JUDGE_AGENT.md before enabling this for a team.\n" +
     "API: GET /api/health | POST /api/sessions/{id}/judge\n" +
     "Calibration: POST /api/calibration/report (offline, free) | POST /api/calibration/run (live, metered)\n" +

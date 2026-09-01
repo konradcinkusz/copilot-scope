@@ -405,17 +405,35 @@
             complete. Use it for comparisons, never for accounting.
         </p>
 
-        <h3>Frustration signals</h3>
+        <h3>Workflow friction signals</h3>
         <p>
-            <b>Why it exists:</b> the telemetry sees errors and latency, but not <i>your</i> experience — a
-            session can be technically clean and still infuriating. When content capture is on, four
-            transparent signals per user message approximate it: a bilingual (EN/PL) weighted lexicon,
-            <b>rephrasing detection</b> (Jaccard similarity with your previous message — asking the same
-            thing again is the classic repair signal), sustained CAPS / punctuation bursts, and short
-            corrective replies. <b>Why it is report-only and outside the score:</b> lexicons produce false
-            positives ("no worries"), are sarcasm-blind and language-biased. Every flag therefore carries
-            its reasons for human review. The upgrade path is a learned-rubric approach (SPUR) once an LLM
-            budget is acceptable.
+            <b>Why it exists:</b> the telemetry sees errors and latency, but not how often you had to
+            <i>ask again</i> — a session can be technically clean and still cost you four attempts. When
+            content capture is on, four transparent signals per user message count that repair work: a
+            bilingual (EN/PL) weighted lexicon of negative-feedback phrases, <b>rephrasing detection</b>
+            (Jaccard similarity with your previous message — asking the same thing again is the classic
+            repair signal), sustained CAPS / punctuation bursts, and short corrective replies.
+        </p>
+        <p>
+            <b>These are observed workflow events, not inferred emotions.</b> The distinction is not
+            cosmetic: EU AI Act Art. 5(1)(f) prohibits emotion-recognition systems in the workplace
+            outright, so a feature claiming to measure how a developer <i>feels</i> is one a DPO has to
+            block. What the code counts is how often the ask had to be repeated — a property of the
+            tooling, which is what the signal was always useful for. Nothing here scores mood.
+        </p>
+        <p>
+            <b>Off unless switched on.</b> It is the only analyzer that reads your own prompt text, so it
+            does not run until <code>CopilotScope:WorkflowFriction:Enabled</code> is set, and per-message
+            previews — the ones that quote a prompt next to a score — need a second, separate opt-in. The
+            default surface is the team/period rate at <code>GET /api/friction</code>, which cannot be
+            turned into a ranking.
+        </p>
+        <p>
+            <b>Why it is report-only and outside the score:</b> lexicons produce false positives ("no
+            worries"), miss polite repair, and are language-biased. Every flag therefore carries its
+            reasons for human review. The upgrade path is a learned-rubric approach (SPUR) once an LLM
+            budget is acceptable. Not to be confused with the composite's <code>friction</code> component,
+            which measures turn-level repair loops from telemetry and needs no prompt content at all.
         </p>
     </section>
 
@@ -431,14 +449,14 @@
             <thead><tr><th>#</th><th>Algorithm</th><th>Status</th><th>Where / why not</th></tr></thead>
             <tbody>
                 <tr><td>1</td><td>LLM-as-a-Judge (G-Eval)</td><td>❌ not implemented</td><td>Requires a judge model, conversation content and a token budget.</td></tr>
-                <tr><td>2</td><td>SPUR (learned satisfaction rubrics)</td><td>❌ not implemented</td><td>Requires an LLM plus labeled training sessions; the designated upgrade path for frustration detection.</td></tr>
+                <tr><td>2</td><td>SPUR (learned satisfaction rubrics)</td><td>❌ not implemented</td><td>Requires an LLM plus labeled training sessions; the designated upgrade path for workflow-friction detection.</td></tr>
                 <tr><td>3</td><td>RAG component metrics (RAGAS)</td><td>❌ not implemented</td><td>Applies to retrieval-grounded sessions; requires content.</td></tr>
                 <tr><td>4</td><td>Edit Survival Analysis</td><td>✅ full</td><td><code>EditSurvivalAnalyzer</code> — four-gram and no-revert tracked separately (0.4/0.6); also feeds the <i>acceptance</i> component.</td></tr>
                 <tr><td>5</td><td>Acceptance-weighted throughput</td><td>✅ full</td><td><code>ThroughputAnalyzer</code> — accepted LOC per turn, LOC per 1k output tokens, rejection-discounted.</td></tr>
                 <tr><td>6</td><td>TFRA — turn-level friction &amp; repair</td><td>✅ full</td><td><code>SegmentAnalyzer</code> (Turn analysis panel) + the <i>friction</i> component of the composite score.</td></tr>
                 <tr><td>7</td><td>Latency-utility model</td><td>✅ full</td><td><code>LatencyUtilityAnalyzer</code> — per-sample utility curve, 2&nbsp;s / 8&nbsp;s attention-risk buckets; simplified form remains the <i>latency</i> component.</td></tr>
                 <tr><td>8</td><td>Token &amp; cache economics</td><td>✅ full</td><td><code>TokenEconomicsAnalyzer</code> — per-model cost from a configurable price sheet, cache savings, cost per turn / accepted edit.</td></tr>
-                <tr><td>9</td><td>Frustration classification</td><td>✅ simplified</td><td><code>FrustrationAnalyzer</code> — EN/PL lexicon + rephrasing similarity + typography; report-only, deliberately outside the composite score.</td></tr>
+                <tr><td>9</td><td>Workflow-friction signals</td><td>✅ simplified, off by default</td><td><code>WorkflowFrictionAnalyzer</code> — EN/PL lexicon + rephrasing similarity + typography; counts repair events, not emotion. Report-only, deliberately outside the composite score, and not registered unless enabled.</td></tr>
                 <tr><td>10</td><td>Task-completion detection</td><td>❌ not implemented</td><td>Needs completion signals (builds, tests) that Copilot telemetry does not carry.</td></tr>
             </tbody>
         </table>

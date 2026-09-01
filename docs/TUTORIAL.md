@@ -345,7 +345,7 @@ Work through these in order — they cover, in practice, every case we've seen:
 13. **Want a populated dashboard instead of one probe session?** Run
    `dotnet run --project tools/CopilotScope.Seeder -- demo` — it builds a big,
    varied set of comprehensive sessions (clean, error-prone, laggy,
-   rejected-edits, frustrated, internal helper calls, ...) plus a 30+ turn
+   rejected-edits, repair-loop, internal helper calls, ...) plus a 30+ turn
    **showcase** chat that exercises every dashboard panel at once, and posts
    them straight to the running collector's `/api/admin/seed`. It always clears any
    previously seeded data first, so it's safe to re-run against a container

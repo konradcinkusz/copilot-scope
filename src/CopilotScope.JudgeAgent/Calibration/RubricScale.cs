@@ -21,11 +21,11 @@ public sealed record RubricDefinition(string Algorithm, string Question, bool Hi
 /// items.</para>
 ///
 /// <para><b>Polarity matters more than it looks.</b> Four of the five rubrics score "how good
-/// was this", but <c>deep-frustration</c> scores "how frustrated was the user" — it runs the
-/// other way, and the judge is behaving correctly when it returns 0.1 for a calm session. A
-/// labeller who reads band 3 as "great session" on that rubric would be recorded as maximally
-/// disagreeing with a judge that got it right, and the calibration would report a broken judge
-/// on the strength of a broken form. So each rubric declares its direction and supplies its own
+/// was this", but <c>deep-friction</c> scores "how much did the user have to repair" — it runs
+/// the other way, and the judge is behaving correctly when it returns 0.1 for a session that
+/// went straight through. A labeller who reads band 3 as "great session" on that rubric would
+/// be recorded as maximally disagreeing with a judge that got it right, and the calibration
+/// would report a broken judge on the strength of a broken form. So each rubric declares its direction and supplies its own
 /// question, and labels are recorded on the rubric's own scale rather than a global
 /// "higher is better" one.</para>
 /// </summary>
@@ -57,8 +57,9 @@ public static class RubricScale
                 "Would the user who ran this session have rated it satisfactory?", true),
             ["RAGAS"] = new("RAGAS",
                 "Were the assistant's answers faithful to, and supported by, the retrieved context?", true),
-            ["deep-frustration"] = new("deep-frustration",
-                "How frustrated does the user read as being? (higher = more frustrated)", false),
+            ["deep-friction"] = new("deep-friction",
+                "How much did the user have to repair — re-ask, correct, restate — to get what " +
+                "they wanted? (higher = more repair)", false),
             ["task-completion"] = new("task-completion",
                 "Was the user's original ask actually resolved by the end of the session?", true)
         };
@@ -77,7 +78,33 @@ public static class RubricScale
     /// <summary>True when <paramref name="level"/> is a usable band index.</summary>
     public static bool IsValidLevel(int level) => level >= 0 && level < Categories;
 
-    /// <summary>The rubric definition for an algorithm id, or null when the id is unknown.</summary>
-    public static RubricDefinition? Find(string algorithm) =>
-        Rubrics.TryGetValue(algorithm, out var rubric) ? rubric : null;
+    /// <summary>
+    /// Retired rubric ids, mapped to their current names.
+    ///
+    /// <c>deep-frustration</c> became <c>deep-friction</c> when the rubric was restated in
+    /// terms of observed repair behaviour rather than inferred emotion (issue #95 — EU AI Act
+    /// Art. 5(1)(f) prohibits workplace emotion recognition, and the rubric never measured
+    /// that anyway). Human labels are expensive and slow to collect, so a label file written
+    /// against the old id keeps resolving instead of silently dropping out of the agreement
+    /// statistics — which is the failure that would look like a judge getting worse.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> RetiredAliases =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["deep-frustration"] = "deep-friction",
+        };
+
+    /// <summary>The rubric definition for an algorithm id, or null when the id is unknown.
+    /// Retired ids resolve to their replacement.</summary>
+    public static RubricDefinition? Find(string algorithm)
+    {
+        if (Rubrics.TryGetValue(algorithm, out var rubric)) return rubric;
+        return RetiredAliases.TryGetValue(algorithm, out var current)
+            && Rubrics.TryGetValue(current, out var aliased) ? aliased : null;
+    }
+
+    /// <summary>The current id for an algorithm name, so a label file written against a retired
+    /// id groups with the labels and scores that use the current one.</summary>
+    public static string Canonical(string algorithm) =>
+        RetiredAliases.TryGetValue(algorithm, out var current) ? current : algorithm;
 }

@@ -575,7 +575,7 @@ public class InsightAnalyzerTests
     }
 
     [Fact]
-    public void FrustrationDetectsMarkersAndRephrasing()
+    public void WorkflowFrictionDetectsMarkersAndRephrasing()
     {
         var s = new CopilotSession { Id = "fr" };
         var t = DateTimeOffset.UtcNow;
@@ -583,7 +583,7 @@ public class InsightAnalyzerTests
         s.AddTranscript(t.AddMinutes(1), "gpt-4o", "add a retry policy to the forwarder queue please", "done", 1); // rephrase
         s.AddTranscript(t.AddMinutes(2), "gpt-4o", "this still doesn't work, wrong again!!", "sorry", 2);          // strong
 
-        var report = new FrustrationAnalyzer().Analyze(s);
+        var report = TestFriction.Analyzer().Analyze(s);
 
         Assert.Equal("ok", report.Status);
         Assert.True(report.Score >= 0.4, $"index was {report.Score}");
@@ -592,10 +592,10 @@ public class InsightAnalyzerTests
     }
 
     [Fact]
-    public void FrustrationExtractsUserTextFromJsonMessages()
+    public void WorkflowFrictionExtractsUserTextFromJsonMessages()
     {
         var raw = """[{"role":"system","content":"be nice"},{"role":"user","content":"why is this wrong again"}]""";
-        var text = FrustrationAnalyzer.ExtractUserText(raw);
+        var text = WorkflowFrictionAnalyzer.ExtractUserText(raw);
         Assert.Contains("wrong again", text);
         Assert.DoesNotContain("be nice", text);
     }

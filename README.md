@@ -43,7 +43,7 @@ every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
 | **Edit survival** | Did the accepted AI code stay in the file, or get reverted right after |
 | Latency utility | How much of the session sat past the 2 s attention / 8 s abandonment thresholds |
 | Token & cache economics | Cost per turn, cost per *accepted* edit, what the prompt cache actually saved |
-| Frustration signals | Rephrasing, corrective replies and strong markers — report-only, never scored |
+| Workflow friction signals | Rephrasing, corrective replies and negative-feedback markers — counts repair events, not emotion. Off by default, report-only, never scored |
 
 Five assistants land in the same schema: **VS Code Copilot, Copilot CLI, Claude
 Code, Claude Cowork (the agent surface in the Claude desktop app) and Cursor**.
@@ -82,9 +82,13 @@ This matters as much as the features, so it is not buried at the bottom:
 - **A single number is not a verdict.** Confidence is exported next to every
   score; a 90 built on four samples means less than a 70 built on forty. Read the
   components, not the headline.
-- **Frustration analysis is report-only** and deliberately excluded from the
-  composite. It is a lexical heuristic, and heuristics about human emotion do not
-  belong in a number someone might act on.
+- **Workflow-friction analysis is off by default and report-only.** It counts
+  *observed repair events* — rephrasing, corrective replies, negative feedback —
+  not inferred emotion, and it is deliberately excluded from the composite: a
+  lexical heuristic does not belong in a number someone might act on. It is the
+  only analyzer that reads prompt text, so it stays switched off until an
+  operator turns it on, and quoting messages needs a second opt-in. See
+  [docs/WORKFLOW_FRICTION.md](docs/WORKFLOW_FRICTION.md).
 
 The useful question is "where is our AI tooling wasting people's time", not "who
 is the best developer". Goodhart's law applies to this repo too.
@@ -102,7 +106,7 @@ is the best developer". Goodhart's law applies to this repo too.
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
 | `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
-| `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep frustration classification, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
+| `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep workflow-friction scoring, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
 
 ## Quick start — no clone, just pull
 
@@ -164,11 +168,11 @@ dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 my
 ```
 
 Seed a whole dataset instead — a handful of sessions for a fresh local run, or a big
-varied set (different personas: clean, error-prone, laggy, rejected-edits, frustrated,
+varied set (different personas: clean, error-prone, laggy, rejected-edits, repair-loop,
 internal helper calls, ...) for a demo/presentation. Every profile also includes a
 **showcase** session: a single 30+ turn chat engineered to light up every dashboard
 panel at once — mixed clean/stalled/error/repair-loop turns, model switching, both
-edit and feedback signals, multi-role captured content and scattered frustration.
+edit and feedback signals, multi-role captured content and scattered repair markers.
 On top of that, every profile seeds a set of **curated real conversations** —
 hand-authored 30+ turn sessions that read like genuine developer chats (building a
 Redis rate limiter, debugging a production OTLP incident on the CLI, shipping a React
@@ -319,7 +323,7 @@ Two axes now: **implementation status** (are the components there?) and **deploy
 | 6 | Turn-level Friction & Repair (TFRA) | ✅ **full** | ✅ | ✅ | `SegmentAnalyzer` (Turn analysis panel) + *friction* component in the composite |
 | 7 | Latency-utility model | ✅ **full** | ✅ | ✅ | `LatencyUtilityAnalyzer` — per-sample utility curve, >2 s / >8 s risk buckets; simplified form also as the *latency* component |
 | 8 | Token & cache economics | ✅ **full** | ✅ | ✅ | `TokenEconomicsAnalyzer` — per-model cost (`CopilotScope:Pricing`), cache savings, cost per turn / accepted edit |
-| 9 | Frustration classification | ✅ **simplified** (local) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `FrustrationAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, **report-only**. Cloud: `CopilotScope.JudgeAgent` deep classifier (sarcasm-aware, context-grounded), still report-only — promoting it into the composite is a separate future decision made by config |
+| 9 | Workflow-friction signals | ✅ **simplified** (local, off by default) · ✅ **deep** (cloud, opt-in) | ✅ heuristic | ✅ | Local: `WorkflowFrictionAnalyzer` — EN/PL lexicon + rephrasing (Jaccard) + typography, counting *repair events* rather than emotion, **report-only** and not registered unless `CopilotScope:WorkflowFriction:Enabled`. Cloud: `CopilotScope.JudgeAgent` `deep-friction` rubric (context-grounded), still report-only — promoting it into the composite is a separate future decision made by config (#61) |
 | 10 | Task-completion detection | ⚠️ partial (local) · ✅ **implemented** (cloud, opt-in) | ⚠️ partial | ✅ | Local partial: no external completion-signal ingest path yet (build/test exit codes). Cloud: `CopilotScope.JudgeAgent` reasons about "did the user's ask get resolved" from transcript alone; `completionSignals` will be honored once the Collector gains that ingest path |
 | 11 | Delivered-outcome linkage | ✅ **implemented** (local, opt-in) | ✅ | ✅ | `Outcomes/` — GitHub webhook → `pull_request_outcomes`, joined to sessions by repo/branch/time with an explicit confidence. Reported beside the score; **not** a scored component until the correlation study exists |
 

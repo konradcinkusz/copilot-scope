@@ -2,7 +2,7 @@ namespace CopilotScope.Seeder;
 
 /// <summary>Generation parameters for one kind of Copilot session. Each persona maps to a
 /// recognizable story on the dashboard (a clean run, an error storm, a laggy backend, a
-/// frustrated user, an internal helper call CopilotScope should filter out, ...) so a seeded
+/// a user stuck in a repair loop, an internal helper call CopilotScope should filter out, ...) so a seeded
 /// dataset actually demonstrates what the quality engine and insight analyzers do.</summary>
 public sealed record Persona(
     string Slug,
@@ -17,7 +17,7 @@ public sealed record Persona(
     double ThumbsUpRatio,
     double MinSurvivalNoRevert, double MaxSurvivalNoRevert,
     double MinSurvivalFourGram, double MaxSurvivalFourGram,
-    bool Frustrated = false,
+    bool RepairHeavy = false,
     string? InternalPromptPrefix = null,
     bool Showcase = false);
 
@@ -67,14 +67,14 @@ public static class PersonaCatalog
             MinSurvivalNoRevert: 0.3, MaxSurvivalNoRevert: 0.6,
             MinSurvivalFourGram: 0.2, MaxSurvivalFourGram: 0.5),
 
-        new(Slug: "frustrated", Weight: 2, MinTurns: 4, MaxTurns: 6,
+        new(Slug: "repair-loop", Weight: 2, MinTurns: 4, MaxTurns: 6,
             MinInputTokens: 1400, MaxInputTokens: 3200, MinOutputTokens: 150, MaxOutputTokens: 400,
             MinTtftMs: 800, MaxTtftMs: 2000,
             ChatErrorRate: 0.10, ToolErrorRate: 0.10,
             EditAcceptRatio: 0.35, ThumbsUpRatio: 0.15,
             MinSurvivalNoRevert: 0.15, MaxSurvivalNoRevert: 0.4,
             MinSurvivalFourGram: 0.1, MaxSurvivalFourGram: 0.35,
-            Frustrated: true),
+            RepairHeavy: true),
 
         new(Slug: "long-epic", Weight: 1, MinTurns: 14, MaxTurns: 26,
             MinInputTokens: 2500, MaxInputTokens: 6000, MinOutputTokens: 400, MaxOutputTokens: 900,
@@ -88,7 +88,7 @@ public static class PersonaCatalog
         // every dashboard panel and every analyzer at once. SessionFactory gives it real
         // intra-session variety (per-turn moods), guaranteed editor signals (edits both
         // accepted and rejected, thumbs up and down, LOC ±), model switching, multi-role
-        // captured content and a couple of frustrated turns. Token/survival ranges below are
+        // captured content and a couple of repair turns. Token/survival ranges below are
         // the session-level envelope; per-turn latency and error rates come from ShowcaseMoods.
         new(Slug: "showcase", Weight: 1, MinTurns: 30, MaxTurns: 44,
             MinInputTokens: 1500, MaxInputTokens: 5200, MinOutputTokens: 250, MaxOutputTokens: 850,

@@ -75,7 +75,7 @@ public static class Fixtures
          "Added migration 0007 with a nullable smallint defaulting to 0 (Unknown)."),
         ("Why is cache_read sometimes larger than input tokens?",
          "Two spans were summing cache reads twice; deduplicated by trace id before aggregation."),
-        ("Make the frustration analyzer bilingual for Polish prompts.",
+        ("Make the workflow-friction analyzer bilingual for Polish prompts.",
          "Added a Polish lexicon slice and normalized diacritics before matching."),
         ("Add a Dockerfile for the dashboard with a multi-stage build.",
          "Added Dockerfile.dashboard: SDK build stage, trimmed runtime stage on aspnet:8.0."),
@@ -103,7 +103,7 @@ public static class Fixtures
          "Ranked components by weight × shortfall and rendered the worst one as a callout."),
     ];
 
-    public static readonly (string Prompt, string Response)[] FrustratedTurns =
+    public static readonly (string Prompt, string Response)[] RepairTurns =
     [
         ("This still doesn't work, the tests are failing again.",
          "Sorry about that — let me look at the failure more carefully."),
@@ -140,7 +140,7 @@ public static class Fixtures
         "explain the retry policy change to a new teammate",
         "summarize the OTLP decoder bug we just fixed",
         "draft the changelog entry for the pagination endpoint",
-        "describe the frustration analyzer for the docs page",
+        "describe the workflow-friction analyzer for the docs page",
     ];
 
     /// <summary>Per-turn "mood" presets used by the <c>showcase</c> persona to manufacture

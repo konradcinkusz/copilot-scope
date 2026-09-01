@@ -195,7 +195,7 @@ Wynik researchu (arXiv 2403.12388 SPUR, praktyki Microsoft/GitHub, ekosystem eva
 | 6 | **TFRA — Turn-level Friction & Repair** | ✅ **w pełni** | `SegmentAnalyzer` (panel Turn analysis) + komponent **friction** w składanym score |
 | 7 | Latency-utility model | ✅ **w pełni** | `LatencyUtilityAnalyzer` — krzywa użyteczności per próbka, progi uwagi >2 s i porzucenia >8 s; uproszczona wersja nadal jako komponent latency |
 | 8 | Ekonomia tokenów / cache | ✅ **w pełni** | `TokenEconomicsAnalyzer` — koszt per model (cennik `CopilotScope:Pricing`), oszczędności cache, koszt/turę i /zaakceptowaną edycję |
-| 9 | Klasyfikacja frustracji z promptów | ✅ **uproszczony** | `FrustrationAnalyzer` — leksykon EN/PL + Jaccard przeformułowań + sygnały typograficzne; **report-only**, celowo poza składanym score (heurystyka jest zaszumiona) |
+| 9 | Sygnały tarcia w pracy (repair markers) | ✅ **uproszczony**, domyślnie wyłączony | `WorkflowFrictionAnalyzer` — leksykon EN/PL + Jaccard przeformułowań + sygnały typograficzne; liczy **zaobserwowane zdarzenia naprawcze** (ponowne pytanie, korekta), nie emocje — patrz `docs/WORKFLOW_FRICTION.md`. **Report-only**, celowo poza składanym score (heurystyka jest zaszumiona), i nierejestrowany bez `CopilotScope:WorkflowFriction:Enabled` |
 | 10 | Task-completion detection | ❌ nie zaimplementowany | wymaga sygnałów domknięcia (build/testy) spoza telemetrii Copilota |
 
 Komponent **feedback** (kciuki) i **reliability** (błędy) leżą poza tą dziesiątką — to bezpośrednie sygnały, nie „algorytmy", ale współtworzą składany wynik.

@@ -14,13 +14,13 @@
     { "sessionId": "seed-quick-chat-auth-ratelimit",    "rater": "example-rater-b", "algorithm": "G-Eval", "level": 2 },
     { "sessionId": "seed-quick-chat-otlp-incident",     "rater": "example-rater-a", "algorithm": "G-Eval", "level": 3 },
     { "sessionId": "seed-quick-chat-otlp-incident",     "rater": "example-rater-b", "algorithm": "G-Eval", "level": 3 },
-    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-a", "algorithm": "G-Eval", "level": 0 },
-    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-b", "algorithm": "G-Eval", "level": 1 },
+    { "sessionId": "seed-quick-05-repair-loop",          "rater": "example-rater-a", "algorithm": "G-Eval", "level": 0 },
+    { "sessionId": "seed-quick-05-repair-loop",          "rater": "example-rater-b", "algorithm": "G-Eval", "level": 1 },
 
-    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-a", "algorithm": "deep-frustration", "level": 0, "note": "Inverted rubric: level 0 = calm, level 3 = clearly frustrated." },
-    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-b", "algorithm": "deep-frustration", "level": 0 },
-    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-a", "algorithm": "deep-frustration", "level": 3 },
-    { "sessionId": "seed-quick-05-frustrated",          "rater": "example-rater-b", "algorithm": "deep-frustration", "level": 3 }
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-a", "algorithm": "deep-friction", "level": 0, "note": "Inverted rubric: level 0 = no repair needed, level 3 = heavy repair." },
+    { "sessionId": "seed-quick-01-golden",              "rater": "example-rater-b", "algorithm": "deep-friction", "level": 0 },
+    { "sessionId": "seed-quick-05-repair-loop",          "rater": "example-rater-a", "algorithm": "deep-friction", "level": 3 },
+    { "sessionId": "seed-quick-05-repair-loop",          "rater": "example-rater-b", "algorithm": "deep-friction", "level": 3 }
   ],
 
   "judgeScores": [
@@ -29,9 +29,9 @@
     { "sessionId": "seed-quick-04-rejected-edits",      "algorithm": "G-Eval", "score": 0.55 },
     { "sessionId": "seed-quick-chat-auth-ratelimit",    "algorithm": "G-Eval", "score": 0.78 },
     { "sessionId": "seed-quick-chat-otlp-incident",     "algorithm": "G-Eval", "score": 0.88 },
-    { "sessionId": "seed-quick-05-frustrated",          "algorithm": "G-Eval", "score": 0.31 },
+    { "sessionId": "seed-quick-05-repair-loop",          "algorithm": "G-Eval", "score": 0.31 },
 
-    { "sessionId": "seed-quick-01-golden",              "algorithm": "deep-frustration", "score": 0.08 },
-    { "sessionId": "seed-quick-05-frustrated",          "algorithm": "deep-frustration", "score": 0.87 }
+    { "sessionId": "seed-quick-01-golden",              "algorithm": "deep-friction", "score": 0.08 },
+    { "sessionId": "seed-quick-05-repair-loop",          "algorithm": "deep-friction", "score": 0.87 }
   ]
 }

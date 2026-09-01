@@ -188,18 +188,18 @@ public static class SessionFactory
             return (persona.InternalPromptPrefix + tail, "Session summary.");
         }
 
-        // The last two turns of a "frustrated" persona carry recognizable rephrasing +
-        // strong-marker language so FrustrationAnalyzer actually flags them. Index by
+        // The last two turns of a "repair-loop" persona carry recognizable rephrasing +
+        // strong-marker language so WorkflowFrictionAnalyzer actually flags them. Index by
         // position *within the final pair*, not by absolute turn number: the old
         // Math.Min(turnIndex, …) form landed on the mild corrective pair for short
         // sessions, which the analyzer only scores as "mild friction" — the persona
         // then produced no strong-marker or rephrasing signal at all.
         // turnCount is stable per session but varies between them, so the dataset
         // still shows both flavours.
-        if (persona.Frustrated && turnIndex >= turnCount - 2)
+        if (persona.RepairHeavy && turnIndex >= turnCount - 2)
         {
             var pairStart = turnCount % 2 == 0 ? 0 : 2;   // 0–1 strong markers, 2–3 rephrasing
-            var pick = Fixtures.FrustratedTurns[pairStart + (turnIndex - (turnCount - 2))];
+            var pick = Fixtures.RepairTurns[pairStart + (turnIndex - (turnCount - 2))];
             return (pick.Prompt, pick.Response);
         }
 
@@ -210,8 +210,8 @@ public static class SessionFactory
         return (t.Prompt, t.Response);
     }
 
-    /// <summary>Text plan for the showcase session: two scattered frustration blocks (a
-    /// strong-marker pair, then a rephrasing pair so the FrustrationAnalyzer lights up on
+    /// <summary>Text plan for the showcase session: two scattered repair blocks (a
+    /// strong-marker pair, then a rephrasing pair so the WorkflowFrictionAnalyzer lights up on
     /// both signals), periodic multi-role captured content so the chat view shows
     /// system/tool bubbles, and ordinary engineering turns everywhere else.</summary>
     private static (string? Prompt, string? Response) PickShowcaseText(int turnIndex, int turnCount, Random rng)
@@ -219,10 +219,10 @@ public static class SessionFactory
         var strongAt = turnCount / 4;        // e.g. turn ~8 of 32
         var rephraseAt = turnCount * 2 / 3;  // e.g. turn ~21 of 32
 
-        if (turnIndex == strongAt)       return Fixtures.FrustratedTurns[0]; // "still doesn't work"
-        if (turnIndex == strongAt + 1)   return Fixtures.FrustratedTurns[1]; // "Wrong again!!"
-        if (turnIndex == rephraseAt)     return Fixtures.FrustratedTurns[2]; // "Please add a retry policy…"
-        if (turnIndex == rephraseAt + 1) return Fixtures.FrustratedTurns[3]; // near-identical rephrasing
+        if (turnIndex == strongAt)       return Fixtures.RepairTurns[0]; // "still doesn't work"
+        if (turnIndex == strongAt + 1)   return Fixtures.RepairTurns[1]; // "Wrong again!!"
+        if (turnIndex == rephraseAt)     return Fixtures.RepairTurns[2]; // "Please add a retry policy…"
+        if (turnIndex == rephraseAt + 1) return Fixtures.RepairTurns[3]; // near-identical rephrasing
 
         if (turnIndex % 5 == 2)
             return Fixtures.RichTurns[(turnIndex / 5) % Fixtures.RichTurns.Length];

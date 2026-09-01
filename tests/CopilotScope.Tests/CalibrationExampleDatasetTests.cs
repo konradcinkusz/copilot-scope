@@ -56,7 +56,7 @@ public class CalibrationExampleDatasetTests
     [Fact]
     public void ExampleDataset_ShowsBothRubricDirections()
     {
-        // It carries a normal rubric and the inverted one, because getting deep-frustration's
+        // It carries a normal rubric and the inverted one, because getting deep-friction's
         // direction wrong is the mistake the format is trying to prevent.
         var rubrics = LoadExample().Labels.Select(l => l.Algorithm).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 

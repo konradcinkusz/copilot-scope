@@ -1,7 +1,7 @@
 # JudgeAgent — opt-in session quality judge
 
 `src/CopilotScope.JudgeAgent` is an opt-in sibling service to the Collector. It grades one session
-at a time using LLM-graded rubrics (G-Eval, SPUR, RAGAS, deep frustration classification,
+at a time using LLM-graded rubrics (G-Eval, SPUR, RAGAS, deep workflow-friction scoring,
 task-completion detection).
 
 It needs an **LLM endpoint** — not a cloud account. Point it at Azure AI Foundry, or at Ollama,
@@ -50,7 +50,7 @@ choose to deploy and configure; it no longer means you have to hand your transcr
 | 1 | G-Eval | Correctness / completeness / style, weighted 0.5/0.3/0.2, evidence-cited per turn |
 | 2 | SPUR | P(user would rate this session SAT), from behavioral signals — zero-shot until calibration data exists |
 | 3 | RAGAS | Faithfulness / answer relevance / context precision — only when `retrievalContext` is present |
-| 4 | Deep frustration classification | Sarcasm- and context-aware upgrade over the Collector's local lexicon heuristic; stays report-only |
+| 4 | Deep workflow friction (`deep-friction`) | Context-aware upgrade over the Collector's local lexicon heuristic: scores how much *repair work* the user had to do (re-asking, restating, correcting), never emotional state — see [WORKFLOW_FRICTION.md](WORKFLOW_FRICTION.md). Stays report-only |
 | 5 | Task-completion detection | Did the user's original ask actually get resolved by session end, not just attempted |
 
 Full per-rubric instructions live in `src/CopilotScope.JudgeAgent/Agents/JudgeSystemPromptTemplate.txt`
@@ -143,7 +143,7 @@ you supply real Azure AI Foundry credentials.
 - Doesn't modify anything in `src/CopilotScope.Collector` — a strictly read-only, additive sibling
   service, same non-invasive pattern as AgentForge.
 - Doesn't recompute or replace `QualityEngine`'s composite score — it adds LLM-graded signals
-  alongside it. Promoting any of them (e.g. deep frustration) into the composite is a future,
+  alongside it. Promoting any of them (e.g. deep-friction) into the composite is a future,
   separate decision made by config, not something this service does on its own.
 - Doesn't retry or cache judge calls — every `POST /judge` is a fresh model call. Add caching at
   the caller if you're judging the same session repeatedly.

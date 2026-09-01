@@ -33,8 +33,17 @@ public sealed class CalibrationEngine(CalibrationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(dataset);
 
-        var labels = dataset.Labels ?? [];
-        var judgeScores = dataset.JudgeScores ?? [];
+        // Retired rubric ids are folded onto their current names before anything is grouped.
+        // A label file written against `deep-frustration` and a judge run emitting
+        // `deep-friction` are the same rubric; grouping them apart would pair neither, and the
+        // report would show a rubric with labels but no scores — indistinguishable from a
+        // judge that stopped emitting it.
+        var labels = (dataset.Labels ?? [])
+            .Select(l => l with { Algorithm = RubricScale.Canonical(l.Algorithm) })
+            .ToList();
+        var judgeScores = (dataset.JudgeScores ?? [])
+            .Select(s => s with { Algorithm = RubricScale.Canonical(s.Algorithm) })
+            .ToList();
         var warnings = new List<string>();
 
         // Reject out-of-scale labels loudly. A level of 4 on a four-band scale is a broken

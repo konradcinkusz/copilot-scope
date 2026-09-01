@@ -33,7 +33,23 @@ builder.Services.AddSingleton<IInsightAnalyzer, EditSurvivalAnalyzer>();
 builder.Services.AddSingleton<IInsightAnalyzer, ThroughputAnalyzer>();
 builder.Services.AddSingleton<IInsightAnalyzer, LatencyUtilityAnalyzer>();
 builder.Services.AddSingleton<IInsightAnalyzer, TokenEconomicsAnalyzer>();
-builder.Services.AddSingleton<IInsightAnalyzer, FrustrationAnalyzer>();
+// Workflow-friction signals (docs/WORKFLOW_FRICTION.md). Off unless explicitly enabled:
+// it is the one analyzer that reads the developer's own prompt text, and it is the one an
+// EU deployer has to be able to point at and say "that is not running here". The options
+// bind from the built container's configuration, and the pipeline skips the analyzer when
+// they say off — a flag read before a host wrapper's sources land is how a feature ends up
+// running in a deployment that switched it off.
+builder.Services.AddSingleton(sp =>
+{
+    var options = new WorkflowFrictionOptions();
+    sp.GetRequiredService<IConfiguration>().GetSection("CopilotScope:WorkflowFriction").Bind(options);
+    return options;
+});
+// Registered as itself as well as through the interface: the aggregate endpoint needs this
+// one analyzer over every session in a window, and going through the pipeline there would run
+// the other four for a number nobody asked for.
+builder.Services.AddSingleton<WorkflowFrictionAnalyzer>();
+builder.Services.AddSingleton<IInsightAnalyzer>(sp => sp.GetRequiredService<WorkflowFrictionAnalyzer>());
 builder.Services.AddSingleton<InsightPipeline>();
 
 // Prometheus scrape endpoint — exports the *computed* quality signals, whereas
@@ -434,6 +450,55 @@ api.MapGet("/overview", async (int? days, HttpRequest request, SessionQueryServi
             statusCode: StatusCodes.Status403Forbidden);
 });
 
+// ------------------------------------------------------------- workflow friction
+// The aggregate-first surface for workflow-friction signals: a team/period rate, never a
+// per-person one. Individual sessions carry the same signal in their insight report, but the
+// question worth asking — "is our tooling making people repeat themselves" — is answered
+// here, at a level that cannot be turned into a ranking. Subject to the same aggregation
+// floor as every other view.
+api.MapGet("/friction", async (int? days, HttpRequest request, SessionQueryService sessions,
+    WorkflowFrictionOptions friction, WorkflowFrictionAnalyzer analyzer, CancellationToken ct) =>
+{
+    if (!friction.Enabled)
+        return Results.Json(new
+        {
+            enabled = false,
+            reason = "Workflow-friction analysis is off. Set CopilotScope:WorkflowFriction:Enabled " +
+                     "to turn it on; see docs/WORKFLOW_FRICTION.md for what it does and does not measure.",
+        }, statusCode: StatusCodes.Status409Conflict);
+
+    var from = days is > 0 ? DateTimeOffset.UtcNow.AddDays(-days.Value) : (DateTimeOffset?)null;
+    var all = await sessions.AllInWindowAsync(from, ct);
+
+    var verdict = privacyGuard.Evaluate(all);
+    audit.Record(AccessAuditLog.ActorFor(request), "friction.aggregate", days is > 0 ? $"days={days}" : "all",
+        verdict.Allowed ? $"served {all.Count} session(s)" : "withheld (k-anonymity)");
+    if (!verdict.Allowed)
+        return Results.Json(new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    var scored = all
+        .Select(analyzer.Analyze)
+        .Where(r => r is { Status: "ok", Score: not null })
+        .Select(r => r.Score!.Value)
+        .ToList();
+
+    return Results.Ok(new
+    {
+        enabled = true,
+        windowDays = days,
+        sessionsInWindow = all.Count,
+        // Sessions without captured content cannot carry the signal at all, and reporting a
+        // rate over a denominator that silently excludes them would overstate it.
+        sessionsWithContent = scored.Count,
+        meanFrictionIndex = scored.Count > 0 ? Math.Round(scored.Average(), 3) : (double?)null,
+        sessionsWithRepairMarkers = scored.Count(v => v >= friction.FlagThreshold),
+        threshold = friction.FlagThreshold,
+        note = "Counts observed repair events (re-asking, corrections, rephrasing) — not emotional state. " +
+               "Report-only; never part of the composite score.",
+    });
+});
+
 // ------------------------------------------------------------------- privacy
 // What privacy mode is actually enforcing right now, with live counters. A works council or
 // a DPO asks to see the control, not the setting — and an operator needs to confirm the
@@ -644,6 +709,7 @@ app.MapGet("/", () => Results.Text(
     "OTLP ingest: POST /v1/traces | /v1/metrics | /v1/logs\n" +
     "API: GET /api/sessions | /api/sessions/{id} | /api/health | POST /api/admin/seed\n" +
     "Privacy: GET /api/privacy | /api/audit?format=csv (admin)\n" +
+    "Friction: GET /api/friction (aggregate; off unless CopilotScope:WorkflowFriction:Enabled)\n" +
     "Prometheus: GET /metrics\n" +
     "UI lives in the CopilotScope.Dashboard Blazor app (run via the Aspire AppHost).\n"));
 

@@ -342,7 +342,7 @@ public class AgreementTests
     {
         // The prompt template is the spec; if a rubric is added there and not here, its labels
         // would be scored with no anchor question and silently marked "unknown rubric".
-        string[] emitted = ["G-Eval", "SPUR", "RAGAS", "deep-frustration", "task-completion"];
+        string[] emitted = ["G-Eval", "SPUR", "RAGAS", "deep-friction", "task-completion"];
 
         Assert.All(emitted, algorithm => Assert.NotNull(RubricScale.Find(algorithm)));
         Assert.Equal(emitted.Length, RubricScale.Rubrics.Count);
@@ -350,13 +350,36 @@ public class AgreementTests
     }
 
     [Fact]
-    public void RubricScale_MarksFrustrationAsTheRubricThatRunsTheOtherWay()
+    public void RubricScale_MarksFrictionAsTheRubricThatRunsTheOtherWay()
     {
-        // The trap this guards: the judge is correct to score a calm session 0.1 for
-        // frustration. A labeller reading band 3 as "great session" would be recorded as
-        // maximally disagreeing with a judge that got it right.
-        Assert.False(RubricScale.Find("deep-frustration")!.HigherIsBetter);
+        // The trap this guards: the judge is correct to score a session that went straight
+        // through 0.1 on this rubric. A labeller reading band 3 as "great session" would be
+        // recorded as maximally disagreeing with a judge that got it right.
+        Assert.False(RubricScale.Find("deep-friction")!.HigherIsBetter);
         Assert.True(RubricScale.Find("G-Eval")!.HigherIsBetter);
-        Assert.Contains("frustrated", RubricScale.Find("deep-frustration")!.Question, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("repair", RubricScale.Find("deep-friction")!.Question, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RubricScale_KeepsNoEmotionalVocabularyInItsQuestions()
+    {
+        // EU AI Act Art. 5(1)(f) prohibits workplace emotion recognition outright. The rubric
+        // measures repair work and always did; the question text is what a labeller reads, so
+        // it is the surface that decides whether they grade behaviour or mood.
+        string[] emotional = ["frustrat", "angry", "upset", "mood", "emotion", "feel"];
+        foreach (var rubric in RubricScale.Rubrics.Values)
+            Assert.All(emotional, word =>
+                Assert.DoesNotContain(word, rubric.Question, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void RubricScale_StillResolvesTheRetiredFrustrationId()
+    {
+        // Human labels are expensive to collect. A label file written before the rename must
+        // keep resolving, or those sessions drop out of the agreement statistics and the
+        // report reads as a judge that got worse.
+        Assert.Same(RubricScale.Find("deep-friction"), RubricScale.Find("deep-frustration"));
+        Assert.Equal("deep-friction", RubricScale.Canonical("deep-frustration"));
+        Assert.Equal("G-Eval", RubricScale.Canonical("G-Eval"));
     }
 }

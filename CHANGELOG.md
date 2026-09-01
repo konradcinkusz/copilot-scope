@@ -9,6 +9,19 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 ## [Unreleased]
 
 ### Added
+- **Privacy mode: works-council and GDPR controls that are enforced, not documented** (#94).
+  The "not for performance reviews" promise was a convention — nothing stopped an operator
+  reading one developer's transcripts, and German BetrVG §87(1)(6) grants co-determination
+  over any system *capable* of monitoring performance, so intent is not an answer. Under
+  `CopilotScope:Privacy` (off by default) identifying attributes are replaced by salted HMAC
+  tokens at ingest, prompt/response content is dropped, no view renders below a k-anonymity
+  floor of distinct subjects (per-session detail and per-session Prometheus series included),
+  and every read and deletion is recorded to an access log with its own Postgres table and
+  CSV export. Raw OTLP forwarding is refused unless explicitly allowed, because it relays
+  payloads before redaction. `GET /api/privacy` reports what a deployment enforces;
+  `docs/PRIVACY.md` carries the Art. 30 data map, retention behaviour and a template
+  Betriebsvereinbarung annex.
+
 - **Per-assistant signal coverage is disclosed** (#100). The composite renormalizes over the
   components that have data, which means an 80 from one assistant is not an 80 from another —
   a Claude Code session is scored without feedback or edit survival, so its 80 rests on less
@@ -84,6 +97,20 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
 - Judge reports now record `judgePromptVersion`, a hash of `JudgeSystemPromptTemplate.txt`
   derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
   silently moved measuring stick.
+
+### Changed
+- **Frustration analysis is now workflow-friction signals, and ships off** (#95). EU AI Act
+  Art. 5(1)(f) prohibits workplace emotion recognition outright, so a feature named for
+  inferring how a developer feels was the cheapest possible objection to hand a DPO — in the
+  segment where this tool is most defensible. The rename is also a correction: the detector
+  counts *observed repair events* (re-asking, rephrasing, corrective replies), which is what
+  the signal was always useful for. `FrustrationAnalyzer` → `WorkflowFrictionAnalyzer`, and
+  the JudgeAgent rubric `deep-frustration` → `deep-friction` (retired ids still resolve, so
+  existing calibration labels keep counting). The analyzer no longer runs unless
+  `CopilotScope:WorkflowFriction:Enabled` is set, per-message previews that quote prompt text
+  need a second opt-in, and the default surface is the team/period rate at `GET /api/friction`.
+  Rationale and the Art. 5(1)(f) position statement: `docs/WORKFLOW_FRICTION.md`. The seeder's
+  `frustrated` persona is now `repair-loop`, which changes seeded session ids.
 
 ### Fixed
 - **The cloud tier 401'd against any secured Collector** (#90). `infra/main.bicep` makes the
