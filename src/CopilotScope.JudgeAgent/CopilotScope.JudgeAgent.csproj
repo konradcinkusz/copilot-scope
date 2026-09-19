@@ -21,7 +21,7 @@
          this space moves fast, re-verify before bumping. Microsoft Agent Framework wraps the
          Azure OpenAI-compatible client as an AIAgent; Azure AI Foundry model deployments are
          reached through that same endpoint shape. -->
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.17.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.19.0" />
     <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <!-- Provides ChatClient.AsIChatClient(), the adapter from the OpenAI SDK's client to the
