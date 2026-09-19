@@ -6,21 +6,24 @@ Thank you for your interest in CopilotScope! This document describes how to set 
 
 | Tool | Version | Notes |
 |---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/9.0) | 9.0 | `dotnet --version` to verify |
-| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any recent | needed for Postgres + pgAdmin containers via Aspire |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0 | `dotnet --version` to verify |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | any recent | needed for Postgres + pgAdmin containers via Aspire, and for the container images CI builds |
 
-Everything targets `net8.0`, but build with the **9.0 SDK**: it resolves Aspire 9 from
-plain NuGet packages, so no `dotnet workload install aspire` is needed. On the 8.0 SDK
-the AppHost project fails with `NETSDK1147: the following workloads must be installed:
-aspire` — the collector, dashboard, tools and tests still build there, only the AppHost
-does not.
+Everything targets `net10.0`, and the SDK major must match: Aspire arrives as plain NuGet
+packages, so no `dotnet workload install aspire` is needed, but an older SDK cannot build a
+`net10.0` project at all. The container base images track the same major — a runtime image on
+a different major than the TFM starts and then exits with "framework not found", which is what
+shipped a dead release once (#55), so `Dockerfile*` and the TFM are retargeted together.
+
+Only running CopilotScope, rather than developing it? You need none of this — see the
+installer in [README.md](README.md).
 
 ## Quick dev loop
 
 ```bash
 # clone
-git clone https://github.com/konradcinkusz/copilotscope.git
-cd copilotscope
+git clone https://github.com/konradcinkusz/copilot-scope.git
+cd copilot-scope
 
 # restore & build everything
 dotnet build
@@ -38,7 +41,17 @@ dotnet run --project tools/CopilotScope.TelemetryGen
 # previously seeded data first, so this is safe to re-run at any time):
 dotnet run --project tools/CopilotScope.Seeder -- quick   # ~12 sessions incl. showcase + curated chats, fast
 dotnet run --project tools/CopilotScope.Seeder -- demo    # big varied set incl. showcase chats, for demos
+
+# the two opt-in agent services sit behind a Compose profile, so a plain
+# `docker compose up` does not start them:
+docker compose --profile agents up -d --build             # agentforge :5300, judgeagent :5400
 ```
+
+These are the from-a-clone forms, which is what you want while developing. Users run the same
+three tools out of the `copilotscope-tools` container (`copilotscope demo` / `import` / `probe`),
+so if you change the Seeder, the LogImporter or the TelemetryGen, check `Dockerfile.tools` and
+`scripts/tools-entrypoint.sh` still dispatch to them correctly — CI builds that image and runs
+its entrypoint on every pull request.
 
 ## Running tests
 
@@ -80,7 +93,7 @@ tools/
 
 ## Code style
 
-- C# 12 / .NET 8 idioms (primary constructors, collection expressions, pattern switches).
+- C# 14 / .NET 10 idioms (primary constructors, collection expressions, pattern switches).
 - No XML doc comments except on non-obvious public APIs.
 - No abbreviations in names unless they are domain-standard (`ttft`, `otlp`, `llm`).
 - Prefer records for DTOs and value objects; mutable classes only for aggregates that need lock-guarded mutation.

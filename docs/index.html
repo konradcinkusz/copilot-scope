@@ -701,11 +701,12 @@ footer{
     <div style="margin-top:32px;padding:20px;background:var(--surf);border:1px solid var(--border);border-radius:10px">
       <p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">Try it without a Copilot subscription</p>
       <ol style="padding-left:20px;font-size:13px;color:var(--dim);line-height:2">
-        <li>Start the stack (Docker or Aspire)</li>
-        <li>Run <code>dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 demo</code></li>
-        <li>Open the Dashboard — a session named <strong style="color:var(--text)">demo</strong> appears with realistic quality scores</li>
-        <li>Click the session to see turn analysis, score components, and the prompt transcript</li>
+        <li>Install and start the stack — one command, nothing to declare</li>
+        <li>Run <code>copilotscope demo</code> for a dataset, or <code>copilotscope probe</code> for a single session over the real OTLP path. Both run in a container, so neither needs a .NET SDK</li>
+        <li>Open the Dashboard — the sessions appear scored, badged <strong style="color:var(--text)">demo</strong> so a screenshot is never mistaken for evidence</li>
+        <li>Click one to see turn analysis, score components, and the prompt transcript</li>
       </ol>
+      <p style="font-size:12px;color:var(--dim);margin-top:10px">Already use Claude Code? <code>copilotscope import</code> scores the sessions already on your disk, with no telemetry configuration at all. From a clone with the SDK, the same three tools run as <code>dotnet run --project tools/CopilotScope.TelemetryGen</code> and friends.</p>
     </div>
   </div>
 </section>

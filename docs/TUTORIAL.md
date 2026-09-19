@@ -554,7 +554,7 @@ provisions two rules alongside the dashboard — a composite-score regression an
 spike, both per assistant:
 
 ```bash
-docker compose -f docker-compose.grafana.yml up
+docker compose -f docker-compose.grafana.yml up -d
 ```
 
 Every expression there is a **ratio of gauges**, never `rate()` over a counter. The collector

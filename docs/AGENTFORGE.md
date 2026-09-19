@@ -59,9 +59,23 @@ from configuration and cannot be turned off. AgentForge is a simulation of a wor
 from consented transcripts; it is not, and must never present itself as, the person it is
 grounded on.
 
+## Running it
+
+AgentForge sits behind the `agents` Compose profile, so a plain `docker compose up` does not
+start it — that starts `postgres`, `collector` and `dashboard` only. Without the profile the
+`http://localhost:5300` calls below get a refused connection rather than an error response:
+
+```bash
+docker compose --profile agents up -d --build                      # from a clone
+docker compose -f docker-compose.ghcr.yml --profile agents up -d   # published images
+```
+
+It serves no persona traffic until a cohort is configured, whichever way it is started.
+
 ## Example usage
 
-Verified locally against a real Collector seeded via `dotnet run --project tools/CopilotScope.Seeder -- quick`.
+Verified locally against a real Collector seeded via `copilotscope demo quick` (or, from a clone,
+`dotnet run --project tools/CopilotScope.Seeder -- quick`).
 
 Configure a cohort (e.g. in `appsettings.Development.json`) with real, consented session ids:
 

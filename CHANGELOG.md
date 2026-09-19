@@ -262,6 +262,19 @@ release asset.
   conflict only, which is why `dotnet build` and the test suite never saw it either.
 
 ### Changed
+- **The docs that the install change left behind are now correct too.** Moving AgentForge and
+  the judge agent behind a Compose profile made `docs/JUDGE_AGENT.md` state something false:
+  it said the judge agent "isn't gated behind a Compose profile, so it starts by default", and
+  both its compose commands would now leave `:5400` refusing connections rather than answering
+  "not configured". `docs/AGENTFORGE.md` had the opposite problem — it never said how to start
+  the service at all, and its examples assume `:5300` is up. Both now lead with
+  `--profile agents`, and `docs/CALIBRATION.md`, whose endpoints live on the judge agent, points
+  at it. `CONTRIBUTING.md` still asked for the 9.0 SDK to build `net8.0` projects and cited
+  C# 12 idioms, on a repository that has targeted `net10.0` for some time; it also cloned from
+  the pre-rename repository slug. The landing page's "try it without a Copilot subscription"
+  walkthrough, the README's no-config import section and its Copilot CLI section all still led
+  with `dotnet run`, which is the one thing the pull-and-run path exists to avoid — each now
+  leads with the container command and keeps the from-source form beside it.
 - **The in-app and published setup instructions now match what the tools actually read.** The
   dashboard's own Docs page told Claude Code users to set an endpoint and a protocol and
   nothing else — omitting `CLAUDE_CODE_ENABLE_TELEMETRY=1`, without which nothing is exported
