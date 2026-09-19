@@ -1,14 +1,14 @@
 # Scrapes the CopilotScope collector's /metrics endpoint.
 #
-# The collector in docker-compose.grafana.yml runs with an ingest API key, and
-# /metrics is guarded by that same key (with per-session series enabled it
-# exposes session ids, so it must not be more open than the data it summarizes).
-# Prometheus sends it as a bearer token; the collector accepts either that or
-# the x-api-key header.
+# /metrics is guarded by the collector's ingest key when one is configured (with
+# per-session series enabled it exposes session ids, so it must not be more open
+# than the data it summarizes). Prometheus sends it as a bearer token; the
+# collector accepts either that or the x-api-key header.
 #
 # The token is read from a file the prometheus service writes at startup from
 # $COPILOTSCOPE_API_KEY (Prometheus does not expand env vars in this config), so
-# no key is committed here.
+# no key is committed here. A local run configures no key at all: the collector
+# is then in open mode, the file holds a placeholder, and the header is ignored.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s

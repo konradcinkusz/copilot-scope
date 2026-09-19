@@ -142,10 +142,23 @@
         }
         else if (_sessions.Count == 0)
         {
+            @* An empty list is the most common first contact, so it carries the next
+               action rather than a description of the problem. Every command here runs
+               in a container: none of them needs a .NET SDK or a clone. *@
             <div class="empty">
-                No sessions yet. Enable OTel in VS Code, run Claude Code or Copilot CLI with OTel env vars, or start the demo generator:
-                <code>dotnet run --project tools/CopilotScope.TelemetryGen</code>
-                See <a href="/docs#sources">Docs → Supported sources</a> for setup instructions.
+                <b>Waiting for your first session.</b>
+                Point an assistant at this collector — one command per assistant, written
+                to the settings file it reads at startup:
+                <code>copilotscope connect claude-code</code>
+                <code>copilotscope connect vscode</code>
+                Already use Claude Code? Its sessions are on disk already, and scoring them
+                needs no telemetry setup at all:
+                <code>copilotscope import</code>
+                Or look around with fabricated data, badged <span class="session-kind-badge">demo</span>:
+                <code>copilotscope demo</code>
+                Nothing arriving? This checks the whole path and names the broken link:
+                <code>copilotscope doctor</code>
+                See <a href="/docs#sources">Docs → Supported sources</a> for the manual steps.
             </div>
         }
         else if (FilteredSessions.Count == 0)

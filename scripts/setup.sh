@@ -19,9 +19,10 @@
 #   --traces                           Claude Code only: also export the beta trace spans,
 #                                       the one source of time-to-first-token (schema may change)
 #   --endpoint URL                     OTLP endpoint (default: http://localhost:4318)
-#   --api-key KEY                      x-api-key for ingest auth
-#                                       (in --mode compose, a random key is generated into
-#                                        the gitignored .env and reused on re-runs)
+#   --api-key KEY                      x-api-key for ingest auth. Optional: a local run
+#                                       needs none, because the compose ports bind to
+#                                       127.0.0.1 and an empty key is the collector's open
+#                                       mode. Falls back to COPILOTSCOPE_API_KEY in .env.
 #   --persist                          Also append the CLI env vars to your shell rc file
 #                                       (~/.zshrc or ~/.bashrc, auto-detected) so new terminals
 #                                       pick them up without re-sourcing this script.
@@ -45,12 +46,6 @@
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Generates a random hex secret (no committed default key — see the review's S6).
-_gen_secret() {
-    if command -v openssl >/dev/null 2>&1; then openssl rand -hex 24
-    else head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'; fi
-}
 
 (return 0 2>/dev/null)
 IS_SOURCED=$?   # 0 = sourced, non-zero = executed directly
@@ -102,16 +97,19 @@ case "$MODE" in
 esac
 
 if [ "$MODE" = "compose" ]; then
-    # Compose requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (no default).
-    # Reuse an existing .env so re-runs stay stable; otherwise generate secrets
-    # and write them to the gitignored .env that docker compose reads.
+    # A local compose run needs no credential at all: ports bind to 127.0.0.1,
+    # Postgres publishes no port and trusts its unpublished socket, and an empty
+    # ingest key is the collector's open mode. Generating one here would put an
+    # x-api-key step back into every client for no gain — so the only key used is
+    # one the caller passed explicitly, or one already sitting in .env.
     ENV_FILE="$REPO_ROOT/.env"
     _env_val() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | head -1; }
-    GEN_KEY="$(_env_val COPILOTSCOPE_API_KEY)"; [ -n "$GEN_KEY" ] || GEN_KEY="$(_gen_secret)"
-    GEN_PW="$(_env_val POSTGRES_PASSWORD)";     [ -n "$GEN_PW" ]  || GEN_PW="$(_gen_secret)"
-    printf 'COPILOTSCOPE_API_KEY=%s\nPOSTGRES_PASSWORD=%s\n' "$GEN_KEY" "$GEN_PW" > "$ENV_FILE"
-    echo "Wrote generated secrets to $ENV_FILE (gitignored)."
-    [ -n "$API_KEY_SET" ] || API_KEY="$GEN_KEY"
+    if [ -z "$API_KEY_SET" ]; then
+        API_KEY="$(_env_val COPILOTSCOPE_API_KEY)"
+    fi
+    if [ -n "$API_KEY" ]; then
+        echo "Using an ingest key — clients will need x-api-key."
+    fi
 fi
 
 if [ -n "$PERSIST" ] && [ -z "$COPILOT_CLI" ] && [ -z "$CLAUDE_CODE" ]; then
@@ -185,7 +183,7 @@ until curl -fsS "$ENDPOINT/api/health" >/dev/null 2>&1; do
         echo ""
         echo "Timed out after ${HEALTH_TIMEOUT}s waiting for $ENDPOINT/api/health" >&2
         echo "Check logs (docker compose logs collector, or the Aspire log above)." >&2
-        echo "See docs/TUTORIAL.md section 8 for troubleshooting." >&2
+        echo "See docs/TUTORIAL.md section 9 for troubleshooting." >&2
         _die "" || return 1
     fi
     echo -n "."
@@ -302,14 +300,13 @@ echo ""
 if [ -z "$SKIP_VERIFY" ]; then
     if ! command -v dotnet >/dev/null 2>&1; then
         echo "dotnet not found — skipping smoke test. Open the dashboard and chat with a Copilot"
-        echo "client to verify manually, or install the .NET 8 SDK and re-run without --skip-verify."
+        echo "client to verify manually, or install the .NET 10 SDK and re-run without --skip-verify."
     else
         PROBE_ID="setup-probe-$(date +%s)"
         PROBE_LOG="$(mktemp -t copilotscope-telemetrygen.XXXXXX.log)"
         echo "Running smoke test (TelemetryGen) — conversation '$PROBE_ID'..."
         (COPILOTSCOPE_API_KEY="$API_KEY" dotnet run --project "$REPO_ROOT/tools/CopilotScope.TelemetryGen" -- "$ENDPOINT" "$PROBE_ID") >"$PROBE_LOG" 2>&1
         vwaited=0
-        ok=""
         until curl -fsS "$ENDPOINT/api/sessions/$PROBE_ID" >/dev/null 2>&1; do
             if [ "$vwaited" -ge 15 ]; then
                 break
@@ -320,7 +317,7 @@ if [ -z "$SKIP_VERIFY" ]; then
         if curl -fsS "$ENDPOINT/api/sessions/$PROBE_ID" >/dev/null 2>&1; then
             echo "Smoke test OK — '$PROBE_ID' is visible via the collector API. CopilotScope is healthy end to end."
         else
-            echo "Probe session did not appear within 15s. See $PROBE_LOG and docs/TUTORIAL.md section 8." >&2
+            echo "Probe session did not appear within 15s. See $PROBE_LOG and docs/TUTORIAL.md section 9." >&2
         fi
     fi
     echo ""

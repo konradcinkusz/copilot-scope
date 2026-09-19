@@ -1,32 +1,36 @@
 # CopilotScope + Prometheus + Grafana — everything provisioned, nothing to click.
 #
-#   docker compose -f docker-compose.grafana.yml up
+#   docker compose -f docker-compose.grafana.yml up -d
 #
-# Grafana:    http://localhost:3000  (dashboard auto-loaded)
+#   Grafana     http://localhost:3000   (datasource and dashboard auto-loaded)
+#   Dashboard   http://localhost:5200
+#   Prometheus  http://localhost:9090
+#   OTLP ingest http://localhost:4318
+#
+# Nothing to declare for a local run, same as docker-compose.ghcr.yml: ports bind
+# to 127.0.0.1, Postgres publishes no port and trusts its unpublished socket, and
+# the ingest key is empty (the collector's open mode).
 #
 # Local-demo posture: Grafana runs with anonymous Admin and no login form so the
-# dashboard is one command away. Do not expose this compose file's ports beyond
-# localhost — for anything shared, drop the GF_AUTH_ANONYMOUS_* lines and set a
-# real admin password.
-# Dashboard:  http://localhost:5200
-# Prometheus: http://localhost:9090
-# OTLP ingest: http://localhost:4318 (x-api-key: $COPILOTSCOPE_API_KEY)
-#
-# Requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (copy .env.example to .env
-# or export them). Prometheus scrapes the key-gated /metrics using the same key,
-# written to a token file at startup from the env var.
+# dashboard is one command away. That is only defensible while nothing is
+# published beyond loopback — if you set COPILOTSCOPE_BIND, also drop the
+# GF_AUTH_ANONYMOUS_* lines, set a real admin password, and set
+# COPILOTSCOPE_API_KEY so /metrics is not readable by whoever can reach the port.
 #
 # The collector's /metrics endpoint exports the *computed* signals — composite
 # quality score, its components, edit survival, friction, cost. That is the part
 # no other exporter has; raw OTLP relaying upstream is a separate feature
 # (CopilotScope__Forwarding__*), not a substitute for this.
+name: copilotscope
+
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -34,14 +38,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   collector:
-    image: ghcr.io/konradcinkusz/copilotscope-collector:latest
+    image: ghcr.io/konradcinkusz/copilotscope-collector:${COPILOTSCOPE_TAG:-latest}
     ports:
-      - "4318:4318"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:-}"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
+      # The address compose published this on. The collector cannot infer it —
+      # behind Docker every request arrives from the bridge gateway — and uses it
+      # only to warn at startup when it is exposed beyond loopback with no key.
+      CopilotScope__Ingest__Bind: ${COPILOTSCOPE_BIND:-127.0.0.1}
       # Per-session series are opt-in because session ids are unbounded. 200 is the
       # default ceiling; the newest sessions win and the rest are dropped rather
       # than handing Prometheus an ever-growing set of time series.
@@ -53,30 +62,43 @@ services:
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/konradcinkusz/copilotscope-dashboard:latest
+    image: ghcr.io/konradcinkusz/copilotscope-dashboard:${COPILOTSCOPE_TAG:-latest}
     ports:
-      - "5200:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
     depends_on:
       - collector
     restart: unless-stopped
 
+  tools:
+    image: ghcr.io/konradcinkusz/copilotscope-tools:${COPILOTSCOPE_TAG:-latest}
+    profiles: ["tools"]
+    environment:
+      COPILOTSCOPE_COLLECTOR: "http://collector:4318"
+      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:-}
+    volumes:
+      - ${CLAUDE_TRANSCRIPTS:-${HOME:-/root}/.claude/projects}:/transcripts:ro
+    depends_on:
+      - collector
+
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:9090:9090"
     environment:
-      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:-}
     # Prometheus does not expand env vars inside its config, so write the scrape
     # token to a file the config references (credentials_file), then exec the
     # normal entrypoint. The data volume is writable by the prometheus user.
+    # The placeholder keeps the file non-empty when no key is configured: the
+    # collector is in open mode then and ignores the header entirely.
     entrypoint:
       - /bin/sh
       - -c
       - >
-        printf '%s' "$$COPILOTSCOPE_API_KEY" > /prometheus/scrape_token &&
+        printf '%s' "$${COPILOTSCOPE_API_KEY:-no-key-configured}" > /prometheus/scrape_token &&
         exec /bin/prometheus
         --config.file=/etc/prometheus/prometheus.yml
         --storage.tsdb.path=/prometheus
@@ -92,7 +114,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3000:3000"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:3000:3000"
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"

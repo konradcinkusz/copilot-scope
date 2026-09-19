@@ -268,11 +268,14 @@ html, body {
 
 /* ------------------------------------------------------------------- misc */
 
-.empty { color: var(--dim); font-size: 12px; padding: 10px; }
+.empty { color: var(--dim); font-size: 12px; padding: 10px; line-height: 1.55; }
 .empty.big { padding: 60px 20px; text-align: center; font-size: 13px; line-height: 1.6; max-width: 520px; margin: 0 auto; }
 .empty.big b { color: var(--copper); font-weight: 600; }
+/* The first-run empty state leads with a heading and then alternates prose and
+   commands, so the lead line needs to sit on its own row. */
+.empty > b { display: block; color: var(--text); font-weight: 600; margin-bottom: 6px; }
 .empty-title { font-family: var(--mono); font-size: 15px; color: var(--text); margin-bottom: 8px; }
-.empty code { display: block; margin-top: 8px; color: var(--copper); font-family: var(--mono); }
+.empty code { display: block; margin: 8px 0; color: var(--copper); font-family: var(--mono); }
 
 @media (prefers-reduced-motion: reduce) {
   .vu-seg, .bar span, .session { transition: none; }

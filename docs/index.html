@@ -381,7 +381,7 @@ footer{
     <img src="https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=f59e0b" alt="Release">
     <img src="https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1" alt="Downloads">
     <img src="https://img.shields.io/badge/License-MIT-e0a458.svg" alt="MIT">
-    <img src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 8">
+    <img src="https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white" alt=".NET 10">
   </div>
 </section>
 
@@ -644,34 +644,47 @@ footer{
 <section class="section" id="quickstart">
   <div class="section-inner">
     <p class="section-label">Quick start</p>
-    <h2>Up in under a minute</h2>
-    <p>Prerequisites: <strong>.NET 8 SDK</strong> and <strong>Docker</strong>. No workloads — Aspire 9 ships as a NuGet MSBuild SDK.</p>
+    <h2>Two commands, nothing to declare</h2>
+    <p>Prerequisite: <strong>Docker</strong>. No key to generate, no environment variable to export, no JSON to hand-edit — the collector binds to <code>127.0.0.1</code> and Postgres publishes no port, so on one machine a credential would buy nothing and cost a step in every client.</p>
 
     <div style="margin-top:28px">
       <div class="qs-tabs">
-        <button class="qs-tab active" onclick="switchTab(this,'docker')">Docker (no clone)</button>
-        <button class="qs-tab" onclick="switchTab(this,'aspire')">From source (Aspire)</button>
-        <button class="qs-tab" onclick="switchTab(this,'otel')">Configure VS Code</button>
+        <button class="qs-tab active" onclick="switchTab(this,'docker')">Install</button>
+        <button class="qs-tab" onclick="switchTab(this,'otel')">Connect an assistant</button>
+        <button class="qs-tab" onclick="switchTab(this,'aspire')">From source</button>
       </div>
 
       <div id="tab-docker" class="qs-panel active">
-        <div class="code-block"><span class="c"># Pull from GHCR — no clone needed</span>
-<span class="c"># Linux / macOS / Git Bash:</span>
-<span class="cmd">curl</span> -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-<span class="c"># Windows PowerShell:</span>
-<span class="cmd">curl.exe</span> -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
+        <div class="code-block"><span class="c"># Linux / macOS / WSL / Git Bash</span>
+<span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | <span class="cmd">sh</span>
 
-<span class="cmd">docker compose</span> -f docker-compose.ghcr.yml up
+<span class="c"># Windows PowerShell</span>
+<span class="cmd">irm</span> https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | <span class="cmd">iex</span>
 
 <span class="c"># Collector  →  http://localhost:4318   (OTLP ingest + REST API)</span>
 <span class="c"># Dashboard  →  http://localhost:5200   (Blazor UI)</span></div>
-        <p class="qs-note"><strong>One-time setup:</strong> GHCR packages start private — switch each to <strong>public</strong> (GitHub → Packages → Settings) so <code>docker pull</code> works anonymously. Then point your Copilot client at <code>http://localhost:4318</code>.</p>
+        <p class="qs-note">The installer checks Docker, starts the stack, waits for the collector to answer, and offers to configure each assistant it finds. Prefer to drive Compose yourself? <code>curl -O .../docker-compose.ghcr.yml &amp;&amp; docker compose -f docker-compose.ghcr.yml up -d</code> does the same thing with nothing to set. <code>copilotscope uninstall</code> reverses all of it.</p>
+      </div>
+
+      <div id="tab-otel" class="qs-panel">
+        <div class="code-block"><span class="c"># One command per assistant — written to the settings file it reads at startup,</span>
+<span class="c"># so it survives new terminals, new projects and reboots.</span>
+<span class="cmd">copilotscope connect</span> claude-code   <span class="c"># ~/.claude/settings.json</span>
+<span class="cmd">copilotscope connect</span> vscode        <span class="c"># VS Code user settings, then reload the window</span>
+<span class="cmd">copilotscope connect</span> copilot-cli   <span class="c"># shell env — the only thing the CLI reads</span>
+
+<span class="c"># Already use Claude Code? Its history is on disk already:</span>
+<span class="cmd">copilotscope import</span>
+
+<span class="c"># Nothing showing up? This walks the whole path and names the broken link.</span>
+<span class="cmd">copilotscope doctor</span></div>
+        <p class="qs-note"><strong>Why a settings file, not <code>export</code>:</strong> an exported variable lives in one terminal, which is the single most common reason a correctly-configured assistant produces an empty dashboard. Claude Code and VS Code both read a file at startup; only Copilot CLI is env-var-only. <code>copilotscope disconnect</code> removes exactly the keys it added.</p>
       </div>
 
       <div id="tab-aspire" class="qs-panel">
-        <div class="code-block"><span class="c"># Clone and start with .NET Aspire</span>
-<span class="cmd">git clone</span> https://github.com/konradcinkusz/copilotscope
-<span class="cmd">cd</span> copilotscope
+        <div class="code-block"><span class="c"># Clone and start with .NET Aspire — for developing CopilotScope itself</span>
+<span class="cmd">git clone</span> https://github.com/konradcinkusz/copilot-scope
+<span class="cmd">cd</span> copilot-scope
 <span class="cmd">dotnet run</span> --project src/CopilotScope.AppHost
 
 <span class="c"># Aspire starts: Postgres (container, named volume)</span>
@@ -679,25 +692,9 @@ footer{
 <span class="c">#               Collector  →  http://localhost:4318</span>
 <span class="c">#               Dashboard  →  http://localhost:5200</span>
 
-<span class="c"># Generate demo telemetry without a real Copilot subscription:</span>
+<span class="c"># Demo telemetry without a real Copilot subscription:</span>
 <span class="cmd">dotnet run</span> --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 my-session</div>
-        <p class="qs-note">F5 on <code>CopilotScope.AppHost</code> does the same with the debugger attached to everything. Run <code>dotnet test</code> to execute the full test suite (decoder, quality, persistence round-trips).</p>
-      </div>
-
-      <div id="tab-otel" class="qs-panel">
-        <div class="code-block"><span class="c">// VS Code settings.json — enable Copilot OTel</span>
-{
-  <span class="prop">"github.copilot.chat.otel.enabled"</span>: <span class="str">true</span>,
-  <span class="prop">"github.copilot.chat.otel.otlpEndpoint"</span>: <span class="str">"http://localhost:4318"</span>,
-  <span class="prop">"github.copilot.chat.otel.captureContent"</span>: <span class="str">true</span>
-  <span class="c">// captureContent stores prompt/response previews (last 100 entries,</span>
-  <span class="c">// truncated at 4 000 chars). Omit if you prefer metadata-only.</span>
-}
-
-<span class="c"># Copilot CLI — one-liner setup (PowerShell):</span>
-<span class="cmd">.\scripts\Enable-CopilotOtel.ps1</span> -CaptureContent
-<span class="cmd">copilot</span>   <span class="c"># run from the same terminal</span></div>
-        <p class="qs-note"><strong>Note:</strong> the CLI follows the OTel GenAI standard — <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code> — which the script sets. <code>COPILOT_OTEL_CAPTURE_CONTENT</code> is not a real variable.</p>
+        <p class="qs-note">Requires the <strong>.NET 10 SDK</strong>; Aspire ships as a NuGet MSBuild SDK, so there is no workload to install. F5 on <code>CopilotScope.AppHost</code> does the same with the debugger attached to everything. Run <code>dotnet test</code> for the full suite (decoder, quality, persistence round-trips).</p>
       </div>
     </div>
 

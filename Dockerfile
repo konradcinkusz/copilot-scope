@@ -12,10 +12,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
-# Restore against the project file first so a source-only change keeps the
-# restore layer cached.
+# Restore against the project files first so a source-only change keeps the
+# restore layer cached. ServiceDefaults is a ProjectReference of the collector,
+# so both its csproj and its sources have to be in the context — without it the
+# publish fails on CS0234 for the CopilotScope.ServiceDefaults namespace.
+COPY src/CopilotScope.ServiceDefaults/*.csproj src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/*.csproj src/CopilotScope.Collector/
 RUN dotnet restore src/CopilotScope.Collector
+COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 RUN dotnet publish src/CopilotScope.Collector -c Release -o /app/publish --no-restore
 

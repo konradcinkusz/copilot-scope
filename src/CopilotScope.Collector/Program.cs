@@ -184,6 +184,22 @@ app.Configuration.GetSection("CopilotScope:Keys").Bind(scopedKeys);
 var apiKeys = ApiKeyRegistry.Build(ingestApiKey, scopedKeys);
 bool KeyAuthorized(HttpRequest request, ApiScope scope = ApiScope.Read) => apiKeys.Authorized(request, scope);
 
+// Open mode is the right default on one machine — a collector bound to 127.0.0.1 with
+// no published database port gains nothing from a credential, and costs a configuration
+// step in every client. It is the wrong default the moment the port is published
+// anywhere else, and the collector cannot tell the difference by itself: behind Docker
+// every request arrives from the bridge gateway, so the remote address proves nothing
+// either way. The compose files therefore state the address they published it on, and
+// that is the only thing checked here.
+var publishedBind = app.Configuration["CopilotScope:Ingest:Bind"];
+if (apiKeys.Open && !string.IsNullOrWhiteSpace(publishedBind)
+    && publishedBind is not ("127.0.0.1" or "localhost" or "::1"))
+    app.Logger.LogWarning(
+        "CopilotScope is published on {Bind} with NO ingest key. Anyone who can reach this port " +
+        "can send telemetry, read captured transcripts and delete history. Set " +
+        "CopilotScope__Ingest__ApiKey (and have clients send it as x-api-key), or bind to " +
+        "127.0.0.1. See SECURITY.md.", publishedBind);
+
 var store = app.Services.GetRequiredService<SessionStore>();
 var quality = app.Services.GetRequiredService<QualityEngine>();
 var insightPipeline = app.Services.GetRequiredService<InsightPipeline>();

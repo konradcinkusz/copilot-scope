@@ -1,0 +1,47 @@
+# CopilotScope tooling in one image — import, demo data and a probe session,
+# with no .NET SDK and no clone of this repository.
+#
+# Build:  docker build -f Dockerfile.tools -t copilotscope-tools .
+# Run:    docker run --rm -e COPILOTSCOPE_COLLECTOR=http://host.docker.internal:4318 \
+#                    -v ~/.claude/projects:/transcripts:ro copilotscope-tools import
+#
+# Three small console apps rather than three images: they share the Collector
+# project reference (so a seeded or imported session has exactly the shape real
+# ingestion produces), and one image means one pull for a first run.
+#
+# The image major version tracks the TFM (net10.0) — see the comment in
+# ./Dockerfile. The runtime is the ASP.NET Core image, not the plain runtime,
+# because all three tools reference CopilotScope.Collector and so resolve
+# against the ASP.NET Core shared framework.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY nuget.config .
+# ServiceDefaults is a ProjectReference of the collector, which all three tools
+# reference — see the comment in ./Dockerfile.
+COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
+COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
+COPY tools/CopilotScope.Seeder/ tools/CopilotScope.Seeder/
+COPY tools/CopilotScope.LogImporter/ tools/CopilotScope.LogImporter/
+COPY tools/CopilotScope.TelemetryGen/ tools/CopilotScope.TelemetryGen/
+RUN dotnet publish tools/CopilotScope.Seeder      -c Release -o /app/seeder \
+ && dotnet publish tools/CopilotScope.LogImporter -c Release -o /app/importer \
+ && dotnet publish tools/CopilotScope.TelemetryGen -c Release -o /app/telemetrygen
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
+WORKDIR /app
+COPY --from=build /app/ /app/
+COPY scripts/tools-entrypoint.sh /app/copilotscope-tools
+RUN chmod +x /app/copilotscope-tools
+
+# Where the compose service mounts the host's Claude Code transcripts, read-only.
+ENV COPILOTSCOPE_TRANSCRIPTS=/transcripts
+ENV COPILOTSCOPE_COLLECTOR=http://collector:4318
+# Console tools, not a server: DOTNET_ENVIRONMENT is irrelevant and no port is exposed.
+
+# Runs as root deliberately: the transcripts bind mount carries the host user's
+# ownership, and a fixed non-root uid inside the container would be unable to read
+# it on most hosts. The mount is read-only and the process makes exactly one
+# outbound call, to the collector on the compose network.
+ENTRYPOINT ["/app/copilotscope-tools"]
+CMD ["help"]

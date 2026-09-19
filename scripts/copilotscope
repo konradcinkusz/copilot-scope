@@ -1,0 +1,991 @@
+#!/usr/bin/env bash
+# CopilotScope control script — start the stack, wire up an assistant, check the
+# wiring. Installed to ~/.copilotscope/bin/copilotscope by install.sh; also
+# runnable straight from a clone of the repository.
+#
+#   copilotscope up                    start (or restart) the local stack
+#   copilotscope connect claude-code   point Claude Code at it, permanently
+#   copilotscope connect vscode        point VS Code Copilot Chat at it
+#   copilotscope connect copilot-cli   point GitHub Copilot CLI at it
+#   copilotscope import                score the Claude Code history already on disk
+#   copilotscope demo                  load fabricated demo sessions
+#   copilotscope probe                 send one session through the real OTLP path
+#   copilotscope doctor                diagnose "it runs but no sessions appear"
+#   copilotscope status | logs | open | update | down | uninstall
+#
+# Written for bash 3.2 so it runs on a stock macOS shell.
+set -uo pipefail
+
+VERSION="1"
+HOME_DIR="${COPILOTSCOPE_HOME:-$HOME/.copilotscope}"
+REPO_RAW="${COPILOTSCOPE_REPO_RAW:-https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master}"
+
+# ---------------------------------------------------------------- presentation
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+    C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'
+else
+    C_RESET=""; C_BOLD=""; C_DIM=""; C_GREEN=""; C_YELLOW=""; C_RED=""
+fi
+
+say()  { printf '%s\n' "$*"; }
+head1() { printf '%s%s%s\n' "$C_BOLD" "$*" "$C_RESET"; }
+ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+warn() { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+bad()  { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*"; }
+info() { printf '  %s-%s %s\n' "$C_DIM" "$C_RESET" "$*"; }
+die()  { printf '%serror:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+
+# ------------------------------------------------------------------ discovery
+
+# The compose file lives next to this script's data dir after an install, or in the
+# repository when run from a clone.
+compose_file() {
+    if [ -n "${COPILOTSCOPE_COMPOSE_FILE:-}" ]; then
+        printf '%s' "$COPILOTSCOPE_COMPOSE_FILE"; return 0
+    fi
+    if [ -f "$HOME_DIR/docker-compose.yml" ]; then
+        printf '%s' "$HOME_DIR/docker-compose.yml"; return 0
+    fi
+    local script_dir repo_root
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    repo_root="$(cd "$script_dir/.." && pwd)"
+    if [ -f "$repo_root/docker-compose.ghcr.yml" ]; then
+        printf '%s' "$repo_root/docker-compose.ghcr.yml"; return 0
+    fi
+    return 1
+}
+
+env_file() { printf '%s' "${COPILOTSCOPE_ENV_FILE:-$HOME_DIR/.env}"; }
+
+# Reads one value out of the .env file written at install time.
+env_value() {
+    local name="$1" file
+    file="$(env_file)"
+    [ -f "$file" ] || return 1
+    sed -n "s/^${name}=//p" "$file" | head -1
+}
+
+endpoint() {
+    if [ -n "${COPILOTSCOPE_ENDPOINT:-}" ]; then printf '%s' "$COPILOTSCOPE_ENDPOINT"; return; fi
+    local bind
+    bind="$(env_value COPILOTSCOPE_BIND 2>/dev/null || true)"
+    # A collector published on every interface is still addressed as localhost from
+    # the machine it runs on; printing 0.0.0.0 as an endpoint would be wrong.
+    if [ -z "$bind" ] || [ "$bind" = "0.0.0.0" ] || [ "$bind" = "::" ]; then
+        printf 'http://localhost:4318'
+    else
+        printf 'http://%s:4318' "$bind"
+    fi
+}
+
+dashboard_url() {
+    local bind
+    bind="$(env_value COPILOTSCOPE_BIND 2>/dev/null || true)"
+    if [ -z "$bind" ] || [ "$bind" = "0.0.0.0" ] || [ "$bind" = "::" ]; then
+        printf 'http://localhost:5200'
+    else
+        printf 'http://%s:5200' "$bind"
+    fi
+}
+
+api_key() {
+    if [ -n "${COPILOTSCOPE_API_KEY:-}" ]; then printf '%s' "$COPILOTSCOPE_API_KEY"; return; fi
+    env_value COPILOTSCOPE_API_KEY 2>/dev/null || true
+}
+
+claude_config_dir() { printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"; }
+
+vscode_settings_file() {
+    local candidates=()
+    case "$(uname -s 2>/dev/null || echo unknown)" in
+        Darwin) candidates=(
+            "$HOME/Library/Application Support/Code/User/settings.json"
+            "$HOME/Library/Application Support/Code - Insiders/User/settings.json"
+            "$HOME/Library/Application Support/VSCodium/User/settings.json" ) ;;
+        *) candidates=(
+            "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/settings.json"
+            "${XDG_CONFIG_HOME:-$HOME/.config}/Code - Insiders/User/settings.json"
+            "${XDG_CONFIG_HOME:-$HOME/.config}/VSCodium/User/settings.json" )
+            # Git Bash / WSL reaching a Windows install.
+            [ -n "${APPDATA:-}" ] && candidates+=( "$APPDATA/Code/User/settings.json" )
+            ;;
+    esac
+    local candidate
+    for candidate in "${candidates[@]}"; do
+        [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+    done
+    # Nothing written yet: offer the first location for the platform, if its parent exists.
+    for candidate in "${candidates[@]}"; do
+        [ -d "$(dirname "$candidate")" ] && { printf '%s' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+transcripts_dir() {
+    local configured
+    configured="$(env_value CLAUDE_TRANSCRIPTS 2>/dev/null || true)"
+    [ -n "$configured" ] && { printf '%s' "$configured"; return 0; }
+    printf '%s' "$(claude_config_dir)/projects"
+}
+
+# --------------------------------------------------------------------- docker
+
+compose() {
+    local file
+    file="$(compose_file)" || die "no compose file found. Re-run the installer, or run this from a clone of the repository."
+    local args=(-p copilotscope -f "$file")
+    [ -f "$(env_file)" ] && args+=(--env-file "$(env_file)")
+    docker compose "${args[@]}" "$@"
+}
+
+require_docker() {
+    command -v docker >/dev/null 2>&1 || die "docker is not installed. See https://docs.docker.com/get-docker/"
+    docker compose version >/dev/null 2>&1 || die "this Docker has no 'compose' subcommand. Update Docker Desktop, or install the compose plugin."
+    docker info >/dev/null 2>&1 || die "the Docker daemon is not running. Start Docker Desktop (or dockerd) and try again."
+}
+
+# GETs a collector path, presenting the ingest key when the deployment has one.
+# Written as two branches rather than an interpolated argument list so the header
+# never depends on word splitting — a key is allowed to contain anything.
+collector_get() {
+    local path="$1" timeout="${2:-3}" key
+    key="$(api_key)"
+    if [ -n "$key" ]; then
+        curl -fsS --max-time "$timeout" -H "x-api-key: $key" "$(endpoint)$path" 2>/dev/null
+    else
+        curl -fsS --max-time "$timeout" "$(endpoint)$path" 2>/dev/null
+    fi
+}
+
+# Reads the collector's health document. Prints it; non-zero when unreachable.
+health() { collector_get /api/health 3; }
+
+wait_healthy() {
+    local timeout="${1:-90}" waited=0
+    printf 'Waiting for the collector at %s ' "$(endpoint)"
+    until health >/dev/null 2>&1; do
+        if [ "$waited" -ge "$timeout" ]; then
+            printf '\n'
+            bad "not answering after ${timeout}s."
+            info "Logs: copilotscope logs collector"
+            return 1
+        fi
+        printf '.'
+        sleep 2
+        waited=$((waited + 2))
+    done
+    printf ' up.\n'
+    return 0
+}
+
+# JSON field out of a flat object, without requiring jq.
+json_field() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^,\"}]*\)\"\{0,1\}.*/\1/p" | head -1
+}
+
+# ----------------------------------------------------------------- JSON merge
+#
+# Settings files are the user's, and may hold anything. Merging is delegated to a
+# real JSON parser rather than patched with sed: a regex edit of someone's editor
+# configuration is how a tool earns a reputation for breaking things. When no
+# parser is available the snippet is printed instead of guessed at.
+
+json_tool() {
+    if command -v python3 >/dev/null 2>&1; then printf 'python3'; return 0; fi
+    if command -v node >/dev/null 2>&1; then printf 'node'; return 0; fi
+    return 1
+}
+
+# merge_json <file> <json-patch>
+# Deep-merges the patch into the file (creating it if absent) and writes it back
+# with two-space indentation. Returns 2 when the file exists but does not parse,
+# 3 when no JSON parser is available.
+merge_json() {
+    local file="$1" patch="$2" tool
+    tool="$(json_tool)" || return 3
+    mkdir -p "$(dirname "$file")" || return 1
+
+    if [ "$tool" = "python3" ]; then
+        COPILOTSCOPE_PATCH="$patch" python3 - "$file" <<'PY'
+import json, os, sys, shutil
+
+path = sys.argv[1]
+patch = json.loads(os.environ["COPILOTSCOPE_PATCH"])
+
+current = {}
+if os.path.exists(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        text = handle.read()
+    if text.strip():
+        try:
+            current = json.loads(text)
+        except ValueError:
+            sys.exit(2)          # JSONC or broken: the caller prints the snippet
+    if not isinstance(current, dict):
+        sys.exit(2)
+    shutil.copyfile(path, path + ".copilotscope.bak")
+
+def merge(base, incoming):
+    for key, value in incoming.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge(base[key], value)
+        else:
+            base[key] = value
+
+merge(current, patch)
+
+# Write through a temporary file in the same directory: a settings file truncated
+# by an interrupted write is worse than one that was never touched.
+tmp = path + ".copilotscope.tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(current, handle, indent=2, ensure_ascii=False)
+    handle.write("\n")
+os.replace(tmp, path)
+PY
+        return $?
+    fi
+
+    COPILOTSCOPE_PATCH="$patch" node -e '
+const fs = require("fs");
+const path = process.argv[1];
+const patch = JSON.parse(process.env.COPILOTSCOPE_PATCH);
+let current = {};
+if (fs.existsSync(path)) {
+  const text = fs.readFileSync(path, "utf8");
+  if (text.trim()) {
+    try { current = JSON.parse(text); } catch { process.exit(2); }
+  }
+  if (typeof current !== "object" || current === null || Array.isArray(current)) process.exit(2);
+  fs.copyFileSync(path, path + ".copilotscope.bak");
+}
+const merge = (base, incoming) => {
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value && typeof value === "object" && !Array.isArray(value) &&
+        base[key] && typeof base[key] === "object" && !Array.isArray(base[key])) merge(base[key], value);
+    else base[key] = value;
+  }
+};
+merge(current, patch);
+fs.mkdirSync(require("path").dirname(path), { recursive: true });
+const tmp = path + ".copilotscope.tmp";
+fs.writeFileSync(tmp, JSON.stringify(current, null, 2) + "\n");
+fs.renameSync(tmp, path);
+' "$file"
+    return $?
+}
+
+# remove_json_keys <file> <json-array-of-key-paths>
+#
+# Each entry is an array of segments, not a dotted string: VS Code's own keys are
+# single flat names containing dots ("github.copilot.chat.otel.enabled"), so
+# splitting on "." would look for a nesting that is not there and delete nothing.
+remove_json_keys() {
+    local file="$1" paths="$2" tool
+    [ -f "$file" ] || return 0
+    tool="$(json_tool)" || return 3
+    if [ "$tool" = "python3" ]; then
+        COPILOTSCOPE_PATHS="$paths" python3 - "$file" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+targets = json.loads(os.environ["COPILOTSCOPE_PATHS"])
+with open(path, "r", encoding="utf-8") as handle:
+    text = handle.read()
+try:
+    document = json.loads(text) if text.strip() else {}
+except ValueError:
+    sys.exit(2)
+if not isinstance(document, dict):
+    sys.exit(2)
+
+for parts in targets:
+    node = document
+    for part in parts[:-1]:
+        node = node.get(part) if isinstance(node, dict) else None
+        if node is None:
+            break
+    if isinstance(node, dict):
+        node.pop(parts[-1], None)
+
+# An env block emptied of our keys is noise in someone's settings file.
+if isinstance(document.get("env"), dict) and not document["env"]:
+    document.pop("env")
+
+tmp = path + ".copilotscope.tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(document, handle, indent=2, ensure_ascii=False)
+    handle.write("\n")
+os.replace(tmp, path)
+PY
+        return $?
+    fi
+    COPILOTSCOPE_PATHS="$paths" node -e '
+const fs = require("fs");
+const path = process.argv[1];
+const targets = JSON.parse(process.env.COPILOTSCOPE_PATHS);
+const text = fs.readFileSync(path, "utf8");
+let document;
+try { document = text.trim() ? JSON.parse(text) : {}; } catch { process.exit(2); }
+if (typeof document !== "object" || document === null || Array.isArray(document)) process.exit(2);
+for (const parts of targets) {
+  let node = document;
+  for (const part of parts.slice(0, -1)) { node = node && node[part]; if (!node) break; }
+  if (node && typeof node === "object") delete node[parts[parts.length - 1]];
+}
+if (document.env && typeof document.env === "object" && Object.keys(document.env).length === 0) delete document.env;
+fs.writeFileSync(path, JSON.stringify(document, null, 2) + "\n");
+' "$file"
+    return $?
+}
+
+# ------------------------------------------------------------ shell rc blocks
+
+default_rc_file() {
+    case "$(basename "${SHELL:-/bin/bash}")" in
+        zsh) printf '%s' "$HOME/.zshrc" ;;
+        fish) printf '%s' "$HOME/.config/fish/config.fish" ;;
+        *) printf '%s' "$HOME/.bashrc" ;;
+    esac
+}
+
+# rc_block <file> <marker> <content>   — idempotent: replaces its own block.
+rc_block() {
+    local rc="$1" marker="$2" content="$3"
+    local begin="# >>> CopilotScope ($marker) >>>"
+    local end="# <<< CopilotScope ($marker) <<<"
+    touch "$rc" || return 1
+    awk -v b="$begin" -v e="$end" '
+        $0==b {skip=1}
+        skip!=1 {print}
+        $0==e {skip=0}
+    ' "$rc" > "$rc.copilotscope.tmp" && mv "$rc.copilotscope.tmp" "$rc"
+    if [ -n "$content" ]; then
+        {
+            printf '\n%s\n' "$begin"
+            printf '%s\n' "$content" | grep -v '^$'
+            printf '%s\n' "$end"
+        } >> "$rc"
+    fi
+}
+
+# --------------------------------------------------------------- command: up
+
+cmd_up() {
+    local bind="" key="" pull="true"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --bind) bind="$2"; shift 2 ;;
+            --api-key) key="$2"; shift 2 ;;
+            --no-pull) pull=""; shift ;;
+            -h|--help) say "usage: copilotscope up [--bind ADDR] [--api-key KEY] [--no-pull]"; return 0 ;;
+            *) die "up: unknown option '$1'" ;;
+        esac
+    done
+    require_docker
+
+    if [ -n "$bind" ] && [ "$bind" != "127.0.0.1" ] && [ "$bind" != "localhost" ]; then
+        local effective_key="$key"
+        [ -n "$effective_key" ] || effective_key="$(api_key)"
+        if [ -z "$effective_key" ]; then
+            die "--bind $bind publishes the collector beyond this machine, so it needs a key.
+       Re-run as: copilotscope up --bind $bind --api-key \"\$(openssl rand -hex 24)\"
+       Without one the collector accepts telemetry, serves transcripts and allows
+       deletes to anyone who can reach the port. See SECURITY.md."
+        fi
+    fi
+
+    mkdir -p "$HOME_DIR"
+    [ -n "$bind" ] && set_env_value COPILOTSCOPE_BIND "$bind"
+    [ -n "$key" ] && set_env_value COPILOTSCOPE_API_KEY "$key"
+
+    if [ -n "$pull" ]; then
+        say "Pulling images…"
+        compose pull --quiet collector dashboard 2>/dev/null || compose pull collector dashboard || true
+    fi
+    say "Starting CopilotScope…"
+    compose up -d --remove-orphans collector dashboard postgres || die "docker compose failed to start. See the output above."
+    say ""
+    wait_healthy 90 || return 1
+
+    local doc sessions
+    doc="$(health)"
+    sessions="$(printf '%s' "$doc" | json_field sessions)"
+    say ""
+    ok "Dashboard    $(dashboard_url)"
+    ok "OTLP ingest  $(endpoint)"
+    [ -n "$sessions" ] && info "Sessions held: $sessions"
+    say ""
+    return 0
+}
+
+# set_env_value <name> <value> — maintains ~/.copilotscope/.env
+set_env_value() {
+    local name="$1" value="$2" file
+    file="$(env_file)"
+    mkdir -p "$(dirname "$file")"
+    touch "$file"
+    if grep -q "^${name}=" "$file" 2>/dev/null; then
+        awk -v n="$name" -v v="$value" 'BEGIN{FS=OFS="="} $1==n {print n "=" v; next} {print}' "$file" \
+            > "$file.tmp" && mv "$file.tmp" "$file"
+    else
+        printf '%s=%s\n' "$name" "$value" >> "$file"
+    fi
+    chmod 600 "$file" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------- command: connect
+
+connect_usage() {
+    cat <<'USAGE'
+usage: copilotscope connect <target> [options]
+
+targets:
+  claude-code    write ~/.claude/settings.json — applies to every terminal and project
+  vscode         write VS Code's user settings.json (then reload the window)
+  copilot-cli    write a block into your shell rc (GitHub Copilot CLI reads env vars only)
+  cowork         print what to enter in the Claude desktop app (no file to write)
+
+options:
+  --capture      also export prompt / response / tool text (sensitive; off by default)
+  --traces       Claude Code only: beta spans, the only source of time-to-first-token
+  --endpoint URL override the collector endpoint
+  --print        show what would be written, change nothing
+USAGE
+}
+
+cmd_connect() {
+    local target="${1:-}"
+    [ -n "$target" ] || { connect_usage; return 2; }
+    shift
+
+    local capture="" traces="" print_only="" override=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --capture|--capture-content) capture="true"; shift ;;
+            --traces) traces="true"; shift ;;
+            --endpoint) override="$2"; shift 2 ;;
+            --print|--dry-run) print_only="true"; shift ;;
+            -h|--help) connect_usage; return 0 ;;
+            *) die "connect: unknown option '$1'" ;;
+        esac
+    done
+    [ -n "$override" ] && COPILOTSCOPE_ENDPOINT="$override"
+
+    case "$target" in
+        claude-code|claude) connect_claude_code "$capture" "$traces" "$print_only" ;;
+        vscode|vs-code|code) connect_vscode "$capture" "$print_only" ;;
+        copilot-cli|cli) connect_copilot_cli "$capture" "$print_only" ;;
+        cowork) connect_cowork ;;
+        all)
+            connect_claude_code "$capture" "$traces" "$print_only"
+            say ""
+            connect_vscode "$capture" "$print_only"
+            ;;
+        *) connect_usage; return 2 ;;
+    esac
+}
+
+claude_env_json() {
+    local capture="$1" traces="$2" key
+    key="$(api_key)"
+    printf '{"env":{'
+    printf '"CLAUDE_CODE_ENABLE_TELEMETRY":"1",'
+    printf '"OTEL_METRICS_EXPORTER":"otlp",'
+    printf '"OTEL_LOGS_EXPORTER":"otlp",'
+    printf '"OTEL_EXPORTER_OTLP_PROTOCOL":"http/protobuf",'
+    printf '"OTEL_EXPORTER_OTLP_ENDPOINT":"%s",' "$(endpoint)"
+    printf '"OTEL_METRIC_EXPORT_INTERVAL":"10000",'
+    printf '"OTEL_LOGS_EXPORT_INTERVAL":"5000",'
+    printf '"OTEL_RESOURCE_ATTRIBUTES":"service.name=claude-code"'
+    if [ -n "$traces" ]; then
+        printf ',"CLAUDE_CODE_ENHANCED_TELEMETRY_BETA":"1"'
+        printf ',"OTEL_TRACES_EXPORTER":"otlp"'
+    fi
+    if [ -n "$capture" ]; then
+        printf ',"OTEL_LOG_USER_PROMPTS":"1"'
+        printf ',"OTEL_LOG_ASSISTANT_RESPONSES":"1"'
+        printf ',"OTEL_LOG_TOOL_DETAILS":"1"'
+    fi
+    [ -n "$key" ] && printf ',"OTEL_EXPORTER_OTLP_HEADERS":"x-api-key=%s"' "$key"
+    printf '}}'
+}
+
+connect_claude_code() {
+    local capture="$1" traces="$2" print_only="$3"
+    local file patch
+    file="$(claude_config_dir)/settings.json"
+    patch="$(claude_env_json "$capture" "$traces")"
+
+    head1 "Claude Code"
+    if [ -n "$print_only" ]; then
+        info "would merge into $file:"
+        pretty_json "$patch"
+        return 0
+    fi
+
+    merge_json "$file" "$patch"
+    case "$?" in
+        0)
+            ok "$file updated."
+            info "Applies to every terminal, every project, and to Claude Code inside VS Code."
+            info "No env vars to export and no 'same terminal' rule — start (or restart) claude."
+            # Written as `if`, not `[ … ] && …`: a false test as the last statement in this
+            # branch becomes the function's exit status, so a successful connect would
+            # report failure whenever these flags are absent.
+            if [ -n "$capture" ]; then
+                warn "Prompt, response and tool text will be exported."
+            fi
+            if [ -n "$traces" ]; then
+                info "Beta spans on: adds time-to-first-token, and the schema may still change."
+            fi
+            return 0
+            ;;
+        2)
+            bad "$file exists but is not valid JSON, so it was left untouched."
+            info "Claude Code settings must be strict JSON — no comments, no trailing commas."
+            info "Fix the file, or add this block by hand:"
+            pretty_json "$patch"
+            return 1
+            ;;
+        3)
+            warn "No python3 or node available to merge JSON safely, so nothing was written."
+            info "Add this to $file by hand:"
+            pretty_json "$patch"
+            return 1
+            ;;
+        *) bad "could not write $file"; return 1 ;;
+    esac
+}
+
+vscode_settings_json() {
+    local capture="$1"
+    printf '{'
+    printf '"github.copilot.chat.otel.enabled":true,'
+    printf '"github.copilot.chat.otel.otlpEndpoint":"%s",' "$(endpoint)"
+    printf '"github.copilot.chat.otel.exporterType":"otlp-http"'
+    [ -n "$capture" ] && printf ',"github.copilot.chat.otel.captureContent":true'
+    printf '}'
+}
+
+connect_vscode() {
+    local capture="$1" print_only="$2"
+    local file patch key
+    patch="$(vscode_settings_json "$capture")"
+    key="$(api_key)"
+
+    head1 "VS Code (Copilot Chat)"
+    if ! file="$(vscode_settings_file)"; then
+        warn "No VS Code settings file found — is it installed?"
+        info "Add this to Settings JSON (Ctrl/Cmd+Shift+P → Preferences: Open User Settings (JSON)):"
+        pretty_json "$patch"
+        return 1
+    fi
+
+    if [ -n "$print_only" ]; then
+        info "would merge into $file:"
+        pretty_json "$patch"
+        return 0
+    fi
+
+    merge_json "$file" "$patch"
+    case "$?" in
+        0) ok "$file updated." ;;
+        2)
+            warn "left untouched: that file uses comments or trailing commas."
+            info "VS Code accepts them; a JSON parser does not, and rewriting it with a"
+            info "regex is how a tool corrupts someone's editor config. Add this by hand:"
+            pretty_json "$patch"
+            ;;
+        3)
+            warn "No python3 or node available to merge JSON safely, so nothing was written."
+            info "Add this to $file by hand:"
+            pretty_json "$patch"
+            ;;
+        *) bad "could not write $file"; return 1 ;;
+    esac
+
+    say ""
+    warn "Reload the VS Code window once the settings are in place."
+    info "Ctrl/Cmd+Shift+P → Developer: Reload Window — settings are read at extension startup."
+    info "Then chat in Agent mode: inline completions alone emit no chat telemetry."
+    if [ -n "$key" ]; then
+        say ""
+        warn "This deployment has an ingest key, which VS Code can only take from the environment:"
+        info "export OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=$key\" — then launch VS Code from that shell."
+    fi
+}
+
+connect_copilot_cli() {
+    local capture="$1" print_only="$2"
+    local key rc block
+    key="$(api_key)"
+    block="export COPILOT_OTEL_ENABLED=true
+export COPILOT_OTEL_EXPORTER_TYPE=otlp-http
+export OTEL_EXPORTER_OTLP_ENDPOINT=\"$(endpoint)\"
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf"
+    [ -n "$capture" ] && block="$block
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true"
+    [ -n "$key" ] && block="$block
+export OTEL_EXPORTER_OTLP_HEADERS=\"x-api-key=$key\""
+
+    head1 "GitHub Copilot CLI"
+    if [ -n "$print_only" ]; then
+        info "would append to $(default_rc_file):"
+        printf '%s\n' "$block" | sed 's/^/      /'
+        return 0
+    fi
+
+    rc="$(default_rc_file)"
+    case "$rc" in
+        *fish*)
+            warn "fish does not read this block's syntax. Add the equivalent set -x lines to $rc:"
+            printf '%s\n' "$block" | sed 's/^export /      set -x /; s/=/ /'
+            return 1 ;;
+    esac
+
+    rc_block "$rc" "copilot-cli" "$block" || { bad "could not write $rc"; return 1; }
+    ok "$rc updated (replacing any earlier CopilotScope block)."
+    info "Copilot CLI reads environment variables only, so this needs a new terminal —"
+    info "or run: source $rc"
+    [ -n "$key" ] && warn "The ingest key is now stored in plaintext in $rc."
+    say ""
+    info "Note: COPILOT_OTEL_CAPTURE_CONTENT is not a real variable. The CLI follows the"
+    info "OTel GenAI standard, OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT, which --capture sets."
+}
+
+connect_cowork() {
+    head1 "Claude Cowork (Claude desktop app)"
+    info "Cowork is configured in the app's own settings, not by a file this script can write:"
+    say ""
+    say "    Claude Desktop → organization / Cowork settings → monitoring"
+    say "    OTLP endpoint:  $(endpoint)/v1/logs"
+    say "    Protocol:       HTTP"
+    say ""
+    warn "The full /v1/logs path, not the base endpoint Claude Code takes."
+    warn "Restart the app afterwards — configuration is read at session start."
+    info "Needs a Team or Enterprise plan, Claude Desktop 1.1.4173+, and org admin access."
+    info "Cowork sends log events only: no lines-of-code and no time-to-first-token."
+}
+
+pretty_json() {
+    local tool
+    tool="$(json_tool)" || { printf '%s\n' "$1" | sed 's/^/      /'; return; }
+    if [ "$tool" = "python3" ]; then
+        printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), indent=2))' | sed 's/^/      /'
+    else
+        printf '%s' "$1" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.stringify(JSON.parse(s),null,2)))' | sed 's/^/      /'
+    fi
+}
+
+# ------------------------------------------------------- command: disconnect
+
+cmd_disconnect() {
+    local target="${1:-all}"
+    case "$target" in
+        claude-code|claude|all)
+            local file
+            file="$(claude_config_dir)/settings.json"
+            if [ -f "$file" ]; then
+                remove_json_keys "$file" '[["env","CLAUDE_CODE_ENABLE_TELEMETRY"],["env","CLAUDE_CODE_ENHANCED_TELEMETRY_BETA"],["env","OTEL_METRICS_EXPORTER"],["env","OTEL_LOGS_EXPORTER"],["env","OTEL_TRACES_EXPORTER"],["env","OTEL_EXPORTER_OTLP_PROTOCOL"],["env","OTEL_EXPORTER_OTLP_ENDPOINT"],["env","OTEL_EXPORTER_OTLP_HEADERS"],["env","OTEL_METRIC_EXPORT_INTERVAL"],["env","OTEL_LOGS_EXPORT_INTERVAL"],["env","OTEL_RESOURCE_ATTRIBUTES"],["env","OTEL_LOG_USER_PROMPTS"],["env","OTEL_LOG_ASSISTANT_RESPONSES"],["env","OTEL_LOG_TOOL_DETAILS"]]' \
+                    && ok "Claude Code telemetry keys removed from $file" \
+                    || warn "could not edit $file — remove the env keys by hand"
+            fi
+            [ "$target" = "all" ] || return 0
+            ;;
+    esac
+    case "$target" in
+        vscode|vs-code|code|all)
+            local vsfile
+            if vsfile="$(vscode_settings_file)" && [ -f "$vsfile" ]; then
+                remove_json_keys "$vsfile" '[["github.copilot.chat.otel.enabled"],["github.copilot.chat.otel.otlpEndpoint"],["github.copilot.chat.otel.exporterType"],["github.copilot.chat.otel.captureContent"]]' \
+                    && ok "Copilot OTel settings removed from $vsfile (reload the window)" \
+                    || warn "could not edit $vsfile — remove the github.copilot.chat.otel.* keys by hand"
+            fi
+            [ "$target" = "all" ] || return 0
+            ;;
+    esac
+    case "$target" in
+        copilot-cli|cli|all)
+            rc_block "$(default_rc_file)" "copilot-cli" "" && ok "shell block removed from $(default_rc_file)"
+            ;;
+    esac
+}
+
+# ------------------------------------------------- commands: tools passthrough
+
+run_tool() {
+    require_docker
+    compose run --rm --quiet-pull tools "$@"
+}
+
+cmd_import() {
+    local transcripts
+    transcripts="$(transcripts_dir)"
+    if [ ! -d "$transcripts" ]; then
+        bad "no Claude Code transcripts at $transcripts"
+        info "That directory is where Claude Code records every session. If you use it,"
+        info "run 'claude' once, or point the importer elsewhere with CLAUDE_TRANSCRIPTS."
+        return 1
+    fi
+    set_env_value CLAUDE_TRANSCRIPTS "$transcripts"
+    say "Importing Claude Code transcripts from $transcripts"
+    info "Prompt text stays out unless you pass --include-content."
+    say ""
+    run_tool import "$@"
+    say ""
+    info "Sessions land badged 'imported' with lower confidence: a transcript records tokens,"
+    info "models, tools and timings, but no latency, edit-decision or feedback signal."
+    info "Repository labels are resolved from git, which this container cannot reach — imported"
+    info "sessions carry no repository unless you run the importer from a clone instead."
+}
+
+cmd_demo() { run_tool demo "${1:-quick}"; }
+
+cmd_probe() {
+    local id
+    id="probe-$(date +%s)"
+    say "Sending a probe session through the real OTLP/HTTP path…"
+    run_tool probe "$id" || return 1
+    sleep 2
+    if collector_get "/api/sessions/$id" 5 >/dev/null 2>&1; then
+        ok "'$id' is in the collector. Ingest, decoding, scoring and persistence all work."
+        info "Anything missing after this is client configuration: copilotscope doctor"
+    else
+        bad "the probe session did not appear."
+        info "Logs: copilotscope logs collector"
+        return 1
+    fi
+}
+
+# ----------------------------------------------------------- command: doctor
+
+cmd_doctor() {
+    local problems=0
+    head1 "CopilotScope doctor"
+    say ""
+
+    # 1. Docker and the stack.
+    head1 "Stack"
+    if ! command -v docker >/dev/null 2>&1; then
+        bad "docker is not installed"; problems=$((problems+1))
+    elif ! docker info >/dev/null 2>&1; then
+        bad "the Docker daemon is not running"; problems=$((problems+1))
+    elif ! compose_file >/dev/null 2>&1; then
+        ok "docker is running"
+        warn "no compose file found, so the stack cannot be inspected from here"
+        info "Re-run the installer, or use this script from a clone of the repository."
+    else
+        ok "docker is running"
+        local running
+        running="$(compose ps --services --filter status=running 2>/dev/null | tr '\n' ' ')"
+        if printf '%s' "$running" | grep -q collector; then
+            ok "containers up: $running"
+        else
+            bad "the collector container is not running — copilotscope up"
+            problems=$((problems+1))
+        fi
+    fi
+
+    # 2. The collector itself.
+    say ""
+    head1 "Collector"
+    local doc
+    if doc="$(health)"; then
+        ok "$(endpoint)/api/health answers"
+        local persistence sessions env_name
+        persistence="$(printf '%s' "$doc" | json_field persistence)"
+        sessions="$(printf '%s' "$doc" | json_field sessions)"
+        env_name="$(printf '%s' "$doc" | json_field environment)"
+        info "environment: ${env_name:-unknown}, persistence: ${persistence:-unknown}, sessions held: ${sessions:-0}"
+        [ "$persistence" = "False" ] || [ "$persistence" = "false" ] && \
+            warn "running in-memory only: history is lost on restart (no Postgres connection string)"
+    else
+        bad "$(endpoint)/api/health does not answer"
+        info "Something else may hold port 4318: lsof -i :4318"
+        problems=$((problems+1))
+    fi
+
+    # 3. Exposure: a key-less collector must not be reachable off-box.
+    local bind key
+    bind="$(env_value COPILOTSCOPE_BIND 2>/dev/null || true)"
+    key="$(api_key)"
+    if [ -n "$bind" ] && [ "$bind" != "127.0.0.1" ] && [ "$bind" != "localhost" ] && [ -z "$key" ]; then
+        bad "published on $bind with no ingest key: anyone who can reach the port can read"
+        info "transcripts and delete history. Set COPILOTSCOPE_API_KEY, or bind to 127.0.0.1."
+        problems=$((problems+1))
+    elif [ -n "$key" ]; then
+        ok "ingest key configured"
+    else
+        ok "loopback only, no key needed"
+    fi
+
+    # 4. Clients.
+    say ""
+    head1 "Assistants"
+    local claude_file
+    claude_file="$(claude_config_dir)/settings.json"
+    if [ -f "$claude_file" ] && grep -q 'CLAUDE_CODE_ENABLE_TELEMETRY' "$claude_file" 2>/dev/null; then
+        if grep -q "$(endpoint)" "$claude_file" 2>/dev/null; then
+            ok "Claude Code configured in $claude_file"
+        else
+            warn "Claude Code has telemetry on, but points somewhere other than $(endpoint)"
+            problems=$((problems+1))
+        fi
+        grep -q 'OTEL_LOGS_EXPORTER' "$claude_file" 2>/dev/null \
+            || { bad "OTEL_LOGS_EXPORTER is missing — the log events are what carry the session"; problems=$((problems+1)); }
+    else
+        info "Claude Code not configured — copilotscope connect claude-code"
+    fi
+
+    local vsfile
+    if vsfile="$(vscode_settings_file)" && [ -f "$vsfile" ]; then
+        if grep -q 'github.copilot.chat.otel.enabled' "$vsfile" 2>/dev/null; then
+            ok "VS Code configured in $vsfile"
+            info "If sessions still do not appear: reload the window, and chat in Agent mode."
+        else
+            info "VS Code not configured — copilotscope connect vscode"
+        fi
+    fi
+
+    # 5. The classic overrides that beat a settings file.
+    if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" ] && [ "${OTEL_EXPORTER_OTLP_ENDPOINT}" != "$(endpoint)" ]; then
+        warn "OTEL_EXPORTER_OTLP_ENDPOINT is exported in this shell as ${OTEL_EXPORTER_OTLP_ENDPOINT}"
+        info "An exported variable beats a settings file for anything launched from here."
+        problems=$((problems+1))
+    fi
+
+    # 6. History waiting to be imported.
+    say ""
+    head1 "History on disk"
+    local transcripts count
+    transcripts="$(transcripts_dir)"
+    if [ -d "$transcripts" ]; then
+        count="$(find "$transcripts" -name '*.jsonl' -type f 2>/dev/null | wc -l | tr -d ' ')"
+        if [ "${count:-0}" -gt 0 ]; then
+            ok "$count Claude Code transcript(s) in $transcripts"
+            info "Score them without configuring anything: copilotscope import"
+        else
+            info "no transcripts in $transcripts yet"
+        fi
+    else
+        info "$transcripts does not exist (Claude Code has not run, or uses another location)"
+    fi
+
+    say ""
+    if [ "$problems" -eq 0 ]; then
+        ok "no problems found."
+        local sessions
+        sessions="$(printf '%s' "${doc:-}" | json_field sessions)"
+        if [ "${sessions:-0}" = "0" ]; then
+            say ""
+            info "No sessions yet. Chat with a configured assistant, or:"
+            info "  copilotscope demo     fabricated sessions, badged demo"
+            info "  copilotscope import   your real Claude Code history"
+            info "  copilotscope probe    one session over the real OTLP path"
+        fi
+        return 0
+    fi
+    bad "$problems problem(s) above."
+    info "Full troubleshooting list: docs/TUTORIAL.md section 9"
+    return 1
+}
+
+# ------------------------------------------------------------ small commands
+
+cmd_status() {
+    require_docker
+    compose ps
+    say ""
+    if health >/dev/null 2>&1; then
+        ok "collector healthy at $(endpoint)"
+        ok "dashboard at $(dashboard_url)"
+    else
+        warn "the collector is not answering — copilotscope doctor"
+    fi
+}
+
+cmd_open() {
+    local url
+    url="$(dashboard_url)"
+    if command -v xdg-open >/dev/null 2>&1; then xdg-open "$url" >/dev/null 2>&1 &
+    elif command -v open >/dev/null 2>&1; then open "$url"
+    else say "$url"; fi
+}
+
+cmd_url() { say "$(dashboard_url)"; }
+cmd_logs() { require_docker; compose logs -f --tail 100 "${@:-collector}"; }
+cmd_down() { require_docker; compose down; ok "stopped. Data stays in the copilotscope-pgdata volume."; }
+
+cmd_update() {
+    require_docker
+    say "Pulling the newest images…"
+    compose pull
+    compose up -d --remove-orphans collector dashboard postgres
+    wait_healthy 90
+    # The control script itself ships alongside them.
+    if [ -w "${BASH_SOURCE[0]}" ] && [ -n "${COPILOTSCOPE_SELF_UPDATE:-}" ]; then
+        curl -fsSL "$REPO_RAW/scripts/copilotscope" -o "${BASH_SOURCE[0]}.new" \
+            && mv "${BASH_SOURCE[0]}.new" "${BASH_SOURCE[0]}" \
+            && chmod +x "${BASH_SOURCE[0]}" \
+            && ok "control script updated"
+    fi
+    ok "up to date."
+}
+
+cmd_uninstall() {
+    require_docker
+    local purge=""
+    [ "${1:-}" = "--purge" ] && purge="true"
+    if [ -n "$purge" ]; then
+        compose down -v
+        ok "containers and the database volume removed."
+    else
+        compose down
+        ok "containers removed. The database volume is kept; add --purge to delete it."
+    fi
+    cmd_disconnect all
+    say ""
+    info "Remove the control script and its config with: rm -rf $HOME_DIR"
+}
+
+usage() {
+    cat <<USAGE
+${C_BOLD}copilotscope${C_RESET} — quality scoring for AI coding-assistant sessions, on your machine.
+
+  ${C_BOLD}up${C_RESET} [--bind ADDR] [--api-key KEY]   start the stack (nothing to declare locally)
+  ${C_BOLD}connect${C_RESET} <claude-code|vscode|copilot-cli|cowork|all>
+                                   point an assistant at it, permanently
+  ${C_BOLD}disconnect${C_RESET} <target|all>          undo that
+  ${C_BOLD}import${C_RESET} [--dry-run] […]           score the Claude Code history already on disk
+  ${C_BOLD}demo${C_RESET} [quick|demo]                load fabricated demo sessions
+  ${C_BOLD}probe${C_RESET}                            send one session over the real OTLP path
+  ${C_BOLD}doctor${C_RESET}                           diagnose "it runs but no sessions appear"
+  ${C_BOLD}status${C_RESET} | ${C_BOLD}logs${C_RESET} [service] | ${C_BOLD}open${C_RESET}     inspect the running stack
+  ${C_BOLD}update${C_RESET} | ${C_BOLD}down${C_RESET} | ${C_BOLD}uninstall${C_RESET} [--purge]
+
+  Dashboard $(dashboard_url) · OTLP ingest $(endpoint)
+  Docs https://github.com/konradcinkusz/copilot-scope
+USAGE
+}
+
+case "${1:-}" in
+    up) shift; cmd_up "$@" ;;
+    connect) shift; cmd_connect "$@" ;;
+    disconnect) shift; cmd_disconnect "$@" ;;
+    import) shift; cmd_import "$@" ;;
+    demo|seed) shift; cmd_demo "$@" ;;
+    probe) shift; cmd_probe "$@" ;;
+    doctor) shift; cmd_doctor "$@" ;;
+    status|ps) shift; cmd_status "$@" ;;
+    logs) shift; cmd_logs "$@" ;;
+    open) shift; cmd_open "$@" ;;
+    url) shift; cmd_url "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    down|stop) shift; cmd_down "$@" ;;
+    uninstall) shift; cmd_uninstall "$@" ;;
+    version|--version) say "copilotscope control script v$VERSION" ;;
+    ""|-h|--help|help) usage ;;
+    *) die "unknown command '$1' — try: copilotscope --help" ;;
+esac
