@@ -85,10 +85,11 @@ The full matrix, and how to run a fair bake-off:
 metrics and log events rather than `gen_ai.*` spans.
 
 Claude Code needs `CLAUDE_CODE_ENABLE_TELEMETRY=1` before anything at all is
-exported — `scripts/Enable-ClaudeCodeOtel.ps1` / `.sh` set it and the rest.
-Cowork is configured in the desktop app's own settings UI and wants the full
-`/v1/logs` path. Both are walked through in
-[docs/TUTORIAL.md](docs/TUTORIAL.md) §4.
+exported, plus the logs exporter that actually carries the session.
+`copilotscope connect claude-code` writes all of it into `~/.claude/settings.json`,
+so it applies to every terminal and every project. Cowork is configured in the
+desktop app's own settings UI and wants the full `/v1/logs` path, which no script
+can write for you. Both are walked through in [docs/TUTORIAL.md](docs/TUTORIAL.md) §4.
 
 ## How *not* to use CopilotScope
 
@@ -123,13 +124,18 @@ is the best developer". Goodhart's law applies to this repo too.
 ### No-config path: import the history you already have
 
 Claude Code writes every session to `~/.claude/projects/**/*.jsonl` whether or not OTel is
-configured — and most developers never configure it. `tools/CopilotScope.LogImporter` reads
-those files and posts them as first-class scored sessions:
+configured — and most developers never configure it. The importer reads those files and posts
+them as first-class scored sessions:
 
 ```bash
-dotnet run --project tools/CopilotScope.LogImporter -- --dry-run
-dotnet run --project tools/CopilotScope.LogImporter
+copilotscope import --dry-run     # see what it found
+copilotscope import
 ```
+
+It runs in the `copilotscope-tools` container, so this path needs no .NET SDK and no clone.
+From a clone, `dotnet run --project tools/CopilotScope.LogImporter` is the same tool — and the
+one to prefer when repository labels matter, because it can read your git remotes and the
+container cannot.
 
 Re-running replaces rather than duplicates (sessions keep Claude Code's own id), prompt text
 is **not** imported unless you pass `--include-content`, and the collector refuses to overwrite
@@ -334,6 +340,10 @@ dotnet run --project tools/CopilotScope.Seeder -- quick
 # demo: a big multi-day dataset for presentations (default profile)
 dotnet run --project tools/CopilotScope.Seeder -- demo http://localhost:4318 --days 14
 ```
+
+Both this and the generator above are the from-source forms, for when you already have the
+SDK and a clone. Everyone else gets the same two tools out of the `copilotscope-tools`
+container as `copilotscope demo` and `copilotscope probe`.
 
 Tests:
 
@@ -602,7 +612,7 @@ Plenty of exporters will tell you how many tokens you burned;
 `copilotscope_quality_*` is the part nothing else exports.
 
 ```bash
-docker compose -f docker-compose.grafana.yml up
+docker compose -f docker-compose.grafana.yml up -d
 # Grafana http://localhost:3000 — datasource and dashboard already provisioned
 ```
 
@@ -671,20 +681,20 @@ relays raw OTLP to an upstream backend. Forwarding ships the telemetry;
 
 ## Copilot CLI in one command
 
-```powershell
-.\scripts\Enable-CopilotOtel.ps1                  # metadata only
-.\scripts\Enable-CopilotOtel.ps1 -CaptureContent  # + prompt/response content
-copilot                                           # run from the SAME terminal
+```bash
+copilotscope connect copilot-cli               # add --capture for prompt/response content
+copilot                                        # from a NEW terminal
 ```
 
-```bash
-source ./scripts/setup.sh --copilot-cli           # macOS / Linux: starts the stack too
-copilot                                           # run from the SAME terminal
-```
+Copilot CLI reads environment variables and nothing else, so this is the one
+assistant with no settings file to write: the command puts a marked block in your
+shell rc (or the Windows User environment), which is why it needs a new terminal
+rather than the same one. From a clone, `scripts/Enable-CopilotOtel.ps1` and
+`source ./scripts/setup.sh --copilot-cli` remain as the direct forms.
 
 Heads-up: `COPILOT_OTEL_CAPTURE_CONTENT` is **not a real variable** — the CLI
 follows the OTel GenAI standard `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`,
-which is what the script sets.
+which is what `--capture` sets.
 
 ## Architecture
 

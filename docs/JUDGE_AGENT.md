@@ -126,17 +126,21 @@ fixed in this mode — open the Aspire dashboard (URL printed in the console) an
 **Docker Compose** (closest to how the GHCR images run in production):
 
 ```bash
-docker compose up --build          # builds Dockerfile.judgeagent locally, or:
-docker compose -f docker-compose.ghcr.yml up   # pulls the published image
+docker compose --profile agents up -d --build          # builds Dockerfile.judgeagent locally, or:
+docker compose -f docker-compose.ghcr.yml --profile agents up -d   # pulls the published image
 ```
 
-Both compose files start `judgeagent` on `http://localhost:5400` alongside `postgres`,
-`collector`, `dashboard` and `agentforge` — it isn't gated behind a Compose profile, so it
-starts by default like AgentForge does. "Opt-in" here means *configuration*, not *whether the
-container runs*: without `CopilotScope__JudgeAgent__AzureAI__Endpoint` /
-`__DeploymentName` set (commented out by default in both compose files), the container is up and
-`/api/health` responds, but every `/judge` call fails with the "not configured" error below until
-you supply real Azure AI Foundry credentials.
+**The `agents` profile is required.** `judgeagent` and `agentforge` sit behind it, so a plain
+`docker compose up` starts `postgres`, `collector` and `dashboard` and nothing else — reaching
+`http://localhost:5400` without the profile gets you a refused connection, not a "not
+configured" error. Neither service does anything until you supply model configuration, and two
+idle containers are not something a first run should pay for.
+
+With the profile on, `judgeagent` listens on `http://localhost:5400`. "Opt-in" then means
+*configuration*, not *whether the container runs*: without
+`CopilotScope__JudgeAgent__AzureAI__Endpoint` / `__DeploymentName` set (commented out by default
+in both compose files), the container is up and `/api/health` responds, but every `/judge` call
+fails with the "not configured" error below until you supply real credentials.
 
 ## What it doesn't do
 

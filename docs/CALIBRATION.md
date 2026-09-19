@@ -126,6 +126,10 @@ target — the research plan asks for 50–100 labelled sessions.
 
 ## 5. Running it
 
+Both endpoints belong to JudgeAgent, which sits behind the `agents` Compose profile — start it
+with `docker compose --profile agents up -d` (see [JUDGE_AGENT.md](JUDGE_AGENT.md)), or a call to
+`:5400` is simply refused.
+
 ### Offline — free, deterministic, the one CI can run
 
 `POST /api/calibration/report` takes labels *and* judge scores and returns the report. No model
