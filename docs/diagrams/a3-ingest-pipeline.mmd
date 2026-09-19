@@ -1,0 +1,23 @@
+flowchart TD
+    post["POST /v1/traces | /v1/metrics | /v1/logs"]
+    auth{"key configured<br/>and presented?"}
+    ctype{"protobuf<br/>or JSON?"}
+    decomp["Decompress<br/><i>gzip / deflate</i>"]
+    bound["Bound the decoded payload<br/><i>64 MB ceiling</i>"]
+    decode["Decode OTLP<br/><i>in-repo decoder, no OTel SDK</i>"]
+    redact["Redact<br/><i>privacy mode, before anything aggregates</i>"]
+    norm["Normalize dialects<br/><i>gen_ai.* · github.copilot.* · claude_code.* · cursor.*</i>"]
+    agg["Aggregate into sessions<br/><i>keyed by conversation id</i>"]
+    score["Score<br/><i>quality engine + insight analyzers</i>"]
+    dirty["Mark dirty"]
+    fwd["Forward raw OTLP<br/><i>optional upstream</i>"]
+
+    post --> auth
+    auth -- no --> r401["401, logged with the client hint"]
+    auth -- yes --> ctype
+    ctype -- neither --> r415["415, with a configuration hint"]
+    ctype -- yes --> decomp --> bound --> decode --> redact --> norm --> agg --> score --> dirty
+    norm -.-> fwd
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class score star

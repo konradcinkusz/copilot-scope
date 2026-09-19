@@ -1,0 +1,27 @@
+flowchart TD
+    subgraph local["One machine — the default"]
+        l1["Ports bound to 127.0.0.1"]
+        l2["Postgres publishes no port,<br/>trusts its unpublished socket"]
+        l3["Ingest key empty = open mode"]
+        l4["Nothing to declare"]
+    end
+
+    subgraph team["Shared host — all four together"]
+        t1["COPILOTSCOPE_BIND=0.0.0.0"]
+        t2["COPILOTSCOPE_API_KEY, split into<br/>ingest / read / admin scopes"]
+        t3["POSTGRES_PASSWORD +<br/>scram-sha-256"]
+        t4["Dashboard sign-in:<br/>viewer and admin"]
+        t5["Privacy mode:<br/>pseudonyms, k-anonymity, audit log"]
+    end
+
+    guard{"bind beyond loopback<br/>without a key?"}
+    refuse["Refused by install.sh --bind<br/>and copilotscope up --bind"]
+    warn["Collector logs a startup warning<br/>if it sees one anyway"]
+
+    local --> guard
+    guard -- yes --> refuse
+    guard -- yes --> warn
+    guard -- no --> team
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class refuse star

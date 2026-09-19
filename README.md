@@ -55,8 +55,10 @@ telemetry setup at all:
 copilotscope import
 ```
 
-No clone, no .NET, no login — the images are public on GHCR. Full walkthrough for
-every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**.
+No clone, no .NET, no login — the images are public on GHCR. Step-by-step from
+here: **[docs/tutorials/](docs/tutorials/)** (English and Polish). Reference for
+every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**. The whole system in
+one document: **[the manual](docs/papers/)**, built to PDF in both languages.
 
 ## What it measures that a usage dashboard doesn't
 
@@ -198,6 +200,36 @@ stopped reporting a signal is measured differently, not worse.
 biggest regressions — as the artefact a lead forwards instead of a dashboard link.
 `grafana/provisioning/alerting/` provisions equivalent Grafana rules. See
 [docs/TUTORIAL.md §11](docs/TUTORIAL.md).
+
+## Documentation
+
+Three shapes, for three different moments. They do not repeat each other.
+
+| | What it is for | Language |
+|---|---|---|
+| **[docs/tutorials/](docs/tutorials/)** | Doing it, in order, the first time: first run, connecting an assistant, reading a session, a team deployment | EN + PL |
+| **[The manual](docs/papers/)** (LaTeX → PDF) | Understanding the whole system in one sitting: architecture, the ingest pipeline, every signal, the scoring arithmetic, the honest limits, and the tutorial again in reference form | EN + PL |
+| **[docs/TUTORIAL.md](docs/TUTORIAL.md)** | Reference: every assistant's configuration in full, enterprise managed settings, and the thirteen-point troubleshooting list | EN |
+
+Plus **[docs/DIAGRAMS.md](docs/DIAGRAMS.md)** — every structural claim in this
+repository as a picture, rendered by GitHub, and the same sources the manual
+includes as vector PDFs.
+
+The manual is not committed as a PDF, because a PDF is build output. Build both
+editions from the Actions tab (*Build documentation PDF*), or locally:
+
+```bash
+npm ci                                              # the pinned Mermaid CLI
+npm run render:diagrams                             # .mmd → vector PDF
+pdflatex docs/papers/copilotscope-manual.tex        # twice, for the contents
+pdflatex docs/papers/copilotscope-manual.pl.tex
+```
+
+Two CI checks keep the documentation honest rather than trusting a convention:
+`check:diagrams` fails if a diagram disagrees with its embedded copy, and
+`check:parity` fails if one language edition is edited without the other. A
+translation that drifts is worse than no translation, because the reader trusts
+it.
 
 ## Projects
 

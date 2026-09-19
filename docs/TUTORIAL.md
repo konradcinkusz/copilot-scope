@@ -4,6 +4,14 @@ Step-by-step configuration for every Copilot surface that can emit OpenTelemetry
 plus troubleshooting for the most common "everything starts but no sessions appear"
 situations.
 
+> **This is the reference.** If you are doing this for the first time, the
+> guided path is [`docs/tutorials/`](tutorials/) — four short tutorials, in
+> English and Polish, from an empty machine to a team deployment. If you want
+> the whole system explained rather than configured, that is
+> [the manual](papers/), built to PDF in both languages. This document is the
+> one to come back to for a specific assistant's full configuration, for
+> enterprise managed settings, and for §9's troubleshooting list.
+
 ## 0. Fastest path: two commands
 
 ```bash

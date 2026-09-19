@@ -176,6 +176,47 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+  # The documentation has two mechanical invariants that nothing else checks.
+  # Both are drift surfaces created on purpose, and the answer to a drift
+  # surface here is a check that fails rather than a convention about
+  # remembering: every diagram exists inline in docs/DIAGRAMS.md (the only form
+  # GitHub renders) and as a .mmd file (what the LaTeX editions include), and
+  # every bilingual document has both halves. The diagrams are also rendered
+  # for real, because a Mermaid syntax error is invisible until something tries
+  # to draw it — and the thing that tries is a manual build somebody runs once
+  # a quarter.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # check-doc-parity needs a merge base to tell whether one half of a
+          # bilingual pair moved alone.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install the documentation toolchain
+        run: npm ci
+
+      - name: Diagrams agree with their standalone sources
+        run: npm run check:diagrams
+
+      - name: Bilingual documents are paired, and neither moved alone
+        run: node scripts/check-doc-parity.mjs origin/${{ github.base_ref || 'master' }}
+
+      - name: Diagrams actually render
+        run: |
+          set -euo pipefail
+          # The runner image ships Chromium; point mermaid-cli at it rather than
+          # letting puppeteer download its own copy on every run.
+          export PUPPETEER_EXECUTABLE_PATH="$(command -v chromium || command -v chromium-browser || true)"
+          npm run render:diagrams
+
   # The published compose files must stay parseable and must not silently require a
   # variable a first run has no way to know about: `config` fails on a bad file, and
   # the grep asserts the zero-declaration posture the README promises.

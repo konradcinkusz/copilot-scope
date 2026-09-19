@@ -1,0 +1,1122 @@
+% ============================================================================
+% CopilotScope -- the manual: what it is, how it measures, and how to use it.
+%
+% This is NOT a research paper. research/articles/quality_measurement_framework.tex
+% is the formal treatment of the scoring model; this document is the manual a
+% person reads to understand the system and then operate it, and it carries a
+% tutorial for exactly that reason.
+%
+% Sources of truth, which this file presents rather than extends: README.md,
+% docs/TUTORIAL.md, docs/SIGNAL_COVERAGE.md, docs/PRIVACY.md,
+% docs/CALIBRATION.md, SECURITY.md and GOVERNANCE.md. It introduces no fact
+% those documents do not already contain; where it disagrees with them, they
+% are right and this is stale.
+%
+% The diagrams are not redrawn here. They are rendered from docs/diagrams/*.mmd
+% -- the same files docs/DIAGRAMS.md embeds, kept identical by
+% scripts/check-diagrams.mjs -- into vector PDFs by scripts/render-diagrams.mjs.
+% One source, two output formats, and both language editions share the result.
+%
+% A Polish edition lives alongside this file:
+%   copilotscope-manual.pl.tex
+% scripts/check-doc-parity.mjs fails the build if one is edited without the
+% other.
+%
+% Build (PDFs are build output -- never committed):
+%   npm ci && npm run render:diagrams
+%   pdflatex copilotscope-manual.tex && pdflatex copilotscope-manual.tex
+% Also built by .github/workflows/build-docs-pdf.yml, which builds both editions.
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{fancyvrb}
+\usepackage{microtype}
+\usepackage{amssymb}
+\usepackage{url}
+\urlstyle{tt}
+
+\geometry{a4paper, left=2.2cm, right=2.2cm, top=2.5cm, bottom=2.5cm}
+
+% House colors
+\definecolor{primaryblue}{RGB}{41,128,185}
+\definecolor{darkblue}{RGB}{31,78,121}
+\definecolor{lightgray}{RGB}{236,240,241}
+\definecolor{darkgray}{RGB}{52,73,94}
+\definecolor{accentgreen}{RGB}{39,174,96}
+\definecolor{accentorange}{RGB}{230,126,34}
+\definecolor{accentred}{RGB}{231,76,60}
+
+\titleformat{\section}
+    {\color{primaryblue}\Large\bfseries\sffamily}
+    {\thesection.}{0.5em}{}[\titlerule]
+\titleformat{\subsection}
+    {\color{darkblue}\large\bfseries\sffamily}
+    {\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}
+    {\color{darkgray}\normalsize\bfseries\sffamily}
+    {\thesubsubsection}{0.5em}{}
+
+\newcommand{\docstatus}{NOT CALIBRATED --- READ SECTION 7}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\sffamily\color{darkgray} CopilotScope --- the manual}
+\fancyhead[R]{\small\sffamily\color{accentred} \docstatus}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryblue,
+    urlcolor=primaryblue,
+    pdfauthor={Konrad Cinkusz},
+    pdftitle={CopilotScope: quality scoring for AI coding-assistant sessions}
+}
+
+% Inline code. \detokenize makes every character literal, so an underscore in a
+% configuration key or a backslash in a Windows path needs no escaping at the
+% call site -- which is the single most common way a document like this fails
+% to build.
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+% A path or a long identifier inside a narrow table column. \path breaks after
+% / . _ and - , which \texttt does not -- long project paths otherwise run past
+% the column and produce an overfull box per row.
+\newcommand{\codepath}[1]{{\small\path{#1}}}
+% Same breaking behaviour at body size, for a long identifier sitting in prose
+% where \code would push the line past the margin.
+\newcommand{\codewrap}[1]{\path{#1}}
+\newcommand{\finding}[1]{{\color{primaryblue}\textbf{#1}}}
+
+\DefineVerbatimEnvironment{shell}{Verbatim}
+    {frame=single, rulecolor=\color{darkgray}, framesep=5pt,
+     fontsize=\small, xleftmargin=2pt, xrightmargin=2pt}
+
+\begin{document}
+
+\thispagestyle{plain}
+\begin{center}
+    {\LARGE\bfseries\sffamily\color{darkblue} CopilotScope}
+
+    \vspace{0.3cm}
+
+    {\Large\sffamily\color{darkgray} Quality scoring for AI coding-assistant
+    sessions --- what it measures, how it works, and how to run it}
+
+    \vspace{0.6cm}
+
+    {\large Konrad Cinkusz}
+
+    \vspace{0.2cm}
+
+    {\normalsize\color{darkgray} \url{https://github.com/konradcinkusz/copilot-scope}}
+
+    \vspace{0.2cm}
+
+    {\normalsize\color{accentred}\sffamily \docstatus\ --- \today\ ---
+     \textit{Polska wersja: } \texttt{copilotscope-manual.pl.tex}}
+\end{center}
+
+\vspace{0.4cm}
+
+\begin{center}
+\begin{minipage}{0.92\linewidth}
+\small
+\textbf{What this document is.} Everything needed to understand CopilotScope and
+then operate it: the problem it addresses, how it is built, exactly what it
+measures and what it refuses to measure, and a tutorial that takes a reader from
+an empty machine to a scored session, a team deployment and a Grafana panel.
+
+\textbf{What it is not.} It is not a research paper --- that is
+\texttt{research/articles/quality\_measurement\_framework.tex} --- and it is not
+a validation of the score. The composite has not been calibrated against human
+labels. Section~7 says so in full, because a number presented without its
+limits is worse than no number.
+\end{minipage}
+\end{center}
+
+\vspace{0.5cm}
+
+{\small\tableofcontents}
+
+\newpage
+
+% ============================================================================
+\section{The problem, and what this measures instead}
+% ============================================================================
+
+Every vendor of an AI coding assistant will tell you how much of it your team
+used. Seats, suggestions shown, suggestions accepted, tokens burned. Those
+numbers are real, easy to collect, and answer a question nobody actually has.
+The question a team has is whether the tooling is helping --- and usage cannot
+answer it, because usage goes up in exactly the same way when the assistant is
+working well and when a developer is stuck in a loop asking the same thing four
+different ways.
+
+\finding{CopilotScope scores sessions, not usage.} A session is one conversation
+with an assistant. For each one it produces a composite quality score with a
+confidence figure beside it, the specific turn where the conversation stalled
+and why, whether the edits the developer accepted actually survived in the file,
+and what the repair loop cost in tokens and wall-clock time.
+
+Three properties shape everything that follows:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Nothing leaves the machine.} The collector runs on your
+    infrastructure and has no callback of any kind. This is not a policy
+    statement; there is no code path that phones anywhere.
+    \item \textbf{The formula is published and deterministic.} Six weighted
+    components, renormalized over the ones that reported data, with confidence
+    exported next to every score. You can re-derive any number by hand.
+    \item \textbf{It cannot rank developers.} There is no per-developer
+    dimension in any view or export, and tests assert that there is not. This is
+    enforced rather than promised, and Section~7.3 explains why that
+    constraint is load-bearing rather than decorative.
+\end{enumerate}
+
+\subsection{Who this is for}
+
+A team lead asking whether last month's model upgrade helped or hurt. A platform
+engineer who already runs Prometheus and wants quality signals in it. A
+developer who wants to know which of their sessions went badly and at which
+turn. An organisation that needs the measurement to be defensible to a works
+council before it is allowed to exist at all.
+
+It is not for someone who wants a leaderboard. That is not a limitation to be
+worked around; see Section~7.3.
+
+\subsection{What a session looks like once it has been measured}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.62\linewidth]{../diagrams/rendered/a1-system-context.pdf}
+\caption{The system boundary. Four assistants emit OpenTelemetry to one endpoint;
+the collector tells them apart from the payload rather than from configuration.
+The GitHub Metrics API is the exception --- it is polled, and what it returns is
+org-level usage, context beside the score rather than the score itself.}
+\label{fig:context}
+\end{figure}
+
+% ============================================================================
+\section{Architecture}
+% ============================================================================
+
+\subsection{What each project is}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/a2-solution-layout.pdf}
+\caption{The collector is the product. Everything else is a view onto it, a
+development convenience, or opt-in.}
+\label{fig:layout}
+\end{figure}
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.44\linewidth}p{0.18\linewidth}@{}}
+\toprule
+\textbf{Project} & \textbf{Role} & \textbf{Dependencies} \\
+\midrule
+\endhead
+\codepath{src/CopilotScope.Collector} & OTLP/HTTP ingest with an in-repo protobuf
+decoder, session aggregation, the quality engine, turn analysis, the insight
+pipeline, the REST API, the Prometheus exporter, persistence & Npgsql only \\
+\codepath{src/CopilotScope.Dashboard} & Blazor Server UI: sessions, quality meter,
+turn analysis, transcript, team views & none \\
+\codepath{src/CopilotScope.ServiceDefaults} & Shared kernel: self-instrumentation,
+health, service discovery, HTTP resilience. No domain logic & OpenTelemetry,
+Microsoft.Extensions \\
+\codepath{src/CopilotScope.AppHost} & Aspire orchestration for development:
+Postgres, pgAdmin, both services & Aspire.Hosting \\
+\codepath{src/CopilotScope.JudgeAgent} & Opt-in LLM judge: G-Eval, SPUR, RAGAS,
+deep friction, task completion. Azure AI Foundry or any OpenAI-compatible
+endpoint & Azure.AI, Microsoft.Agents.AI \\
+\codepath{src/CopilotScope.AgentForge} & Opt-in persona agents grounded on consented
+transcripts & Azure.AI, Microsoft.Agents.AI \\
+\codepath{tools/CopilotScope.Seeder} & Fabricated demo sessions pushed into a
+running collector & none \\
+\codepath{tools/CopilotScope.LogImporter} & Claude Code transcripts parsed into
+scored sessions & none \\
+\codepath{tools/CopilotScope.TelemetryGen} & One realistic session over real
+OTLP/HTTP, used as a probe & none \\
+\bottomrule
+\caption{The solution, project by project. The three tools ship together in one
+\code{copilotscope-tools} container image, so none of them requires a .NET SDK
+to run.}
+\end{longtable}
+
+The collector pulls in \emph{one} NuGet dependency at runtime, and the dashboard
+none at all. That is deliberate: the OTLP protobuf decoder is written in-repo
+against the official \code{.proto} field numbers rather than taking the
+OpenTelemetry SDK, and the dashboard polls the collector's REST API every two
+seconds rather than carrying a JavaScript framework.
+
+\subsection{What happens to one batch of telemetry}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{../diagrams/rendered/a3-ingest-pipeline.pdf}
+\caption{Every arrow that leaves the happy path logs why it left. This diagram is
+the answer to ``the stack is running and the dashboard is empty''.}
+\label{fig:ingest}
+\end{figure}
+
+Two decisions in that pipeline are worth stating explicitly, because both are
+the kind that only look important after they have gone wrong somewhere.
+
+\textbf{Redaction happens before aggregation.} Under privacy mode, identifying
+values are removed from the batch before anything downstream --- the store, the
+write-behind snapshot, the Prometheus exporter --- has seen them. The guarantee
+therefore survives a database dump, rather than depending on every read path
+remembering to apply it.
+
+\textbf{The decoded payload is bounded.} Kestrel limits the compressed request
+size; gzip reaches roughly 1000:1. An unbounded copy of a compressed body is a
+memory-exhaustion vector, and on a collector with no key configured it is
+reachable before authentication. The ceiling is 64~MB per batch.
+
+\subsection{Where the data lives, and what eviction does not mean}
+
+Sessions live in two places at once. Ingest marks a session dirty; a background
+writer upserts the dirty set once per second, so a burst of telemetry does not
+become a burst of writes. The full session state goes to Postgres as a
+\code{jsonb} snapshot --- counters, time-to-first-token samples, tool statistics,
+per-turn aggregates, edits, feedback, the event tail and the captured transcript
+--- with a few columns pulled out for querying.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.78\linewidth]{../diagrams/rendered/a4-session-lifecycle.pdf}
+\caption{The in-memory store is a bounded working set, not the extent of your
+history. Eviction is not deletion.}
+\label{fig:lifecycle}
+\end{figure}
+
+Reads are served from Postgres with the live in-memory aggregates layered on
+top, so the API answers over the whole archive while a session being typed into
+right now is still current. Without a connection string the collector degrades
+to memory alone and reports \code{durable: false} rather than pretending
+otherwise --- which is also why \code{dotnet run} on a bare machine works with
+no database at all.
+
+% ============================================================================
+\section{Getting data in}
+% ============================================================================
+
+\subsection{The install, end to end}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.70\linewidth]{../diagrams/rendered/b1-install-and-connect.pdf}
+\caption{Two commands, plus one manual step per assistant that no script can
+take for you.}
+\label{fig:install}
+\end{figure}
+
+On one machine there is nothing to declare: no key to generate, no environment
+variable to export, no JSON to hand-edit. Every published port binds to
+\code{127.0.0.1}, Postgres publishes no port at all and trusts its unpublished
+socket, and the ingest key is empty, which is the collector's open mode. A
+credential on loopback protects nothing and costs a configuration step in every
+client --- and that step is the one people get wrong.
+
+\subsection{Why configuration used to be the hard part}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/b2-where-each-switch-lives.pdf}
+\caption{Four surfaces, three kinds of place to configure them, and only one of
+those places survives opening a new terminal.}
+\label{fig:switches}
+\end{figure}
+
+Claude Code is the best case. An \code{env} block in \code{~/.claude/settings.json}
+applies to every terminal, every project, and to Claude Code running inside VS
+Code. Four values matter, and the first two are the ones people omit:
+
+\begin{itemize}[leftmargin=*]
+    \item \code{CLAUDE_CODE_ENABLE_TELEMETRY=1} --- the master switch. Without
+    it nothing at all is exported, whatever else is set.
+    \item \code{OTEL_LOGS_EXPORTER=otlp} --- the log events are what carry the
+    session. A default install emits metrics and events and no spans, so a
+    configuration that sets only the metrics exporter produces an almost empty
+    session.
+    \item \code{OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf} and the endpoint.
+\end{itemize}
+
+Content capture here is three separate opt-ins
+(\codewrap{OTEL_LOG_USER_PROMPTS}, \codewrap{OTEL_LOG_ASSISTANT_RESPONSES},
+\codewrap{OTEL_LOG_TOOL_DETAILS}), and the OpenTelemetry GenAI standard variable
+that works for Copilot CLI is \emph{not} read by Claude Code. Time to first
+token needs the tracing beta, which is the only source of that signal for this
+assistant.
+
+VS Code is configured through its user settings and needs a window reload,
+because the extension reads its configuration at startup. Copilot CLI reads
+environment variables and nothing else. Cowork is configured in the desktop
+app's own settings UI, wants the full \code{/v1/logs} path rather than the base
+endpoint, requires a Team or Enterprise plan and org admin access, and exports
+log events only.
+
+\subsection{The path that needs no configuration at all}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{../diagrams/rendered/b3-transcript-import.pdf}
+\caption{Claude Code writes every session to disk whether or not telemetry is
+configured --- and most developers never configure it.}
+\label{fig:import}
+\end{figure}
+
+Two refusals in that path are deliberate and worth defending. A repository label
+is left \emph{absent} rather than guessed from a directory name, because a guess
+would invent a second cohort for a project the collector already knows by its
+git remote --- two rows for one repository, which is worse than no label. And a
+session already held from live telemetry is not overwritten by an import,
+because the transcript carries less signal and would quietly lower a score that
+was measured on more evidence.
+
+Imported sessions are badged and carry genuinely lower confidence. The
+transcript records tokens, models, tool calls and outcomes, turn boundaries and
+real wall-clock timings. It does not record time to first token, edit
+accept/reject decisions or thumbs feedback, because those are OpenTelemetry
+events. Rather than defaulting them to zero --- which would read as ``every edit
+was rejected'' --- they are left absent, and the composite renormalizes.
+
+% ============================================================================
+\section{The measurement}
+% ============================================================================
+
+\subsection{The composite score}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth]{../diagrams/rendered/c1-composite-score.pdf}
+\caption{Six components. Only the ones that reported data enter the composite,
+and the weights are renormalized across them.}
+\label{fig:composite}
+\end{figure}
+
+\begin{center}
+\begin{tabular}{@{}llp{0.52\linewidth}@{}}
+\toprule
+\textbf{Component} & \textbf{Weight} & \textbf{What it is} \\
+\midrule
+Reliability & 0.25 & Squared error-free rate across LLM and tool calls. Squared,
+so a session with a few errors is penalised more than linearly \\
+Acceptance  & 0.20 & Accepted edits, paired with edit survival so that accepting
+bad suggestions does not read as success \\
+Friction    & 0.20 & Mean turn score from the turn analyser \\
+Latency     & 0.15 & How much of the session sat past the 2~s attention and
+8~s abandonment thresholds \\
+Feedback    & 0.10 & Thumbs, where the assistant reports them \\
+Efficiency  & 0.10 & Token economics: cost per turn and per accepted edit \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+
+\finding{Renormalization is the part to understand.} Only components with actual
+data enter the composite, and the weights are rescaled across them. An earlier
+version let empty components contribute a neutral prior, with the result that
+almost every session scored near 80 --- the measurement was reporting the prior,
+not the session. Confidence, exported next to every score, is data coverage
+multiplied by a sample ramp: a 90 built on four samples means less than a 70
+built on forty.
+
+Grades are thresholds on the composite: 85 and above excellent, 70 good, 55
+fair, 40 poor, below that critical. A percentile rank is computed against a
+fixed trailing window of user sessions rather than against whatever happened to
+be in memory, which is what makes it comparable over time.
+
+\subsection{Turn analysis, or: which turn went wrong}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{../diagrams/rendered/c2-turn-analysis.pdf}
+\caption{A composite score says a session was poor. This says which turn, and
+why.}
+\label{fig:turns}
+\end{figure}
+
+Every \code{invoke_agent} trace is one turn. Each turn is scored for LLM and
+tool errors, for latency against \emph{this session's own} median time to first
+token, and for repair loops --- bursts of tool calls containing failures. The
+dashboard surfaces the best and worst turn with the reasons attached.
+
+The per-session median is the load-bearing choice. A global latency threshold
+cannot tell a slow turn from a slow model, or a slow model from a slow morning;
+a session compared against itself can.
+
+Note the consequence for assistants that do not emit a turn boundary: Cursor's
+export sends metrics and logs but no traces, and a turn here \emph{is} a trace,
+so turn-level friction analysis cannot run for it at all even if the export
+works.
+
+\subsection{The insight pipeline}
+
+Analyzers are pluggable: one \code{IInsightAnalyzer} class plus one dependency
+injection registration adds an algorithm with no UI work. The in-process ones
+are edit survival, throughput, latency utility, token economics and workflow
+friction.
+
+The LLM-graded algorithms are deliberately \emph{not} in that pipeline. The
+interface is synchronous and in-process; a judge call is an asynchronous network
+call to a model server, with a cost and a rate limit. They live in the separate,
+opt-in judge service instead, reachable at
+\code{POST /api/sessions/{id}/judge}, and that service can be pointed at Azure
+AI Foundry or at an OpenAI-compatible endpoint on your own hardware --- so a
+self-hosted deployment can run them without transcripts leaving the building.
+
+% ============================================================================
+\section{The ten algorithms, and what each one is worth today}
+% ============================================================================
+
+The project tracks ten evaluation algorithms on two axes: whether the
+implementation exists, and whether it runs locally or needs model access.
+
+\begin{longtable}{@{}p{0.03\linewidth}p{0.26\linewidth}p{0.20\linewidth}p{0.42\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Algorithm} & \textbf{Status} & \textbf{Notes} \\
+\midrule
+\endhead
+1 & LLM-as-a-Judge (G-Eval) & implemented, opt-in & Needs an LLM endpoint; local
+model works \\
+2 & SPUR satisfaction rubrics & implemented, zero-shot & Directional until
+labelled sessions exist to calibrate against \\
+3 & RAG component metrics (RAGAS) & implemented, opt-in & Only meaningful for
+retrieval flows; reports no-data until retrieval context is captured \\
+4 & Edit survival & full, local & Four-gram and no-revert split, 0.4/0.6; also
+feeds the acceptance component \\
+5 & Acceptance-weighted throughput & full, local & Accepted lines per turn and
+per 1k output tokens, rejection-discounted \\
+6 & Turn-level friction and repair & full, local & The turn analyser; also the
+friction component \\
+7 & Latency-utility model & full, local & Per-sample utility curve with the 2~s
+and 8~s risk buckets \\
+8 & Token and cache economics & full, local & Per-model cost, cache savings,
+cost per turn and per accepted edit \\
+9 & Workflow-friction signals & simplified local, deep in the judge & Counts
+observed repair events, not inferred emotion. Off by default, report-only,
+never scored \\
+10 & Task-completion detection & partial local, implemented in the judge & No
+local ingest path for build and test exit codes yet \\
+\bottomrule
+\caption{Implementation status. ``Opt-in'' means configuration, not whether the
+container runs.}
+\end{longtable}
+
+Algorithm 9 deserves its own sentence, because it is the one most likely to be
+misread. It counts \emph{observed repair events} --- rephrasing measured by
+Jaccard similarity between consecutive prompts, corrective replies, negative
+feedback markers --- and not emotion. It is excluded from the composite on
+purpose: a lexical heuristic does not belong in a number somebody might act on.
+It is also the only analyzer that reads the developer's own prompt text, which
+is why it stays switched off until an operator turns it on, and why quoting
+messages needs a second, separate opt-in.
+
+% ============================================================================
+\section{Signal coverage: why an 80 here is not an 80 there}
+% ============================================================================
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{../diagrams/rendered/c3-signal-coverage.pdf}
+\caption{Every assistant lands in the same schema. They do not report the same
+signals.}
+\label{fig:coverage}
+\end{figure}
+
+All four supported surfaces normalize onto one internal vocabulary, so
+aggregation, scoring and the dashboard treat them identically. What differs is
+what each one actually sends.
+
+\begin{center}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Signal} & \textbf{VS Code} & \textbf{Copilot CLI} & \textbf{Claude Code}
+& \textbf{Cowork} \\
+\midrule
+Tokens, calls, errors      & yes & yes & yes & yes \\
+Time to first token        & yes & yes & beta flag only & no \\
+Edit accept / reject       & yes & no  & yes & yes \\
+Thumbs feedback            & yes & no  & no  & no \\
+Lines of code              & yes & no  & yes & no \\
+Turn boundary (a trace)    & yes & yes & beta flag only & no \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+
+\finding{Scores are comparable within an assistant and directional across them.}
+A Claude Code session has no thumbs and, without the tracing beta, no
+time-to-first-token, so its 80 rests on less evidence than a VS Code session's
+80. The composite handles this honestly by renormalizing, and confidence reports
+what it had to work with. What it cannot do is make the two numbers mean the
+same thing --- so a bake-off between assistants has to hold the signal set
+constant, not just the score.
+
+Cursor is a special case and is documented as one. Its OpenTelemetry export is
+Enterprise-plan only and sends metrics and logs but no traces. The collector
+detects and normalizes \code{cursor.*} attributes, but no payload from a real
+Cursor session has ever been tested against it, so it is listed as detected and
+unverified rather than supported. That distinction exists because this project
+previously claimed support for an assistant it had no captured payloads for.
+
+% ============================================================================
+\section{Honest limits}
+% ============================================================================
+
+This section exists because a measurement presented without its limits is worse
+than no measurement: the reader trusts it.
+
+\subsection{The composite is not calibrated}
+
+There are no human labels in this repository and no calibration run has been
+performed. The weights are a considered judgement, not a fitted model. Every
+judge score is therefore directional and gates nothing.
+
+The machinery to fix this exists and is waiting for input. The judge service
+carries a calibration module that computes Cohen's $\kappa$ --- unweighted,
+linear- and quadratic-weighted, each with a seeded bootstrap confidence interval
+--- between the judge and a human panel, plus the panel's agreement with itself
+as the ceiling no algorithm can climb past. Verdicts are \emph{calibrated},
+\emph{not-calibrated}, \emph{ceiling-too-low} or \emph{insufficient-data}
+against a configurable threshold, default $\kappa \geq 0.70$.
+
+What was missing until recently was anything to consume. A labelling flow now
+exists behind \codewrap{CopilotScope:Labelling:Enabled}: a rater panel on the
+session view with a handle, a band from 0 to 3 per rubric with anchor text, and
+a skip option that is stored as a real answer but not exported as a label.
+\code{GET /api/labels/export} produces exactly the JSON the calibration engine
+reads, pinned by a round-trip test.
+
+Seeded sessions are excluded from export by default, and that exclusion is the
+point: validating the scoring model against the synthetic personas this
+repository wrote would be a circle, and a $\kappa$ built on one is worse than no
+$\kappa$ at all.
+
+\subsection{A single number is not a verdict}
+
+Confidence is exported beside every score for a reason. Read the components, not
+the headline. A session scoring 62 with high confidence and a clear worst turn
+is more actionable than one scoring 88 on two samples.
+
+\subsection{Not a developer scoreboard --- and this is enforced}
+
+The score grades a \emph{session}, not a person. Ranking developers by it is a
+misuse the design does not support: there is no per-developer dimension in the
+cohort filter, no per-developer view, and no export with such a column. Tests
+assert this.
+
+On a team deployment the convention becomes machinery. Privacy mode
+pseudonymizes identities at ingest, drops prompt and response content, refuses
+to render any view covering fewer than $k$ developers, and logs every read.
+
+The reasoning is not only ethical. A score used for appraisal stops measuring
+the tooling almost immediately, because the people being measured adapt --- and
+what they adapt is the thing being counted, not the thing you wanted. That is
+also exactly why acceptance rate is only 0.20 of the composite and is paired
+with edit survival: push on acceptance alone and you reward accepting bad
+suggestions. Goodhart's law applies to this repository as much as to anything
+it measures.
+
+\subsection{What the project deliberately does not do}
+
+It does not archive raw telemetry --- content capture stores a bounded preview,
+the last hundred entries truncated at four thousand characters, and a full
+archive is a job for a real telemetry backend, which the forwarder exists to
+feed. It does not fold delivered outcomes into the score, even though it now
+links sessions to the pull requests they produced, because the correlation study
+that would justify doing so is the reason the outcomes are being collected. And
+it does not promote the friction analyzer into the composite, for the reason
+given in Section~5.
+
+% ============================================================================
+\section{Privacy, security and team deployments}
+% ============================================================================
+
+\subsection{The moment a second developer's telemetry arrives}
+
+The moment a second person's sessions reach the same collector, you are running
+a technical system capable of monitoring employee performance. In the EU that
+triggers works-council co-determination on the capability alone, whatever you
+intend to do with it. Privacy mode is what makes the intent enforceable rather
+than stated.
+
+\begin{itemize}[leftmargin=*]
+    \item Identities are pseudonymized before anything stores them, with a salt
+    you supply. An ephemeral salt is generated if you forget, and the collector
+    warns loudly, because pseudonyms that change on every restart stop
+    correlating history across a deploy.
+    \item Prompt and response content is dropped at ingest regardless of how the
+    clients are configured.
+    \item No view renders for fewer than $k$ developers.
+    \item Every read is logged to a table that the session retention sweep never
+    touches, because the audit record must outlive the sessions it describes.
+    \item Raw OTLP forwarding is refused unless the operator explicitly states
+    that the upstream backend is covered by the same agreement --- a faithful
+    relay of un-redacted payloads is a hole straight through every other
+    control.
+\end{itemize}
+
+\code{GET /api/privacy} reports what a running deployment actually enforces, so
+the answer to ``is it on?'' is not a matter of trusting a configuration file.
+
+\subsection{The credential model}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth]{../diagrams/rendered/d1-deployment-modes.pdf}
+\caption{The zero-credential default is scoped, not lax. Publishing beyond
+loopback is a different deployment and is treated as one.}
+\label{fig:deploy}
+\end{figure}
+
+Gating follows the key's presence, in any environment: with
+\codewrap{CopilotScope:Ingest:ApiKey} empty the collector runs open, and with a key
+set, ingest, the query API and the Prometheus endpoint all require it.
+
+For anything shared, split the one key into scopes. The key every developer's
+editor holds should not also be the key that reads transcripts and deletes
+history:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Ingest} --- \code{POST /v1/*} and nothing else. Held by every
+    emitter.
+    \item \textbf{Read} --- the query API and \code{/metrics}, which includes
+    captured transcripts. Held by the dashboard and Prometheus.
+    \item \textbf{Admin} --- destructive and administrative operations. Implies
+    Read.
+\end{itemize}
+
+The dashboard gets its own sign-in with two roles, because transcripts are the
+sensitive payload: a viewer sees scores, turns and aggregates; an admin also
+sees conversation content and can delete. Neither compose file terminates TLS,
+so anything shared needs a reverse proxy in front of it --- these credentials
+travel in a header and a cookie.
+
+The collector cannot work out for itself whether it is exposed: behind Docker
+every request arrives from the bridge gateway, so the remote address proves
+nothing. The compose files therefore pass the address they published on, and a
+startup warning fires when that is not loopback and no key is set. Two commands
+refuse the combination outright rather than warning about it.
+
+% ============================================================================
+\section{Tutorial}
+% ============================================================================
+
+Everything below is runnable. The only prerequisite is Docker; a .NET SDK is
+needed exclusively for the contributor path in Section~9.9.
+
+\subsection{Five minutes: from an empty machine to a scored session}
+
+\subsubsection*{Step 1 --- install}
+
+\begin{shell}
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/\
+copilot-scope/master/install.sh | sh
+\end{shell}
+
+On Windows, in PowerShell:
+
+\begin{shell}
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/\
+master/install.ps1 | iex
+\end{shell}
+
+The installer checks Docker, writes the compose file and a \code{copilotscope}
+control script into \code{~/.copilotscope}, starts the stack, waits for the
+collector to answer, and offers to configure each assistant it finds. Pass
+\code{--yes} after \code{| sh -s --} to accept every offer without being asked.
+
+Nothing else is required. There is no key to generate and no \code{.env} to
+fill in.
+
+\subsubsection*{Step 2 --- prove the pipeline works before blaming a client}
+
+\begin{shell}
+copilotscope probe
+\end{shell}
+
+This sends one simulated session over real OTLP/HTTP protobuf and then checks
+that the collector can serve it back. If it passes, ingest, decoding, scoring
+and persistence all work, and anything still missing is client configuration.
+Doing this first saves an hour of debugging the wrong half of the system.
+
+\subsubsection*{Step 3 --- look at something}
+
+\begin{shell}
+copilotscope demo          # fabricated sessions, badged demo
+copilotscope open          # http://localhost:5200
+\end{shell}
+
+Seeded sessions are clearly marked, so a screenshot of them is never mistaken
+for evidence about a real assistant. \code{copilotscope demo demo} loads the
+larger multi-day dataset instead of the quick one.
+
+\subsection{Connecting each assistant}
+
+\begin{shell}
+copilotscope connect claude-code     # ~/.claude/settings.json
+copilotscope connect vscode          # VS Code user settings
+copilotscope connect copilot-cli     # shell rc, or Windows User scope
+copilotscope connect cowork          # prints what to type into the app
+copilotscope connect all             # Claude Code and VS Code together
+\end{shell}
+
+Two flags apply to all of them:
+
+\begin{itemize}[leftmargin=*]
+    \item \code{--capture} also exports prompt and response text. Off by
+    default, and it is the switch that turns a metadata-only deployment into one
+    holding source code and anything a developer pasted into a chat.
+    \item \code{--print} shows exactly what would be written and changes
+    nothing.
+\end{itemize}
+
+\code{--traces} is Claude Code only and turns on the tracing beta, which is the
+only source of time to first token for that assistant. The span schema can still
+change; that is what the beta flag means.
+
+Then the manual step the tooling cannot take for you: reload the VS Code window,
+restart Claude Desktop for Cowork, or open a new terminal for Copilot CLI.
+Finally, chat in \emph{agent mode} --- inline completions alone produce no chat
+telemetry, which is the second most common reason for an empty dashboard.
+
+\code{copilotscope disconnect <target>} removes exactly the keys that were
+added, leaving the rest of your settings untouched.
+
+\subsection{Scoring the history you already have}
+
+If you use Claude Code, skip all of the above and run:
+
+\begin{shell}
+copilotscope import --dry-run     # see what it found, send nothing
+copilotscope import               # import it
+\end{shell}
+
+Re-running is safe: sessions keep Claude Code's own identifier, so a second run
+replaces rather than duplicates. Put it on a schedule if you like. Prompt text
+stays out unless \code{--include-content} is passed.
+
+One caveat the command states itself: run from the container, the importer
+cannot reach git, so imported sessions carry no repository label. When that
+matters, run it from a clone with a .NET SDK instead.
+
+\subsection{Reading a session}
+
+Open a session and read it in this order.
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Grade and confidence together.} Never the grade alone. Low
+    confidence means the session did not emit enough for the number to carry
+    weight.
+    \item \textbf{The worst turn, with its reasons.} This is the actionable
+    part: an error, a latency outlier against this session's own median, or a
+    repair loop.
+    \item \textbf{The components.} A composite of 62 driven by latency is a
+    different problem from a 62 driven by reliability, and they have different
+    fixes.
+    \item \textbf{Edit survival, if the assistant reports it.} Acceptance
+    without survival is the signature of code accepted and then reverted.
+    \item \textbf{Token economics.} Cost per accepted edit is the number that
+    turns a quality conversation into a budget conversation.
+\end{enumerate}
+
+The built-in documentation page at \code{/docs} explains every tile and every
+component in interpretation language rather than metric language.
+
+\subsection{Comparing windows and cohorts}
+
+Two questions get their own endpoints, both filterable by repository, assistant
+and model, and both exportable as CSV with group rows only:
+
+\begin{shell}
+GET /api/cohorts?days=30      # roll the window up by each axis
+GET /api/compare?days=30      # this window against the one before it
+GET /api/digest?days=7        # the week, as something to forward
+\end{shell}
+
+\code{/api/compare} is the ``did the upgrade help'' question, with the baseline
+defaulting to the equally long window immediately before the current one.
+
+Every axis describes the tooling. None of them describes a developer, and that
+is not an oversight.
+
+\subsection{Prometheus and Grafana}
+
+If you already run them, the collector exposes its \emph{derived} signals --- not
+just raw usage --- in the Prometheus text format:
+
+\begin{shell}
+docker compose -f docker-compose.grafana.yml up -d
+# Grafana on http://localhost:3000, datasource and dashboard provisioned
+\end{shell}
+
+Scores are exported as \code{_sum}/\code{_count} pairs rather than
+pre-averaged gauges, so PromQL keeps the arithmetic honest across any grouping:
+
+\begin{shell}
+sum by (emitter) (copilotscope_quality_score_sum)
+  / sum by (emitter) (copilotscope_quality_score_count)
+\end{shell}
+
+Everything carries an \code{emitter} label, so a regression in one assistant is
+visible instead of averaged away. Per-session series are opt-in and capped,
+because session identifiers are unbounded and would hand Prometheus a new time
+series for every conversation ever held.
+
+One trap is worth naming. The provisioned alert rules use ratios of gauges and
+never \code{rate()} over a counter. The collector recomputes its Prometheus
+families from a capped in-memory set, so a family declared as a counter can
+decrease when sessions age out, and \code{rate()} reads a decrease as a counter
+reset --- a rule built that way fires on eviction rather than on anything real.
+
+\subsection{Alerts and the weekly digest}
+
+A dashboard that has to be visited gets abandoned. An output that triggers a
+decision gets renewed. Configure \code{CopilotScope:Alerts} and the collector
+compares each week against the one before it, by repository, assistant and
+model, and posts a webhook when a cohort's mean composite falls.
+
+What deliberately does \emph{not} fire is the interesting part: a drop that came
+with a \emph{confidence} drop is reported as a changed measurement basis rather
+than as a regression. The composite renormalizes over the components that have
+data, so a cohort that stopped reporting a signal is being measured differently,
+not performing worse. Sending a team to hunt a change that never happened is how
+an alert channel gets muted, and a muted channel is worth less than no channel
+because the team believes they have coverage.
+
+\subsection{Turning the score from an opinion into a measurement}
+
+This is the most valuable thing a reader of this manual can contribute.
+
+\begin{shell}
+# collector appsettings.json
+"CopilotScope": { "Labelling": { "Enabled": true } }
+\end{shell}
+
+A \emph{Rate this session} panel appears on the session view. Rate real
+sessions, not seeded ones. Then:
+
+\begin{shell}
+GET /api/labels/export > calibration/labels.json
+POST /api/calibration/report   # on the judge agent, :5400
+\end{shell}
+
+The report endpoint is pure arithmetic: deterministic, free, and runnable in CI.
+The research plan asks for fifty to a hundred labelled sessions before the
+$\kappa$ means anything.
+
+\subsection{Working from a clone}
+
+\begin{shell}
+git clone https://github.com/konradcinkusz/copilot-scope.git
+cd copilot-scope
+dotnet build
+dotnet run --project src/CopilotScope.AppHost     # Aspire: everything
+dotnet test                                        # no Docker needed
+\end{shell}
+
+The two opt-in agent services sit behind a compose profile, so a plain
+\code{docker compose up} does not start them:
+
+\begin{shell}
+docker compose --profile agents up -d --build
+\end{shell}
+
+\subsection{When nothing shows up}
+
+\begin{shell}
+copilotscope doctor
+\end{shell}
+
+It checks Docker and the containers, the collector's health document, whether
+the deployment is exposed without a key, what each assistant's settings file
+actually says, whether an exported \codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} is
+overriding that file, and how many transcripts are sitting on disk unimported.
+
+The classic causes, in the order they actually occur:
+
+\begin{enumerate}[leftmargin=*]
+    \item VS Code was not reloaded after the settings changed.
+    \item Inline completions only --- no chat or agent turn happened.
+    \item For Claude Code: the master switch or the logs exporter is missing.
+    \item An exported environment variable beats the settings file for anything
+    launched from that shell.
+    \item Enterprise managed settings pin the endpoint to a corporate collector.
+    Managed values always win.
+    \item Cowork was pointed at the base endpoint rather than the full
+    \code{/v1/logs} path, or the app was not restarted.
+\end{enumerate}
+
+% ============================================================================
+\section{Operating it}
+% ============================================================================
+
+\subsection{What blocks a merge, and what a tag releases}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/d2-ci-gates.pdf}
+\caption{For most of this project's life the images were built only on a release
+tag. That is the gap the container job closes.}
+\label{fig:ci}
+\end{figure}
+
+The container job earned its place in its first run: it found two pre-existing
+bugs that had made every image unbuildable. The first was a shared project
+missing from every build context, which the solution build could not see because
+there the project sits exactly where the reference points. The second, reachable
+only once the first was fixed, was two web projects resolving their
+\code{appsettings.json} to the same publish path. Neither is exotic; both were
+invisible because nothing built the images until a release was already being
+cut.
+
+\subsection{Retention, and what grows}
+
+History grows until a policy is set. Retention is off by default:
+
+\begin{shell}
+"CopilotScope": { "History": {
+  "RetentionDays": 0,        // 0 = keep everything; N = delete idle N+ days
+  "BaselineDays": 30,        // window the percentile rank is computed over
+  "BaselineMaxSamples": 5000
+} }
+\end{shell}
+
+\code{BaselineDays} is what makes a percentile comparable over time: the rank is
+against a fixed trailing window of user sessions, not against whatever happened
+to still be in memory when you looked.
+
+\subsection{Archiving the vendor's own numbers before they expire}
+
+GitHub's Copilot Metrics API serves a 28-day rolling window and nothing older.
+With \codewrap{CopilotScope:VendorMetrics} configured --- an organisation or
+enterprise, a read-only token, and Postgres --- the collector polls daily and
+keeps the window indefinitely, keyed per day so a re-poll overwrites rather than
+accumulating duplicates.
+
+The full response document is stored verbatim alongside the extracted counts,
+because the vendor deletes the original: a parser that kept only what it
+understood today would silently discard history that cannot be re-fetched.
+
+The token needs exactly one read scope and nothing else. Nothing in this feature
+writes, and a token with write scopes has more blast radius than the feature has
+use for. Organisation and team level only: the API can be asked for a
+per-developer breakdown, and this deliberately does not ask.
+
+This is context, not the measurement. Counting usage still does not tell you
+whether the tooling is helping. What the archive buys is a denominator --- the
+sentence ``seats went up forty per cent in March'' is what makes a quality trend
+readable --- and something useful on day one for an organisation with seats and
+no instrumentation anywhere.
+
+\subsection{Did the code actually ship?}
+
+Every signal above stops at the session boundary. A session can run cleanly,
+have its edits accepted, and still produce a change nobody merged --- which is
+the same critique this project levels at usage counters, turned back on itself.
+
+Outcome linkage closes that loop by joining sessions to pull requests. Point a
+GitHub webhook at \code{POST /api/outcomes/github} with a secret; deliveries are
+verified by HMAC over the raw body, and without a secret the endpoint is not
+mapped at all, because it writes into the very data the score is about to be
+validated against.
+
+The join is a heuristic --- telemetry carries a repository and a branch, never a
+commit --- so every link ships with its confidence and the reason for it, and a
+repository-only match is shown but excluded from any correlation. Outcomes sit
+\emph{beside} the score and are deliberately not folded into it, for the reason
+given in Section~7.4.
+
+% ============================================================================
+\section{Where everything lives}
+% ============================================================================
+
+\begin{longtable}{@{}p{0.42\linewidth}p{0.54\linewidth}@{}}
+\toprule
+\textbf{Path} & \textbf{What is there} \\
+\midrule
+\endhead
+\codepath{install.sh}, \code{install.ps1} & The one-command installer \\
+\codepath{scripts/copilotscope} & The control script: up, connect, import, demo,
+probe, doctor \\
+\codepath{docker-compose.ghcr.yml} & The canonical pull-and-run stack \\
+\codepath{docs/TUTORIAL.md} & The manual walkthrough, per assistant, plus
+troubleshooting \\
+\codepath{docs/SIGNAL_COVERAGE.md} & The full per-emitter signal matrix \\
+\codepath{docs/PRIVACY.md} & GDPR Article 30 data map, retention, a template
+works-agreement annex \\
+\codepath{docs/CALIBRATION.md} & Method, scale anchors, how to read a bad result \\
+\codepath{docs/DIAGRAMS.md} & Every diagram in this manual, rendered by GitHub \\
+\codepath{docs/diagrams/} & The same diagrams as reusable sources \\
+\codepath{docs/papers/} & This manual, both language editions \\
+\codepath{docs/tutorials/} & Step-by-step tutorials, both languages \\
+\codepath{docs/architecture/} & Architecture decision records and reviews \\
+\codepath{SECURITY.md} & The trust model, scope by scope \\
+\codepath{GOVERNANCE.md} & Who maintains it, what is stable, what happens if the
+maintainer stops \\
+\codepath{research/articles/} & The formal treatment of the scoring model, and ten
+thesis topics derived from it \\
+\bottomrule
+\caption{The map. Where this manual and another document disagree, the other
+document is the source of truth and this one is stale.}
+\end{longtable}
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+The claim this project makes is narrow and worth restating precisely. Counting
+how much an AI assistant was used does not tell you whether it helped. Scoring
+the session does --- imperfectly, on evidence that varies by assistant, with a
+formula that has not yet been validated against human judgement, and never about
+a person.
+
+Three commercial products now score AI coding-assistant sessions, which is the
+strongest external evidence the thesis has: three companies with far better
+market research concluded the problem is real. What remains distinctive here is
+not the idea but the terms. Nothing leaves your infrastructure. The formula is
+published and re-derivable by hand. The tool cannot rank developers, and that is
+enforced by tests rather than promised in a document.
+
+The honest next step is calibration, and it needs labelled sessions rather than
+more code. The machinery is built, the export format is pinned by a test, and
+the panel is one configuration flag away. Until then the composite is an opinion
+with a confidence interval attached --- which is a useful thing, provided nobody
+reads it as a measurement.
+
+\section*{Reproducibility}
+
+\begin{shell}
+git clone https://github.com/konradcinkusz/copilot-scope.git
+cd copilot-scope
+npm ci                    # the pinned mermaid CLI
+npm run render:diagrams   # docs/diagrams/*.mmd -> vector PDFs
+pdflatex docs/papers/copilotscope-manual.tex   # twice, for the table of contents
+\end{shell}
+
+Both language editions are built together by
+\code{.github/workflows/build-docs-pdf.yml}, on demand. PDFs are build output
+and are never committed. \code{scripts/check-diagrams.mjs} fails the build if a
+diagram disagrees with its embedded copy, and
+\code{scripts/check-doc-parity.mjs} fails it if one language edition is edited
+without the other.
+
+\end{document}

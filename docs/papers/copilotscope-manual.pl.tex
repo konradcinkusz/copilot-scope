@@ -1,0 +1,1151 @@
+% ============================================================================
+% CopilotScope -- podręcznik: czym jest, jak mierzy i jak go używać.
+%
+% To NIE jest artykuł naukowy. Formalnym opracowaniem modelu oceny jest
+% research/articles/quality_measurement_framework.tex; ten dokument to
+% podręcznik, który czyta się po to, żeby zrozumieć system, a potem go
+% obsługiwać -- i właśnie dlatego zawiera samouczek.
+%
+% Źródła prawdy, które ten plik prezentuje, a nie rozszerza: README.md,
+% docs/TUTORIAL.md, docs/SIGNAL_COVERAGE.md, docs/PRIVACY.md,
+% docs/CALIBRATION.md, SECURITY.md i GOVERNANCE.md. Nie wprowadza żadnego
+% faktu, którego tamte dokumenty już nie zawierają; jeśli się z nimi rozejdzie,
+% to one mają rację, a ten plik jest nieaktualny.
+%
+% Diagramy nie są tu rysowane po raz drugi. Powstają z docs/diagrams/*.mmd --
+% tych samych plików, które osadza docs/DIAGRAMS.md, utrzymywanych w zgodzie
+% przez scripts/check-diagrams.mjs -- renderowane do wektorowych PDF-ów przez
+% scripts/render-diagrams.mjs. Jedno źródło, dwa formaty wyjściowe, a oba
+% wydania językowe współdzielą wynik.
+%
+% Wydanie angielskie leży obok:
+%   copilotscope-manual.tex
+% scripts/check-doc-parity.mjs przerywa build, jeśli jedno zostanie zmienione
+% bez drugiego.
+%
+% Budowanie (PDF to wynik builda -- nigdy nie jest commitowany):
+%   npm ci && npm run render:diagrams
+%   pdflatex copilotscope-manual.pl.tex && pdflatex copilotscope-manual.pl.tex
+% Budowane też przez .github/workflows/build-docs-pdf.yml, który buduje oba
+% wydania.
+% ============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{fancyvrb}
+\usepackage{microtype}
+\usepackage{amssymb}
+\usepackage{url}
+\urlstyle{tt}
+
+\geometry{a4paper, left=2.2cm, right=2.2cm, top=2.5cm, bottom=2.5cm}
+
+% Kolory domowe
+\definecolor{primaryblue}{RGB}{41,128,185}
+\definecolor{darkblue}{RGB}{31,78,121}
+\definecolor{lightgray}{RGB}{236,240,241}
+\definecolor{darkgray}{RGB}{52,73,94}
+\definecolor{accentgreen}{RGB}{39,174,96}
+\definecolor{accentorange}{RGB}{230,126,34}
+\definecolor{accentred}{RGB}{231,76,60}
+
+\titleformat{\section}
+    {\color{primaryblue}\Large\bfseries\sffamily}
+    {\thesection.}{0.5em}{}[\titlerule]
+\titleformat{\subsection}
+    {\color{darkblue}\large\bfseries\sffamily}
+    {\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}
+    {\color{darkgray}\normalsize\bfseries\sffamily}
+    {\thesubsubsection}{0.5em}{}
+
+\newcommand{\docstatus}{BEZ KALIBRACJI --- PATRZ ROZDZIAŁ 7}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\sffamily\color{darkgray} CopilotScope --- podręcznik}
+\fancyhead[R]{\small\sffamily\color{accentred} \docstatus}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryblue,
+    urlcolor=primaryblue,
+    pdfauthor={Konrad Cinkusz},
+    pdftitle={CopilotScope: ocena jako\'{s}ci sesji z asystentami AI}
+}
+
+% Kod w tekście. \detokenize czyni każdy znak literalnym, więc podkreślenie w
+% kluczu konfiguracyjnym nie wymaga ucieczki w miejscu użycia -- to najczęstszy
+% sposób, w jaki taki dokument przestaje się budować.
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+% Ścieżka lub długi identyfikator w wąskiej kolumnie tabeli. \path łamie po
+% / . _ oraz - , czego \texttt nie robi.
+\newcommand{\codepath}[1]{{\small\path{#1}}}
+% To samo w rozmiarze tekstu, dla długiego identyfikatora w zdaniu.
+\newcommand{\codewrap}[1]{\path{#1}}
+\newcommand{\finding}[1]{{\color{primaryblue}\textbf{#1}}}
+
+\DefineVerbatimEnvironment{shell}{Verbatim}
+    {frame=single, rulecolor=\color{darkgray}, framesep=5pt,
+     fontsize=\small, xleftmargin=2pt, xrightmargin=2pt}
+
+\begin{document}
+% Polski babel czyni znak " aktywnym. W tym dokumencie cudzysłowy zapisujemy
+% wprost jako znaki Unicode, a " pojawia się w cytowanych fragmentach JSON,
+% więc skrót jest wyłączony.
+\shorthandoff{"}
+
+\thispagestyle{plain}
+\begin{center}
+    {\LARGE\bfseries\sffamily\color{darkblue} CopilotScope}
+
+    \vspace{0.3cm}
+
+    {\Large\sffamily\color{darkgray} Ocena jako\'{s}ci sesji z asystentami
+    programistycznymi AI --- co mierzy, jak dzia\l{}a i jak go uruchomi\'{c}}
+
+    \vspace{0.6cm}
+
+    {\large Konrad Cinkusz}
+
+    \vspace{0.2cm}
+
+    {\normalsize\color{darkgray} \url{https://github.com/konradcinkusz/copilot-scope}}
+
+    \vspace{0.2cm}
+
+    {\normalsize\color{accentred}\sffamily \docstatus\ --- \today\ ---
+     \textit{English edition: } \texttt{copilotscope-manual.tex}}
+\end{center}
+
+\vspace{0.4cm}
+
+\begin{center}
+\begin{minipage}{0.92\linewidth}
+\small
+\textbf{Czym jest ten dokument.} Wszystkim, czego potrzeba, żeby zrozumieć
+CopilotScope, a potem go obsługiwać: problemem, który adresuje, tym jak jest
+zbudowany, tym co dokładnie mierzy i czego mierzyć odmawia, oraz samouczkiem,
+który prowadzi czytelnika od pustej maszyny do ocenionej sesji, wdrożenia
+zespołowego i panelu w Grafanie.
+
+\textbf{Czym nie jest.} Nie jest artykułem naukowym --- tym jest
+\texttt{research/articles/quality\_measurement\_framework.tex} --- ani
+walidacją oceny. Wskaźnik złożony nie został skalibrowany względem ocen
+ludzkich. Rozdział~7 mówi o tym wprost, ponieważ liczba podana bez swoich
+ograniczeń jest gorsza niż brak liczby.
+\end{minipage}
+\end{center}
+
+\vspace{0.5cm}
+
+{\small\tableofcontents}
+
+\newpage
+
+% ============================================================================
+\section{Problem i to, co jest mierzone zamiast niego}
+% ============================================================================
+
+Każdy dostawca asystenta programistycznego AI powie Ci, ile Twój zespół go
+zużył. Stanowiska, pokazane podpowiedzi, przyjęte podpowiedzi, spalone tokeny.
+Te liczby są prawdziwe, łatwe do zebrania i odpowiadają na pytanie, którego
+nikt faktycznie nie zadaje. Pytanie, które zespół ma naprawdę, brzmi: czy to
+narzędzie pomaga --- a zużycie nie może na nie odpowiedzieć, bo rośnie
+dokładnie tak samo wtedy, gdy asystent działa dobrze, i wtedy, gdy programista
+utknął w pętli, pytając cztery razy o to samo innymi słowami.
+
+\finding{CopilotScope ocenia sesje, nie zużycie.} Sesja to jedna rozmowa z
+asystentem. Dla każdej produkuje złożony wskaźnik jakości wraz z miarą pewności
+obok niego, konkretną turę, w której rozmowa się zacięła, i powód, informację
+czy przyjęte przez programistę zmiany faktycznie przetrwały w pliku, oraz koszt
+pętli naprawczej w tokenach i czasie.
+
+Trzy własności kształtują wszystko, co następuje dalej:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Nic nie opuszcza maszyny.} Kolektor działa na Twojej
+    infrastrukturze i nie ma żadnego wywołania zwrotnego. To nie jest deklaracja
+    polityki; w kodzie nie ma ścieżki, która gdziekolwiek dzwoni.
+    \item \textbf{Wzór jest jawny i deterministyczny.} Sześć ważonych składowych,
+    renormalizowanych po tych, które faktycznie dostarczyły dane, z miarą
+    pewności eksportowaną obok każdej oceny. Każdą liczbę można wyprowadzić
+    ręcznie.
+    \item \textbf{Nie da się nim rankingować programistów.} W żadnym widoku ani
+    eksporcie nie istnieje wymiar „per programista'', a testy tego pilnują. To
+    jest egzekwowane, a nie obiecane --- rozdział~7.3 wyjaśnia, dlaczego to
+    ograniczenie jest nośne, a nie ozdobne.
+\end{enumerate}
+
+\subsection{Dla kogo to jest}
+
+Dla lidera zespołu, który pyta, czy zeszłomiesięczna zmiana modelu pomogła, czy
+zaszkodziła. Dla inżyniera platformy, który już utrzymuje Prometheusa i chce
+mieć w nim sygnały jakości. Dla programisty, który chce wiedzieć, która z jego
+sesji poszła źle i w której turze. Dla organizacji, która musi obronić ten
+pomiar przed radą pracowniczą, zanim w ogóle wolno mu zaistnieć.
+
+Nie jest dla kogoś, kto chce tabeli wyników. To nie jest ograniczenie do
+obejścia --- patrz rozdział~7.3.
+
+\subsection{Jak wygląda sesja po zmierzeniu}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.62\linewidth]{../diagrams/rendered/a1-system-context.pdf}
+\caption{Granica systemu. Czterej asystenci emitują OpenTelemetry na jeden
+endpoint; kolektor rozróżnia ich po zawartości, a nie po konfiguracji. Metrics
+API GitHuba jest wyjątkiem --- jest odpytywane, a to, co zwraca, to zużycie na
+poziomie organizacji: kontekst obok oceny, a nie sama ocena.}
+\label{fig:context}
+\end{figure}
+
+% ============================================================================
+\section{Architektura}
+% ============================================================================
+
+\subsection{Czym jest każdy projekt}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/a2-solution-layout.pdf}
+\caption{Kolektor jest produktem. Wszystko inne jest widokiem na niego,
+udogodnieniem deweloperskim albo opcją włączaną świadomie.}
+\label{fig:layout}
+\end{figure}
+
+\begin{longtable}{@{}p{0.30\linewidth}p{0.44\linewidth}p{0.18\linewidth}@{}}
+\toprule
+\textbf{Projekt} & \textbf{Rola} & \textbf{Zależności} \\
+\midrule
+\endhead
+\codepath{src/CopilotScope.Collector} & Przyjmowanie OTLP/HTTP z własnym
+dekoderem protobuf, agregacja sesji, silnik jakości, analiza tur, potok
+analizatorów, REST API, eksporter Prometheusa, trwałość & tylko Npgsql \\
+\codepath{src/CopilotScope.Dashboard} & Interfejs Blazor Server: sesje, miernik
+jakości, analiza tur, transkrypt, widoki zespołowe & brak \\
+\codepath{src/CopilotScope.ServiceDefaults} & Wspólne jądro: autoinstrumentacja,
+health, service discovery, odporność HTTP. Bez logiki domenowej &
+OpenTelemetry, Microsoft.Extensions \\
+\codepath{src/CopilotScope.AppHost} & Orkiestracja Aspire na potrzeby
+developmentu: Postgres, pgAdmin, obie usługi & Aspire.Hosting \\
+\codepath{src/CopilotScope.JudgeAgent} & Opcjonalny sędzia LLM: G-Eval, SPUR,
+RAGAS, głęboka analiza tarcia, wykrywanie ukończenia zadania. Azure AI Foundry
+albo dowolny endpoint zgodny z OpenAI & Azure.AI, Microsoft.Agents.AI \\
+\codepath{src/CopilotScope.AgentForge} & Opcjonalne agenty person, oparte na
+transkryptach objętych zgodą & Azure.AI, Microsoft.Agents.AI \\
+\codepath{tools/CopilotScope.Seeder} & Fabrykowane sesje demo wysyłane do
+działającego kolektora & brak \\
+\codepath{tools/CopilotScope.LogImporter} & Transkrypty Claude Code
+przetwarzane na ocenione sesje & brak \\
+\codepath{tools/CopilotScope.TelemetryGen} & Jedna realistyczna sesja przez
+prawdziwe OTLP/HTTP, używana jako sonda & brak \\
+\bottomrule
+\caption{Rozwiązanie projekt po projekcie. Trzy narzędzia jadą razem w jednym
+obrazie kontenera \code{copilotscope-tools}, więc żadne z nich nie wymaga SDK
+.NET do uruchomienia.}
+\end{longtable}
+
+Kolektor ma w czasie działania \emph{jedną} zależność NuGet, a dashboard nie ma
+żadnej. To jest celowe: dekoder protobuf OTLP napisano w repozytorium, na
+podstawie oficjalnych numerów pól z plików \code{.proto}, zamiast wciągać SDK
+OpenTelemetry, a dashboard odpytuje REST API kolektora co dwie sekundy zamiast
+nieść ze sobą framework JavaScript.
+
+\subsection{Co dzieje się z jedną paczką telemetrii}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{../diagrams/rendered/a3-ingest-pipeline.pdf}
+\caption{Każda strzałka opuszczająca ścieżkę szczęśliwą loguje, dlaczego ją
+opuściła. Ten diagram jest odpowiedzią na „stos działa, a dashboard jest
+pusty''.}
+\label{fig:ingest}
+\end{figure}
+
+Dwie decyzje w tym potoku warto wypowiedzieć wprost, bo obie są z gatunku tych,
+które wyglądają na ważne dopiero po tym, jak gdzieś poszły źle.
+
+\textbf{Redakcja następuje przed agregacją.} W trybie prywatności wartości
+identyfikujące są usuwane z paczki, zanim cokolwiek dalej --- magazyn, zapis
+migawki, eksporter Prometheusa --- w ogóle je zobaczy. Gwarancja przeżywa więc
+zrzut bazy danych, zamiast zależeć od tego, czy każda ścieżka odczytu pamiętała,
+żeby ją zastosować.
+
+\textbf{Zdekodowana zawartość ma twardy limit.} Kestrel ogranicza rozmiar
+skompresowanego żądania; gzip osiąga około 1000:1. Nieograniczona kopia
+skompresowanego ciała to wektor wyczerpania pamięci, a na kolektorze bez
+skonfigurowanego klucza jest osiągalna przed uwierzytelnieniem. Limit wynosi
+64~MB na paczkę.
+
+\subsection{Gdzie mieszkają dane i czego eksmisja nie oznacza}
+
+Sesje żyją w dwóch miejscach naraz. Przyjęcie telemetrii oznacza sesję jako
+brudną; proces w tle zapisuje zbiór brudnych raz na sekundę, więc nawał
+telemetrii nie staje się nawałem zapisów. Pełny stan sesji trafia do Postgresa
+jako migawka \code{jsonb} --- liczniki, próbki czasu do pierwszego tokenu,
+statystyki narzędzi, agregaty per tura, zmiany, oceny, ogon zdarzeń i
+przechwycony transkrypt --- z kilkoma kolumnami wyciągniętymi na wierzch do
+odpytywania.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.78\linewidth]{../diagrams/rendered/a4-session-lifecycle.pdf}
+\caption{Magazyn w pamięci to ograniczony zbiór roboczy, a nie zakres Twojej
+historii. Eksmisja nie jest usunięciem.}
+\label{fig:lifecycle}
+\end{figure}
+
+Odczyty są obsługiwane z Postgresa, z nałożonymi na wierzch żywymi agregatami z
+pamięci, więc API odpowiada na temat całego archiwum, podczas gdy sesja, do
+której ktoś właśnie pisze, pozostaje aktualna. Bez łańcucha połączenia kolektor
+degraduje się do samej pamięci i raportuje \code{durable: false}, zamiast
+udawać coś innego --- i to jest też powód, dla którego \code{dotnet run} na
+gołej maszynie działa zupełnie bez bazy.
+
+% ============================================================================
+\section{Jak wprowadzić dane}
+% ============================================================================
+
+\subsection{Instalacja od początku do końca}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.70\linewidth]{../diagrams/rendered/b1-install-and-connect.pdf}
+\caption{Dwie komendy plus jeden ręczny krok na asystenta, którego żaden skrypt
+nie wykona za Ciebie.}
+\label{fig:install}
+\end{figure}
+
+Na jednej maszynie nie ma czego deklarować: żadnego klucza do wygenerowania,
+żadnej zmiennej środowiskowej do wyeksportowania, żadnego JSON-a do ręcznej
+edycji. Każdy publikowany port wiąże się z \code{127.0.0.1}, Postgres nie
+publikuje portu w ogóle i ufa swojemu nieopublikowanemu gniazdu, a klucz
+przyjmowania jest pusty, co jest trybem otwartym kolektora. Poświadczenie na
+pętli zwrotnej niczego nie chroni, a kosztuje krok konfiguracyjny w każdym
+kliencie --- i to właśnie ten krok ludzie mylą.
+
+\subsection{Dlaczego konfiguracja bywała najtrudniejszą częścią}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/b2-where-each-switch-lives.pdf}
+\caption{Cztery powierzchnie, trzy rodzaje miejsc do ich skonfigurowania i
+tylko jedno z tych miejsc przeżywa otwarcie nowego terminala.}
+\label{fig:switches}
+\end{figure}
+
+Claude Code jest przypadkiem najlepszym. Blok \code{env} w pliku
+\code{~/.claude/settings.json} działa w każdym terminalu, w każdym projekcie, a
+także dla Claude Code uruchomionego wewnątrz VS Code. Znaczenie mają cztery
+wartości, a dwie pierwsze to te, które ludzie pomijają:
+
+\begin{itemize}[leftmargin=*]
+    \item \codewrap{CLAUDE_CODE_ENABLE_TELEMETRY}=1 --- przełącznik główny. Bez
+    niego nie jest eksportowane nic, niezależnie od reszty ustawień.
+    \item \code{OTEL_LOGS_EXPORTER}=otlp --- to zdarzenia logów niosą sesję.
+    Domyślna instalacja emituje metryki i zdarzenia, a nie emituje span-ów, więc
+    konfiguracja ustawiająca tylko eksporter metryk daje sesję niemal pustą.
+    \item \codewrap{OTEL_EXPORTER_OTLP_PROTOCOL}=http/protobuf oraz endpoint.
+\end{itemize}
+
+Przechwytywanie treści to tutaj trzy osobne zgody
+(\codewrap{OTEL_LOG_USER_PROMPTS}, \codewrap{OTEL_LOG_ASSISTANT_RESPONSES},
+\codewrap{OTEL_LOG_TOOL_DETAILS}), a standardowa zmienna OpenTelemetry GenAI,
+która działa dla Copilot CLI, \emph{nie} jest czytana przez Claude Code. Czas
+do pierwszego tokenu wymaga bety śledzenia, która jest dla tego asystenta
+jedynym źródłem tego sygnału.
+
+VS Code konfiguruje się przez ustawienia użytkownika i wymaga przeładowania
+okna, bo rozszerzenie czyta konfigurację przy starcie. Copilot CLI czyta
+zmienne środowiskowe i nic poza nimi. Cowork konfiguruje się we własnym
+interfejsie aplikacji desktopowej, chce pełnej ścieżki \code{/v1/logs} zamiast
+bazowego endpointu, wymaga planu Team lub Enterprise oraz uprawnień
+administratora organizacji, i eksportuje wyłącznie zdarzenia logów.
+
+\subsection{Ścieżka, która nie wymaga żadnej konfiguracji}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.72\linewidth]{../diagrams/rendered/b3-transcript-import.pdf}
+\caption{Claude Code zapisuje każdą sesję na dysk niezależnie od tego, czy
+telemetria jest skonfigurowana --- a większość programistów nigdy jej nie
+konfiguruje.}
+\label{fig:import}
+\end{figure}
+
+Dwie odmowy na tej ścieżce są celowe i warte obrony. Etykieta repozytorium
+zostaje \emph{pusta} zamiast zgadywana z nazwy katalogu, bo zgadnięcie
+wymyśliłoby drugą kohortę dla projektu, który kolektor już zna po zdalnym
+adresie gita --- dwa wiersze na jedno repozytorium, co jest gorsze niż brak
+etykiety. A sesja, którą kolektor już ma z żywej telemetrii, nie jest
+nadpisywana przez import, bo transkrypt niesie mniej sygnału i po cichu
+obniżyłby ocenę zmierzoną na większym materiale.
+
+Sesje zaimportowane są oznaczone i niosą realnie niższą pewność. Transkrypt
+rejestruje tokeny, modele, wywołania narzędzi i ich wyniki, granice tur oraz
+prawdziwe czasy zegarowe. Nie rejestruje czasu do pierwszego tokenu, decyzji o
+przyjęciu lub odrzuceniu zmiany ani ocen kciukiem, bo to są zdarzenia
+OpenTelemetry. Zamiast ustawiać je na zero --- co czytałoby się jako „każda
+zmiana odrzucona'' --- są pozostawione jako brakujące, a wskaźnik złożony
+renormalizuje.
+
+% ============================================================================
+\section{Pomiar}
+% ============================================================================
+
+\subsection{Wskaźnik złożony}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth]{../diagrams/rendered/c1-composite-score.pdf}
+\caption{Sześć składowych. Do wskaźnika wchodzą tylko te, które dostarczyły
+dane, a wagi są renormalizowane po nich.}
+\label{fig:composite}
+\end{figure}
+
+\begin{center}
+\begin{tabular}{@{}llp{0.52\linewidth}@{}}
+\toprule
+\textbf{Składowa} & \textbf{Waga} & \textbf{Czym jest} \\
+\midrule
+Niezawodność & 0,25 & Kwadrat odsetka wywołań bez błędu, dla LLM i narzędzi.
+Kwadrat sprawia, że sesja z kilkoma błędami jest karana bardziej niż liniowo \\
+Akceptacja   & 0,20 & Przyjęte zmiany, sparowane z przeżywalnością zmian, żeby
+przyjmowanie złych podpowiedzi nie czytało się jako sukces \\
+Tarcie       & 0,20 & Średnia ocena tury z analizatora tur \\
+Opóźnienie   & 0,15 & Jaka część sesji leżała powyżej progów 2~s uwagi i 8~s
+porzucenia \\
+Oceny        & 0,10 & Kciuki, tam gdzie asystent je raportuje \\
+Efektywność  & 0,10 & Ekonomia tokenów: koszt na turę i na przyjętą zmianę \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+
+\finding{Renormalizacja jest tym, co trzeba zrozumieć.} Do wskaźnika wchodzą
+tylko składowe, które mają dane, a wagi są przeskalowane po nich. Wcześniejsza
+wersja pozwalała pustym składowym wnosić neutralny prior, w efekcie czego
+niemal każda sesja dostawała około 80 --- pomiar raportował prior, a nie sesję.
+Pewność, eksportowana obok każdej oceny, to pokrycie danymi pomnożone przez
+rampę liczby próbek: 90 zbudowane na czterech próbkach znaczy mniej niż 70
+zbudowane na czterdziestu.
+
+Oceny słowne są progami na wskaźniku: 85 i wyżej to doskonale, 70 dobrze, 55
+przeciętnie, 40 słabo, poniżej --- krytycznie. Ranga percentylowa liczona jest
+względem stałego okna wstecznego sesji użytkownika, a nie względem tego, co
+akurat było w pamięci, i to właśnie czyni ją porównywalną w czasie.
+
+\subsection{Analiza tur, czyli która tura poszła źle}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\linewidth]{../diagrams/rendered/c2-turn-analysis.pdf}
+\caption{Wskaźnik złożony mówi, że sesja była słaba. To mówi, która tura i
+dlaczego.}
+\label{fig:turns}
+\end{figure}
+
+Każdy trace \code{invoke_agent} to jedna tura. Każda tura jest oceniana pod
+kątem błędów LLM i narzędzi, opóźnienia względem mediany czasu do pierwszego
+tokenu \emph{tej właśnie sesji}, oraz pętli naprawczych --- serii wywołań
+narzędzi zawierających niepowodzenia. Dashboard pokazuje najlepszą i najgorszą
+turę wraz z powodami.
+
+Mediana liczona per sesja jest tu wyborem nośnym. Globalny próg opóźnienia nie
+odróżni wolnej tury od wolnego modelu ani wolnego modelu od wolnego poranka;
+sesja porównana sama ze sobą --- owszem.
+
+Warto zauważyć konsekwencję dla asystentów, które nie emitują granicy tury:
+eksport Cursora wysyła metryki i logi, ale nie span-y, a tura \emph{jest} tu
+trace'em, więc analiza tarcia na poziomie tur nie może dla niego zadziałać w
+ogóle, nawet gdyby eksport działał.
+
+\subsection{Potok analizatorów}
+
+Analizatory są wtykowe: jedna klasa \code{IInsightAnalyzer} plus jedna
+rejestracja w kontenerze wstrzykiwania zależności dodaje algorytm bez żadnej
+pracy po stronie interfejsu. Te działające w procesie to przeżywalność zmian,
+przepustowość, użyteczność opóźnienia, ekonomia tokenów i tarcie pracy.
+
+Algorytmy oceniane przez LLM celowo \emph{nie} są w tym potoku. Interfejs jest
+synchroniczny i wewnątrzprocesowy; wywołanie sędziego to asynchroniczne
+wywołanie sieciowe do serwera modelu, z kosztem i limitem tempa. Mieszkają
+zamiast tego w osobnej, opcjonalnej usłudze sędziego, dostępnej pod
+\code{POST /api/sessions/{id}/judge}, a tę usługę można skierować na Azure AI
+Foundry albo na endpoint zgodny z OpenAI na własnym sprzęcie --- więc wdrożenie
+lokalne może je uruchomić bez wypuszczania transkryptów poza budynek.
+
+% ============================================================================
+\section{Dziesięć algorytmów i ile każdy z nich dziś znaczy}
+% ============================================================================
+
+Projekt śledzi dziesięć algorytmów oceny na dwóch osiach: czy implementacja
+istnieje i czy działa lokalnie, czy wymaga dostępu do modelu.
+
+\begin{longtable}{@{}p{0.03\linewidth}p{0.26\linewidth}p{0.20\linewidth}p{0.42\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Algorytm} & \textbf{Status} & \textbf{Uwagi} \\
+\midrule
+\endhead
+1 & LLM jako sędzia (G-Eval) & zaimplementowany, opcjonalny & Wymaga endpointu
+LLM; model lokalny wystarcza \\
+2 & Rubryki satysfakcji SPUR & zaimplementowany, zero-shot & Kierunkowy, dopóki
+nie powstaną oznaczone sesje do kalibracji \\
+3 & Metryki składowych RAG (RAGAS) & zaimplementowany, opcjonalny & Sensowny
+tylko dla przepływów z wyszukiwaniem; raportuje brak danych, dopóki kontekst
+wyszukiwania nie jest przechwytywany \\
+4 & Przeżywalność zmian & pełny, lokalny & Podział na cztero-gramy i brak
+cofnięcia, 0,4/0,6; zasila też składową akceptacji \\
+5 & Przepustowość ważona akceptacją & pełny, lokalny & Przyjęte linie na turę i
+na 1k tokenów wyjścia, z dyskontem za odrzucenia \\
+6 & Tarcie i naprawy na poziomie tur & pełny, lokalny & Analizator tur; także
+składowa tarcia \\
+7 & Model użyteczności opóźnienia & pełny, lokalny & Krzywa użyteczności per
+próbka, z kubełkami ryzyka 2~s i 8~s \\
+8 & Ekonomia tokenów i cache & pełny, lokalny & Koszt per model, oszczędność
+cache, koszt na turę i na przyjętą zmianę \\
+9 & Sygnały tarcia pracy & uproszczony lokalnie, głęboki w sędzim & Liczy
+zaobserwowane zdarzenia naprawcze, a nie wnioskowane emocje. Domyślnie
+wyłączony, tylko raportujący, nigdy nie oceniany \\
+10 & Wykrywanie ukończenia zadania & częściowy lokalnie, zaimplementowany w
+sędzim & Brak jeszcze lokalnej ścieżki wejścia dla kodów wyjścia builda i
+testów \\
+\bottomrule
+\caption{Status implementacji. „Opcjonalny'' oznacza konfigurację, a nie to,
+czy kontener działa.}
+\end{longtable}
+
+Algorytm 9 zasługuje na własne zdanie, bo jest tym, który najłatwiej źle
+odczytać. Liczy \emph{zaobserwowane zdarzenia naprawcze} --- przeformułowania
+mierzone podobieństwem Jaccarda między kolejnymi promptami, repliki korygujące,
+markery negatywnej oceny --- a nie emocje. Jest celowo wykluczony ze wskaźnika
+złożonego: heurystyka leksykalna nie należy do liczby, na podstawie której ktoś
+mógłby działać. Jest też jedynym analizatorem czytającym własny tekst
+programisty, dlatego pozostaje wyłączony, dopóki operator go nie włączy, i
+dlatego cytowanie wiadomości wymaga drugiej, osobnej zgody.
+
+% ============================================================================
+\section{Pokrycie sygnałami: dlaczego 80 tutaj to nie 80 tam}
+% ============================================================================
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.92\linewidth]{../diagrams/rendered/c3-signal-coverage.pdf}
+\caption{Wszyscy asystenci lądują w tym samym schemacie. Nie raportują tych
+samych sygnałów.}
+\label{fig:coverage}
+\end{figure}
+
+Wszystkie cztery wspierane powierzchnie normalizują się do jednego
+wewnętrznego słownika, więc agregacja, ocena i dashboard traktują je
+identycznie. Różni się to, co każda z nich faktycznie wysyła.
+
+\begin{center}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Sygnał} & \textbf{VS Code} & \textbf{Copilot CLI} & \textbf{Claude Code}
+& \textbf{Cowork} \\
+\midrule
+Tokeny, wywołania, błędy       & tak & tak & tak & tak \\
+Czas do pierwszego tokenu      & tak & tak & tylko z betą & nie \\
+Przyjęcie / odrzucenie zmiany  & tak & nie & tak & tak \\
+Oceny kciukiem                 & tak & nie & nie & nie \\
+Linie kodu                     & tak & nie & tak & nie \\
+Granica tury (trace)           & tak & tak & tylko z betą & nie \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{0.3cm}
+
+\finding{Oceny są porównywalne wewnątrz asystenta i kierunkowe pomiędzy nimi.}
+Sesja Claude Code nie ma kciuków, a bez bety śledzenia nie ma czasu do
+pierwszego tokenu, więc jej 80 opiera się na mniejszym materiale niż 80 sesji
+VS Code. Wskaźnik złożony radzi sobie z tym uczciwie, renormalizując, a miara
+pewności raportuje, na czym musiał pracować. Czego nie potrafi, to sprawić,
+żeby obie liczby znaczyły to samo --- więc porównanie asystentów musi utrzymać
+stały zestaw sygnałów, a nie tylko wskaźnik.
+
+Cursor jest przypadkiem szczególnym i jako taki jest udokumentowany. Jego
+eksport OpenTelemetry dostępny jest wyłącznie w planie Enterprise i wysyła
+metryki oraz logi, ale nie span-y. Kolektor wykrywa i normalizuje atrybuty
+\code{cursor.*}, ale żadna zawartość z prawdziwej sesji Cursora nigdy nie
+została przeciw niemu przetestowana, więc jest wymieniony jako wykrywany i
+niezweryfikowany, a nie jako wspierany. To rozróżnienie istnieje, bo ten projekt
+już raz zadeklarował wsparcie dla asystenta, którego zawartości nigdy nie
+widział.
+
+% ============================================================================
+\section{Uczciwe ograniczenia}
+% ============================================================================
+
+Ten rozdział istnieje, bo pomiar podany bez swoich ograniczeń jest gorszy niż
+brak pomiaru: czytelnik mu ufa.
+
+\subsection{Wskaźnik złożony nie jest skalibrowany}
+
+W tym repozytorium nie ma żadnych etykiet ludzkich i nie przeprowadzono żadnej
+kalibracji. Wagi są przemyślanym osądem, a nie dopasowanym modelem. Każda ocena
+sędziego jest więc kierunkowa i niczego nie blokuje.
+
+Maszyneria, która to naprawi, istnieje i czeka na wejście. Usługa sędziego
+niesie moduł kalibracji liczący $\kappa$ Cohena --- nieważone oraz ważone
+liniowo i kwadratowo, każde z zaszczepionym przedziałem ufności bootstrap ---
+pomiędzy sędzią a panelem ludzi, plus zgodność panelu z samym sobą jako sufit,
+ponad który żaden algorytm nie wejdzie. Werdykty to \emph{skalibrowany},
+\emph{nieskalibrowany}, \emph{sufit za nisko} albo \emph{za mało danych},
+względem konfigurowalnego progu, domyślnie $\kappa \geq 0{,}70$.
+
+Brakowało dotąd czegokolwiek do skonsumowania. Przepływ etykietowania istnieje
+teraz za flagą \codewrap{CopilotScope:Labelling:Enabled}: panel oceniającego na
+widoku sesji, z uchwytem oceniającego, pasmem od 0 do 3 na rubrykę wraz z
+tekstem kotwiczącym i opcją pominięcia, która jest zapisywana jako prawdziwa
+odpowiedź, ale nie jest eksportowana jako etykieta.
+\code{GET /api/labels/export} produkuje dokładnie ten JSON, który czyta silnik
+kalibracji, przypięty testem obiegu w obie strony.
+
+Sesje zasiane są domyślnie wykluczone z eksportu i to wykluczenie jest istotą
+rzeczy: walidowanie modelu oceny względem syntetycznych person napisanych przez
+to samo repozytorium byłoby kołem, a $\kappa$ zbudowane na kole jest gorsze niż
+brak $\kappa$.
+
+\subsection{Pojedyncza liczba nie jest werdyktem}
+
+Pewność jest eksportowana obok każdej oceny nie bez powodu. Czytaj składowe, a
+nie nagłówek. Sesja z wynikiem 62, wysoką pewnością i jasno wskazaną najgorszą
+turą jest bardziej użyteczna niż 88 na dwóch próbkach.
+
+\subsection{To nie jest tabela wyników programistów --- i to jest egzekwowane}
+
+Ocena dotyczy \emph{sesji}, a nie osoby. Rankingowanie programistów według niej
+jest nadużyciem, którego projekt nie wspiera: w filtrze kohort nie ma wymiaru
+per programista, nie ma takiego widoku ani eksportu z taką kolumną. Testy tego
+pilnują.
+
+We wdrożeniu zespołowym konwencja staje się maszynerią. Tryb prywatności
+pseudonimizuje tożsamości przy przyjęciu, odrzuca treść promptów i odpowiedzi,
+odmawia wyrenderowania widoku obejmującego mniej niż $k$ programistów i loguje
+każdy odczyt.
+
+Uzasadnienie nie jest wyłącznie etyczne. Ocena używana do oceny pracowniczej
+niemal natychmiast przestaje mierzyć narzędzie, bo mierzeni ludzie się
+adaptują --- a adaptują to, co jest liczone, a nie to, co chciałeś zmierzyć. To
+jest też dokładnie powód, dla którego wskaźnik akceptacji to tylko 0,20
+wskaźnika złożonego i jest sparowany z przeżywalnością zmian: naciskaj na samą
+akceptację, a nagrodzisz przyjmowanie złych podpowiedzi. Prawo Goodharta stosuje
+się do tego repozytorium tak samo jak do wszystkiego, co ono mierzy.
+
+\subsection{Czego projekt celowo nie robi}
+
+Nie archiwizuje surowej telemetrii --- przechwytywanie treści zapisuje
+ograniczony podgląd, ostatnie sto wpisów przyciętych do czterech tysięcy znaków,
+a pełne archiwum to zadanie dla prawdziwego backendu telemetrycznego, który
+karmi forwarder. Nie wlicza dostarczonych rezultatów do oceny, mimo że wiąże już
+sesje z pull requestami, które wyprodukowały, bo badanie korelacji, które by to
+uzasadniło, jest właśnie powodem zbierania tych rezultatów. I nie promuje
+analizatora tarcia do wskaźnika złożonego, z powodu podanego w rozdziale~5.
+
+% ============================================================================
+\section{Prywatność, bezpieczeństwo i wdrożenia zespołowe}
+% ============================================================================
+
+\subsection{Moment, w którym pojawia się telemetria drugiego programisty}
+
+W chwili, gdy sesje drugiej osoby trafiają do tego samego kolektora, prowadzisz
+system techniczny zdolny do monitorowania wydajności pracowników. W Unii
+Europejskiej uruchamia to współdecydowanie rady pracowniczej na podstawie samej
+zdolności, niezależnie od Twoich zamiarów. Tryb prywatności jest tym, co czyni
+intencję egzekwowalną, a nie tylko zadeklarowaną.
+
+\begin{itemize}[leftmargin=*]
+    \item Tożsamości są pseudonimizowane, zanim cokolwiek je zapisze, solą,
+    którą dostarczasz. Sól ulotna jest generowana, jeśli o niej zapomnisz, a
+    kolektor ostrzega głośno, bo pseudonimy zmieniające się przy każdym
+    restarcie przestają korelować historię między wdrożeniami.
+    \item Treść promptów i odpowiedzi jest odrzucana przy przyjęciu, niezależnie
+    od tego, jak skonfigurowani są klienci.
+    \item Żaden widok nie renderuje się dla mniej niż $k$ programistów.
+    \item Każdy odczyt jest logowany do tabeli, której nie dotyka zamiatanie
+    retencji sesji, bo zapis audytowy musi przeżyć sesje, które opisuje.
+    \item Przekazywanie surowego OTLP jest odrzucane, chyba że operator wprost
+    stwierdzi, że backend docelowy jest objęty tą samą umową --- wierne
+    przekazanie niezredagowanej zawartości to dziura przez wszystkie pozostałe
+    zabezpieczenia.
+\end{itemize}
+
+\code{GET /api/privacy} raportuje, co działające wdrożenie faktycznie
+egzekwuje, więc odpowiedź na pytanie „czy jest włączony?'' nie sprowadza się do
+zaufania plikowi konfiguracyjnemu.
+
+\subsection{Model poświadczeń}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.80\linewidth]{../diagrams/rendered/d1-deployment-modes.pdf}
+\caption{Domyślny brak poświadczeń jest ograniczony zakresem, a nie
+rozluźniony. Publikacja poza pętlę zwrotną to inne wdrożenie i tak jest
+traktowana.}
+\label{fig:deploy}
+\end{figure}
+
+Bramkowanie idzie za obecnością klucza, w każdym środowisku: przy pustym
+\codewrap{CopilotScope:Ingest:ApiKey} kolektor działa otwarcie, a przy kluczu
+ustawionym przyjmowanie, API zapytań i endpoint Prometheusa wymagają go
+wszystkie.
+
+Dla czegokolwiek współdzielonego podziel ten jeden klucz na zakresy. Klucz,
+który trzyma edytor każdego programisty, nie powinien być zarazem kluczem
+czytającym transkrypty i kasującym historię:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Ingest} --- \code{POST /v1/*} i nic poza tym. Trzymany przez
+    każdy emiter.
+    \item \textbf{Read} --- API zapytań i \code{/metrics}, co obejmuje
+    przechwycone transkrypty. Trzymany przez dashboard i Prometheusa.
+    \item \textbf{Admin} --- operacje destrukcyjne i administracyjne. Zawiera w
+    sobie Read.
+\end{itemize}
+
+Dashboard ma własne logowanie z dwiema rolami, bo transkrypty są wrażliwym
+ładunkiem: widz widzi oceny, tury i agregaty; administrator widzi także treść
+rozmów i może usuwać. Żaden plik compose nie terminuje TLS, więc cokolwiek
+współdzielonego potrzebuje reverse proxy przed sobą --- te poświadczenia
+podróżują w nagłówku i w ciasteczku.
+
+Kolektor nie jest w stanie sam ustalić, czy jest wystawiony: za Dockerem każde
+żądanie przychodzi z bramy mostka, więc adres zdalny niczego nie dowodzi. Pliki
+compose przekazują mu zatem adres, pod którym go opublikowano, a ostrzeżenie
+startowe pojawia się, gdy to nie jest pętla zwrotna, a klucza nie ma. Dwie
+komendy odmawiają takiego połączenia wprost, zamiast o nim ostrzegać.
+
+% ============================================================================
+\section{Samouczek}
+% ============================================================================
+
+Wszystko poniżej da się uruchomić. Jedynym wymaganiem jest Docker; SDK .NET jest
+potrzebne wyłącznie na ścieżce dla kontrybutora w punkcie~9.9.
+
+\subsection{Pięć minut: od pustej maszyny do ocenionej sesji}
+
+\subsubsection*{Krok 1 --- instalacja}
+
+\begin{shell}
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/\
+copilot-scope/master/install.sh | sh
+\end{shell}
+
+Na Windowsie, w PowerShellu:
+
+\begin{shell}
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/\
+master/install.ps1 | iex
+\end{shell}
+
+Instalator sprawdza Dockera, zapisuje plik compose oraz skrypt sterujący
+\code{copilotscope} do katalogu \code{~/.copilotscope}, uruchamia stos, czeka aż
+kolektor odpowie i proponuje skonfigurowanie każdego znalezionego asystenta.
+Dodaj \code{--yes} po \code{| sh -s --}, żeby przyjąć wszystkie propozycje bez
+pytań.
+
+Nic więcej nie jest wymagane. Nie ma klucza do wygenerowania ani pliku
+\code{.env} do wypełnienia.
+
+\subsubsection*{Krok 2 --- udowodnij, że potok działa, zanim obwinisz klienta}
+
+\begin{shell}
+copilotscope probe
+\end{shell}
+
+To wysyła jedną symulowaną sesję prawdziwym OTLP/HTTP protobuf, a potem
+sprawdza, czy kolektor potrafi ją oddać. Jeśli przejdzie, działają
+przyjmowanie, dekodowanie, ocena i trwałość, a wszystko, czego nadal brakuje,
+jest konfiguracją klienta. Zrobienie tego najpierw oszczędza godzinę
+debugowania niewłaściwej połowy systemu.
+
+\subsubsection*{Krok 3 --- zobacz cokolwiek}
+
+\begin{shell}
+copilotscope demo          # sesje fabrykowane, oznaczone jako demo
+copilotscope open          # http://localhost:5200
+\end{shell}
+
+Sesje zasiane są wyraźnie oznaczone, więc zrzut ekranu z nich nigdy nie zostanie
+wzięty za dowód na temat prawdziwego asystenta. \code{copilotscope demo demo}
+ładuje większy, wielodniowy zestaw zamiast szybkiego.
+
+\subsection{Podłączanie każdego asystenta}
+
+\begin{shell}
+copilotscope connect claude-code     # ~/.claude/settings.json
+copilotscope connect vscode          # ustawienia użytkownika VS Code
+copilotscope connect copilot-cli     # rc powłoki lub zakres User na Windows
+copilotscope connect cowork          # wypisuje, co wpisać w aplikacji
+copilotscope connect all             # Claude Code i VS Code razem
+\end{shell}
+
+Dwie flagi działają dla wszystkich:
+
+\begin{itemize}[leftmargin=*]
+    \item \code{--capture} eksportuje także tekst promptów i odpowiedzi.
+    Domyślnie wyłączone; to przełącznik, który zamienia wdrożenie trzymające
+    same metadane we wdrożenie trzymające kod źródłowy i wszystko, co
+    programista wkleił do czatu.
+    \item \code{--print} pokazuje dokładnie, co zostałoby zapisane, i niczego
+    nie zmienia.
+\end{itemize}
+
+\code{--traces} dotyczy tylko Claude Code i włącza betę śledzenia, jedyne
+źródło czasu do pierwszego tokenu dla tego asystenta. Schemat span-ów może się
+jeszcze zmienić; to właśnie znaczy flaga bety.
+
+Potem ręczny krok, którego narzędzia nie wykonają za Ciebie: przeładuj okno VS
+Code, zrestartuj Claude Desktop dla Cowork albo otwórz nowy terminal dla
+Copilot CLI. Na koniec rozmawiaj w \emph{trybie agenta} --- same podpowiedzi
+inline nie produkują telemetrii czatu, co jest drugim najczęstszym powodem
+pustego dashboardu.
+
+\code{copilotscope disconnect <cel>} usuwa dokładnie te klucze, które zostały
+dodane, zostawiając resztę ustawień nietkniętą.
+
+\subsection{Ocena historii, którą już masz}
+
+Jeśli używasz Claude Code, pomiń wszystko powyżej i uruchom:
+
+\begin{shell}
+copilotscope import --dry-run     # zobacz co znalazł, nie wysyłaj nic
+copilotscope import               # zaimportuj
+\end{shell}
+
+Ponowne uruchomienie jest bezpieczne: sesje zachowują własny identyfikator
+Claude Code, więc drugi przebieg zastępuje, a nie duplikuje. Można to wstawić do
+harmonogramu. Tekst promptów zostaje poza importem, chyba że podasz
+\code{--include-content}.
+
+Jedno zastrzeżenie, które sama komenda wypisuje: uruchomiony w kontenerze
+importer nie sięgnie do gita, więc zaimportowane sesje nie niosą etykiety
+repozytorium. Kiedy to ma znaczenie, uruchom go z klona z SDK .NET.
+
+\subsection{Jak czytać sesję}
+
+Otwórz sesję i czytaj ją w tej kolejności.
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Ocena i pewność razem.} Nigdy sama ocena. Niska pewność
+    oznacza, że sesja nie wyemitowała dość, by liczba miała wagę.
+    \item \textbf{Najgorsza tura wraz z powodami.} To część, na której można
+    działać: błąd, wartość odstająca opóźnienia względem własnej mediany tej
+    sesji, albo pętla naprawcza.
+    \item \textbf{Składowe.} Wskaźnik 62 napędzany opóźnieniem to inny problem
+    niż 62 napędzane niezawodnością, i mają różne naprawy.
+    \item \textbf{Przeżywalność zmian, jeśli asystent ją raportuje.} Akceptacja
+    bez przeżywalności to sygnatura kodu przyjętego i zaraz cofniętego.
+    \item \textbf{Ekonomia tokenów.} Koszt na przyjętą zmianę to liczba, która
+    zamienia rozmowę o jakości w rozmowę o budżecie.
+\end{enumerate}
+
+Wbudowana strona dokumentacji pod \code{/docs} objaśnia każdy kafelek i każdą
+składową językiem interpretacji, a nie językiem metryk.
+
+\subsection{Porównywanie okien i kohort}
+
+Dwa pytania mają własne endpointy, oba filtrowalne po repozytorium, asystencie i
+modelu, oba eksportowalne do CSV wyłącznie z wierszami grup:
+
+\begin{shell}
+GET /api/cohorts?days=30      # zwiń okno po każdej osi
+GET /api/compare?days=30      # to okno względem poprzedniego
+GET /api/digest?days=7        # tydzień, jako coś do przesłania dalej
+\end{shell}
+
+\code{/api/compare} to pytanie „czy zmiana pomogła'', z bazą odniesienia
+domyślnie ustawioną na równie długie okno bezpośrednio poprzedzające bieżące.
+
+Każda oś opisuje narzędzie. Żadna nie opisuje programisty i nie jest to
+przeoczenie.
+
+\subsection{Prometheus i Grafana}
+
+Jeśli już je utrzymujesz, kolektor wystawia swoje sygnały \emph{wyliczone} ---
+nie samo surowe zużycie --- w formacie tekstowym Prometheusa:
+
+\begin{shell}
+docker compose -f docker-compose.grafana.yml up -d
+# Grafana na http://localhost:3000, datasource i dashboard zaprowizjonowane
+\end{shell}
+
+Oceny są eksportowane jako pary \code{_sum}/\code{_count}, a nie jako
+uśrednione wcześniej gauge'e, więc PromQL utrzymuje uczciwą arytmetykę przy
+dowolnym grupowaniu:
+
+\begin{shell}
+sum by (emitter) (copilotscope_quality_score_sum)
+  / sum by (emitter) (copilotscope_quality_score_count)
+\end{shell}
+
+Wszystko niesie etykietę \code{emitter}, więc regresja w jednym asystencie jest
+widoczna, a nie uśredniona na nic. Serie per sesja są opcjonalne i ograniczone
+limitem, bo identyfikatory sesji są nieograniczone i wręczyłyby Prometheusowi
+nową serię czasową dla każdej odbytej rozmowy.
+
+Jedna pułapka zasługuje na nazwanie. Zaprowizjonowane reguły alertów używają
+ilorazów gauge'ów i nigdy \code{rate()} na liczniku. Kolektor przelicza swoje
+rodziny Prometheusa z ograniczonego zbioru w pamięci, więc rodzina
+zadeklarowana jako licznik może zmaleć, gdy sesje wypadają ze zbioru, a
+\code{rate()} czyta spadek jako reset licznika --- reguła zbudowana w ten
+sposób odpala na eksmisji, a nie na czymkolwiek rzeczywistym.
+
+\subsection{Alerty i tygodniowy skrót}
+
+Dashboard, do którego trzeba wejść, zostaje porzucony. Wyjście, które wyzwala
+decyzję, zostaje odnowione. Skonfiguruj \code{CopilotScope:Alerts}, a kolektor
+porówna każdy tydzień z poprzednim, po repozytorium, asystencie i modelu, i
+wyśle webhooka, gdy średni wskaźnik kohorty spadnie.
+
+To, co celowo \emph{nie} odpala, jest tu częścią ciekawszą: spadek, któremu
+towarzyszył spadek \emph{pewności}, jest raportowany jako zmiana podstawy
+pomiaru, a nie jako regresja. Wskaźnik renormalizuje po składowych, które mają
+dane, więc kohorta, która przestała raportować sygnał, jest mierzona inaczej, a
+nie gorzej. Wysyłanie zespołu w pogoń za zmianą, która nigdy nie zaszła, to
+sposób, w jaki wycisza się kanał alertów, a wyciszony kanał jest wart mniej niż
+brak kanału, bo zespół wierzy, że ma pokrycie.
+
+\subsection{Zamiana oceny z opinii w pomiar}
+
+To najwartościowsza rzecz, jaką czytelnik tego podręcznika może wnieść.
+
+\begin{shell}
+# appsettings.json kolektora
+"CopilotScope": { "Labelling": { "Enabled": true } }
+\end{shell}
+
+Na widoku sesji pojawia się panel \emph{Oceń tę sesję}. Oceniaj sesje
+prawdziwe, nie zasiane. Następnie:
+
+\begin{shell}
+GET /api/labels/export > calibration/labels.json
+POST /api/calibration/report   # na agencie sędziego, :5400
+\end{shell}
+
+Endpoint raportu to czysta arytmetyka: deterministyczna, darmowa i uruchamialna
+w CI. Plan badawczy prosi o pięćdziesiąt do stu oznaczonych sesji, zanim
+$\kappa$ zacznie cokolwiek znaczyć.
+
+\subsection{Praca z klona}
+
+\begin{shell}
+git clone https://github.com/konradcinkusz/copilot-scope.git
+cd copilot-scope
+dotnet build
+dotnet run --project src/CopilotScope.AppHost     # Aspire: wszystko
+dotnet test                                        # Docker niepotrzebny
+\end{shell}
+
+Dwie opcjonalne usługi agentowe siedzą za profilem compose, więc zwykłe
+\code{docker compose up} ich nie uruchamia:
+
+\begin{shell}
+docker compose --profile agents up -d --build
+\end{shell}
+
+\subsection{Kiedy nic się nie pojawia}
+
+\begin{shell}
+copilotscope doctor
+\end{shell}
+
+Sprawdza Dockera i kontenery, dokument zdrowia kolektora, czy wdrożenie jest
+wystawione bez klucza, co faktycznie mówi plik ustawień każdego asystenta, czy
+wyeksportowana zmienna \codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} nie nadpisuje tego
+pliku, oraz ile transkryptów leży na dysku niezaimportowanych.
+
+Klasyczne przyczyny, w kolejności rzeczywistego występowania:
+
+\begin{enumerate}[leftmargin=*]
+    \item VS Code nie został przeładowany po zmianie ustawień.
+    \item Same podpowiedzi inline --- nie było tury czatu ani agenta.
+    \item Dla Claude Code: brakuje przełącznika głównego albo eksportera logów.
+    \item Wyeksportowana zmienna środowiskowa wygrywa z plikiem ustawień dla
+    wszystkiego, co uruchomiono z tej powłoki.
+    \item Korporacyjne ustawienia zarządzane przypinają endpoint do firmowego
+    kolektora. Wartości zarządzane zawsze wygrywają.
+    \item Cowork wskazano na bazowy endpoint zamiast na pełną ścieżkę
+    \code{/v1/logs}, albo aplikacji nie zrestartowano.
+\end{enumerate}
+
+% ============================================================================
+\section{Eksploatacja}
+% ============================================================================
+
+\subsection{Co blokuje merge, a co wydaje tag}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{../diagrams/rendered/d2-ci-gates.pdf}
+\caption{Przez większość życia tego projektu obrazy budowano wyłącznie na tagu
+wydania. To jest luka, którą zamyka zadanie budujące kontenery.}
+\label{fig:ci}
+\end{figure}
+
+Zadanie budujące kontenery zapracowało na swoje miejsce już w pierwszym
+przebiegu: znalazło dwa istniejące wcześniej błędy, przez które żaden obraz nie
+dawał się zbudować. Pierwszym był wspólny projekt nieobecny w kontekście builda,
+czego build całego rozwiązania nie mógł zobaczyć, bo tam projekt leży dokładnie
+tam, gdzie wskazuje referencja. Drugi, osiągalny dopiero po naprawie
+pierwszego, to dwa projekty webowe rozwiązujące swój \code{appsettings.json} do
+tej samej ścieżki publikacji. Żaden nie jest egzotyczny; oba były niewidoczne,
+bo nic nie budowało obrazów, dopóki wydanie nie było już wycinane.
+
+\subsection{Retencja i to, co rośnie}
+
+Historia rośnie, dopóki nie ustawisz polityki. Retencja jest domyślnie
+wyłączona:
+
+\begin{shell}
+"CopilotScope": { "History": {
+  "RetentionDays": 0,        // 0 = trzymaj wszystko; N = usuwaj bezczynne N+ dni
+  "BaselineDays": 30,        // okno, po którym liczona jest ranga percentylowa
+  "BaselineMaxSamples": 5000
+} }
+\end{shell}
+
+\code{BaselineDays} jest tym, co czyni percentyl porównywalnym w czasie: ranga
+liczona jest względem stałego okna wstecznego sesji użytkownika, a nie
+względem tego, co akurat zostało w pamięci w chwili spojrzenia.
+
+\subsection{Archiwizacja liczb samego dostawcy, zanim wygasną}
+
+Metrics API Copilota od GitHuba wystawia okno 28 dni i nic starszego. Przy
+skonfigurowanym \codewrap{CopilotScope:VendorMetrics} --- organizacja lub
+enterprise, token tylko do odczytu i Postgres --- kolektor odpytuje codziennie i
+zatrzymuje okno bezterminowo, kluczując per dzień, więc ponowne odpytanie
+nadpisuje, zamiast gromadzić duplikaty.
+
+Pełny dokument odpowiedzi jest zapisywany dosłownie obok wyciągniętych
+liczników, bo dostawca kasuje oryginał: parser trzymający tylko to, co rozumiał
+w danym dniu, po cichu wyrzuciłby historię, której nie da się pobrać ponownie.
+
+Token potrzebuje dokładnie jednego zakresu odczytu i niczego więcej. Nic w tej
+funkcji nie zapisuje, a token z zakresami zapisu ma większy promień rażenia niż
+funkcja ma zastosowań. Wyłącznie poziom organizacji i zespołu: API można
+poprosić o rozbicie per programista, a to celowo o nie nie prosi.
+
+To jest kontekst, a nie pomiar. Liczenie zużycia nadal nie mówi, czy narzędzie
+pomaga. Archiwum kupuje mianownik --- zdanie „liczba stanowisk wzrosła o
+czterdzieści procent w marcu'' jest tym, co czyni trend jakości czytelnym ---
+oraz coś użytecznego pierwszego dnia dla organizacji, która ma stanowiska i nie
+ma nigdzie instrumentacji.
+
+\subsection{Czy kod faktycznie pojechał?}
+
+Każdy sygnał powyżej kończy się na granicy sesji. Sesja może przebiec czysto,
+mieć przyjęte zmiany i mimo to wyprodukować zmianę, której nikt nie zmergował
+--- co jest tą samą krytyką, którą ten projekt kieruje pod adresem liczników
+zużycia, obróconą przeciw niemu samemu.
+
+Wiązanie rezultatów zamyka tę pętlę, łącząc sesje z pull requestami. Skieruj
+webhooka GitHuba na \code{POST /api/outcomes/github} z sekretem; dostarczenia
+są weryfikowane HMAC-iem po surowym ciele, a bez sekretu endpoint nie jest w
+ogóle zamapowany, bo zapisuje do tych samych danych, względem których ocena ma
+być zaraz walidowana.
+
+Złączenie jest heurystyką --- telemetria niesie repozytorium i gałąź, nigdy
+commit --- więc każde powiązanie ma swoją pewność i powód, a dopasowanie po
+samym repozytorium jest pokazywane, ale wykluczone z jakiejkolwiek korelacji.
+Rezultaty stoją \emph{obok} oceny i celowo nie są do niej wliczane, z powodu
+podanego w punkcie~7.4.
+
+% ============================================================================
+\section{Gdzie co leży}
+% ============================================================================
+
+\begin{longtable}{@{}p{0.42\linewidth}p{0.54\linewidth}@{}}
+\toprule
+\textbf{Ścieżka} & \textbf{Co tam jest} \\
+\midrule
+\endhead
+\codepath{install.sh}, \codepath{install.ps1} & Instalator jednokomendowy \\
+\codepath{scripts/copilotscope} & Skrypt sterujący: up, connect, import, demo,
+probe, doctor \\
+\codepath{docker-compose.ghcr.yml} & Kanoniczny stos „pobierz i uruchom'' \\
+\codepath{docs/TUTORIAL.md} & Ręczne przejście krok po kroku, per asystent, plus
+rozwiązywanie problemów \\
+\codepath{docs/SIGNAL_COVERAGE.md} & Pełna macierz sygnałów per emiter \\
+\codepath{docs/PRIVACY.md} & Mapa danych z art. 30 RODO, retencja, wzór aneksu
+do porozumienia zakładowego \\
+\codepath{docs/CALIBRATION.md} & Metoda, kotwice skali, jak czytać zły wynik \\
+\codepath{docs/DIAGRAMS.md} & Każdy diagram z tego podręcznika, renderowany
+przez GitHuba \\
+\codepath{docs/diagrams/} & Te same diagramy jako źródła do ponownego użycia \\
+\codepath{docs/papers/} & Ten podręcznik, oba wydania językowe \\
+\codepath{docs/tutorials/} & Samouczki krok po kroku, w obu językach \\
+\codepath{docs/architecture/} & Zapisy decyzji architektonicznych i przeglądy \\
+\codepath{SECURITY.md} & Model zaufania, zakres po zakresie \\
+\codepath{GOVERNANCE.md} & Kto to utrzymuje, co jest stabilne, co się stanie,
+jeśli opiekun przestanie \\
+\codepath{research/articles/} & Formalne opracowanie modelu oceny i dziesięć
+tematów prac dyplomowych z niego wyprowadzonych \\
+\bottomrule
+\caption{Mapa. Tam, gdzie ten podręcznik i inny dokument się nie zgadzają, ten
+drugi jest źródłem prawdy, a ten jest nieaktualny.}
+\end{longtable}
+
+% ============================================================================
+\section{Podsumowanie}
+% ============================================================================
+
+Teza tego projektu jest wąska i warto ją powtórzyć precyzyjnie. Liczenie, ile
+asystenta AI zużyto, nie mówi, czy pomógł. Ocena sesji --- owszem: niedoskonale,
+na materiale różniącym się między asystentami, wzorem jeszcze niezwalidowanym
+względem ludzkiego osądu i nigdy o osobie.
+
+Trzy produkty komercyjne oceniają dziś sesje z asystentami programistycznymi, co
+jest najmocniejszym zewnętrznym dowodem na słuszność tezy: trzy firmy z
+nieporównanie lepszym rozpoznaniem rynku uznały, że problem jest prawdziwy. To,
+co pozostaje tu wyróżniające, to nie pomysł, lecz warunki. Nic nie opuszcza
+Twojej infrastruktury. Wzór jest jawny i wyprowadzalny ręcznie. Narzędzie nie
+potrafi rankingować programistów, a to jest egzekwowane testami, a nie obiecane
+w dokumencie.
+
+Uczciwym następnym krokiem jest kalibracja, a ta potrzebuje oznaczonych sesji, a
+nie kolejnego kodu. Maszyneria jest zbudowana, format eksportu przypięty testem,
+a panel oddalony o jedną flagę konfiguracyjną. Do tego czasu wskaźnik złożony
+jest opinią z przedziałem ufności --- co jest rzeczą użyteczną, pod warunkiem że
+nikt nie czyta jej jako pomiaru.
+
+\section*{Odtwarzalność}
+
+\begin{shell}
+git clone https://github.com/konradcinkusz/copilot-scope.git
+cd copilot-scope
+npm ci                    # przypięte CLI mermaida
+npm run render:diagrams   # docs/diagrams/*.mmd -> wektorowe PDF-y
+pdflatex docs/papers/copilotscope-manual.pl.tex   # dwa razy, dla spisu treści
+\end{shell}
+
+Oba wydania językowe buduje razem
+\code{.github/workflows/build-docs-pdf.yml}, na żądanie. PDF-y są wynikiem
+builda i nigdy nie są commitowane. \code{scripts/check-diagrams.mjs} przerywa
+build, jeśli diagram rozejdzie się ze swoją osadzoną kopią, a
+\code{scripts/check-doc-parity.mjs} przerywa go, jeśli jedno wydanie językowe
+zostanie zmienione bez drugiego.
+
+\end{document}

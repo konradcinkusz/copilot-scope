@@ -1,0 +1,37 @@
+flowchart TD
+    subgraph vscode["VS Code Copilot"]
+        v1["tokens · calls · errors"]
+        v2["TTFT"]
+        v3["edit accept / reject"]
+        v4["thumbs feedback"]
+        v5["lines of code"]
+    end
+
+    subgraph claude["Claude Code"]
+        c1["tokens · calls · errors"]
+        c2["TTFT only with the tracing beta"]
+        c3["edit decisions"]
+        c5["lines of code"]
+    end
+
+    subgraph cowork["Claude Cowork"]
+        w1["tokens · calls · errors"]
+        w3["edit decisions"]
+    end
+
+    subgraph imported["Imported transcript"]
+        i1["tokens · calls · tools · real timings"]
+    end
+
+    composite["Composite renormalizes<br/>over whatever arrived"]
+
+    vscode --> composite
+    claude --> composite
+    cowork --> composite
+    imported --> composite
+
+    verdict["Comparable <b>within</b> an assistant.<br/>Directional <b>across</b> them.<br/>An 80 here is not an 80 there."]
+    composite --> verdict
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class verdict star

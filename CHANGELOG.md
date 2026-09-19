@@ -10,6 +10,40 @@ release asset.
 ## [Unreleased]
 
 ### Added
+- **A bilingual manual, built from LaTeX, and the toolchain that keeps it honest.** The
+  repository had reference documentation and no explanation: `docs/TUTORIAL.md` tells a reader
+  which variable to set, and nothing told them what the composite score is made of, why
+  eviction is not deletion, or why an 80 from Claude Code is not an 80 from VS Code. There was
+  also nothing in Polish, which is the first language of the people most likely to review it.
+  Modelled on the same pattern as the `agent-eval-bench` estate, adapted to this repository:
+  - **`docs/papers/copilotscope-manual.tex` and `.pl.tex`** — the whole system in one
+    document, 24 pages per edition: the problem, the architecture, the ingest pipeline, the
+    session lifecycle, the six components and the arithmetic that renormalizes them, turn
+    analysis, all ten evaluation algorithms with their real status, the per-emitter signal
+    matrix, the honest limits (not calibrated, not a scoreboard, and why both matter), the
+    privacy and credential model, and a tutorial that runs from an empty machine to a Grafana
+    panel. Neither edition is a translation of the other's prose; both present the same
+    documents of record and say so.
+  - **`docs/tutorials/`** — four guided tutorials in English and Polish: first run, connecting
+    an assistant, reading a session, and a team deployment. The last one is deliberately a
+    document you read before running anything.
+  - **`docs/DIAGRAMS.md` and `docs/diagrams/`** — twelve diagrams, each existing exactly twice:
+    inline for GitHub to render, and as a `.mmd` file the manual includes as a vector PDF.
+    `scripts/render-diagrams.mjs` does the rendering with a pinned Mermaid CLI, so the two
+    editions share one picture rather than each maintaining a translated copy, and nothing is
+    redrawn in TikZ.
+  - **`.github/workflows/build-docs-pdf.yml`** — builds both editions on demand and uploads
+    them as one run artifact. Deliberately separate from `build-research-pdf.yml`: that builds
+    the formal papers on a release tag and needs `contents: write`, while this needs no write
+    permission at all. PDFs stay build output and are never committed.
+  - **Two new CI checks, because both halves of this are drift surfaces.**
+    `scripts/check-diagrams.mjs` fails if a diagram disagrees with its embedded copy — which
+    also closes an existing gap, since `README.md` and `architecture.mmd` held the same bytes
+    with nothing checking that they stayed equal. `scripts/check-doc-parity.mjs` fails if one
+    language edition is edited without the other; it cannot check that a translation is
+    correct, but it checks that somebody looked. The `docs` job also renders every diagram for
+    real, because a Mermaid syntax error is otherwise invisible until a manual build somebody
+    runs once a quarter.
 - **A one-command install, and nothing to declare on a local run.** Getting to a first scored
   session took eight or nine steps: download a compose file, generate two secrets, export them,
   start the stack, edit a JSON file by hand, reload a window, export a third variable for the

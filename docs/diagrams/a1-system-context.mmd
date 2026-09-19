@@ -1,0 +1,24 @@
+flowchart TD
+    vscode["VS Code<br/>Copilot Chat"]
+    cli["GitHub Copilot CLI"]
+    claude["Claude Code"]
+    cowork["Claude Cowork<br/>desktop app"]
+    ghapi["GitHub Copilot<br/>Metrics API"]
+
+    collector["<b>CopilotScope collector</b><br/>OTLP ingest · scoring · REST API"]
+    dash["Dashboard<br/>Blazor Server"]
+    pg[("Postgres<br/>session snapshots")]
+    prom["Prometheus / Grafana<br/>your existing stack"]
+
+    vscode -- "OTLP/HTTP :4318" --> collector
+    cli -- "OTLP/HTTP :4318" --> collector
+    claude -- "OTLP/HTTP :4318" --> collector
+    cowork -- "OTLP/HTTP /v1/logs" --> collector
+    ghapi -. "daily poll, org level" .-> collector
+
+    collector --> dash
+    collector --> pg
+    collector -- "GET /metrics" --> prom
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class collector star
