@@ -313,6 +313,16 @@ release asset.
   conflict only, which is why `dotnet build` and the test suite never saw it either.
 
 ### Changed
+- **Dependencies.** `actions/setup-node` 4 → 7 and `actions/github-script` 7 → 9 (the v9
+  breaks are `require('@actions/github')` and redeclaring `getOctokit`; the one script in
+  `semconv-canary.yml` reaches only `github.rest.issues.*` and `context.repo`), Aspire
+  hosting 13.4.6 → 13.5.4, the three OpenTelemetry packages in `ServiceDefaults` 1.17.0 →
+  1.18.0, and `Microsoft.Agents.AI` 1.17.0 → 1.19.0 — whose two breaking changes in that
+  range, the `AgentIsolationKeyProvider` rename and the MCP long-running task migration, name
+  nothing AgentForge or the judge agent use. Dependabot closed its own
+  `OpenTelemetry.Extensions.Hosting` pull request as "updatable in another way" after its two
+  siblings merged, leaving that one package a version behind the set; it is bumped here.
+
 - **The docs that the install change left behind are now correct too.** Moving AgentForge and
   the judge agent behind a Compose profile made `docs/JUDGE_AGENT.md` state something false:
   it said the judge agent "isn't gated behind a Compose profile, so it starts by default", and
