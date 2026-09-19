@@ -58,6 +58,14 @@ Seeded sessions are badged `demo`, so a screenshot of them is never mistaken for
 evidence about a real assistant. `copilotscope demo demo` loads the larger
 multi-day dataset instead.
 
+This is what the page looks like once it has something to show — the session
+list on the left, and the one you picked scored on the right:
+
+![The Sessions page with the seeded demo dataset loaded](../img/dashboard-sessions.png)
+
+The score is the headline; `View: Basic` keeps it to that. Tutorial 3 takes the
+same page apart panel by panel.
+
 ## Already use Claude Code? Skip ahead
 
 Claude Code records every session to disk whether or not telemetry is

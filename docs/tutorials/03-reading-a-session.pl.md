@@ -3,6 +3,16 @@
 **Sytuacja:** przychodzą prawdziwe sesje. **Wynik:** potrafisz odróżnić sesję
 złą od źle zmierzonej i wiesz, na której liczbie działać.
 
+Wszystko, co opisuje ten samouczek, mieści się na jednej stronie. Wybierz sesję,
+przełącz `View:` na **Advanced** i masz całość naraz:
+
+![Jedna sesja w widoku Advanced](../img/dashboard-session-detail.png)
+
+Jak czytać ten zrzut względem sekcji poniżej: ocena i jej percentyl są na górze
+(krok 1), mapa cieplna tur oraz `Turn analysis — TFRA` dają najgorszą turę wraz
+z powodem (krok 2), sześć ważonych pasków to składowe (krok 3), a `Edit
+survival` jest pierwszą z czterech kart z analizami (krok 4).
+
 ## Czytaj w tej kolejności
 
 ### 1. Ocena i pewność, razem

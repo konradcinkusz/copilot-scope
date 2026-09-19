@@ -59,6 +59,14 @@ Sesje zasiane są oznaczone jako `demo`, więc zrzut ekranu z nich nigdy nie
 zostanie wzięty za dowód na temat prawdziwego asystenta.
 `copilotscope demo demo` ładuje zamiast tego większy, wielodniowy zestaw.
 
+Tak wygląda strona, kiedy ma już co pokazać — lista sesji po lewej, a po prawej
+ocena tej, którą wybrano:
+
+![Strona Sessions z załadowanym zasianym zestawem demo](../img/dashboard-sessions.png)
+
+Wynik jest nagłówkiem; widok `View: Basic` ogranicza stronę do niego. Samouczek
+3 rozkłada tę samą stronę na panele.
+
 ## Używasz już Claude Code? Przeskocz dalej
 
 Claude Code zapisuje każdą sesję na dysk niezależnie od tego, czy telemetria

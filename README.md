@@ -22,6 +22,10 @@ that score to Prometheus and Grafana if you already run them.
 
 ![CopilotScope sessions view](docs/img/dashboard-sessions.png)
 
+<sub>Every screenshot in this README is the running dashboard, loaded with the
+seeded demo dataset (`copilotscope demo`) — which is why the sessions carry a
+`DEMO` badge. Fabricated data, real UI.</sub>
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
 ```
@@ -700,16 +704,34 @@ relays raw OTLP to an upstream backend. Forwarding ships the telemetry;
 ## Dashboard pages
 
 - **Sessions** (`/`) — live session list, quality VU-meter, turn analysis with
-  best/worst reasons, prompt transcript, delete control.
-- **Overview** (`/overview`) — everything you burned across all chats: total
-  input/output/cache tokens, tokens per day, calls per model, top sessions by
-  token burn, average quality.
+  best/worst reasons, prompt transcript, delete control. Three detail levels:
+  **Basic** is the headline verdict (screenshot at the top of this README),
+  **Advanced** adds every panel that has data, **Full** adds the no-data
+  placeholders too.
+
+  Advanced on one session — the score with its percentile against the repo, the
+  per-turn heatmap, all six weighted factors, the TFRA turn analysis with the
+  model timeline, the four insight algorithms, tool and model breakdowns, and
+  the live event feed:
+
+  ![CopilotScope session breakdown](docs/img/dashboard-session-detail.png)
+
+- **Overview** (`/overview`) — the fleet view, over a 7/30/90-day or all-time
+  window and filterable by repository, assistant and model: utilization, impact
+  and cost tiles; this window against the one before it, metric by metric;
+  token burn and quality broken down by repository, assistant, model and
+  session kind; tokens per day; top sessions by burn. Cohorts and the
+  comparison export to CSV.
 
   ![CopilotScope overview](docs/img/dashboard-overview.png)
 
 - **Docs** (`/docs`) — built-in deep documentation: what every tile and score
   component means, the rationale (and honest objections) behind each insight
-  algorithm, content-capture semantics and known limitations.
+  algorithm, content-capture semantics and known limitations. It also carries
+  the per-assistant setup table, so the instructions live next to the data they
+  produce:
+
+  ![CopilotScope built-in documentation](docs/img/dashboard-docs.png)
 
 ## Copilot CLI in one command
 

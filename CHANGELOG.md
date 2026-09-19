@@ -313,6 +313,20 @@ release asset.
   conflict only, which is why `dotnet build` and the test suite never saw it either.
 
 ### Changed
+- **The dashboard screenshots are current again, and there are two more of them.** The
+  committed shots predated the Overview rewrite: the file showed an "all chats — token burn"
+  page that the application no longer leads with, next to a Sessions view from before the
+  Basic/Advanced/Full split. All four are now captured from the running stack against the
+  seeded demo dataset over a 60-day window — wide enough that the Overview's
+  this-window-versus-the-one-before-it table compares two populated windows instead of
+  printing its too-few-sessions caveat. `docs/img/dashboard-session-detail.png` and
+  `docs/img/dashboard-docs.png` are new: the first is the Advanced breakdown of a single
+  session, which is the one view that shows what the product actually computes, and the
+  second is the built-in documentation page. Both tutorials that describe a screen now show
+  it, in each language. The README says once, under the hero, that every screenshot in it is
+  seeded demo data — the `DEMO` badge is visible in the images, and the tutorials already
+  made the same promise in prose.
+
 - **Dependencies.** `actions/setup-node` 4 → 7 and `actions/github-script` 7 → 9 (the v9
   breaks are `require('@actions/github')` and redeclaring `getOctokit`; the one script in
   `semconv-canary.yml` reaches only `github.rest.issues.*` and `context.repo`), Aspire
