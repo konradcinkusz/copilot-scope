@@ -5,6 +5,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
+COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 COPY src/CopilotScope.JudgeAgent/ src/CopilotScope.JudgeAgent/
 RUN dotnet publish src/CopilotScope.JudgeAgent -c Release -o /app/publish

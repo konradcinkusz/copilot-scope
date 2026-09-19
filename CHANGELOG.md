@@ -235,6 +235,22 @@ release asset.
   derived rather than declared, so a later rubric edit surfaces as a re-baseline instead of a
   silently moved measuring stick.
 
+### Fixed
+- **Every container image was unbuildable, and nothing was checking** (#57). All four
+  Dockerfiles copy their own project into the build context and nothing else, but the
+  collector and the dashboard both carry a `ProjectReference` to
+  `src/CopilotScope.ServiceDefaults` — added when OTel self-instrumentation, health
+  endpoints, service discovery and HTTP resilience were factored into a shared kernel. The
+  project is simply not in the context, so `dotnet publish` fails with `CS0234` on the
+  `CopilotScope.ServiceDefaults` namespace, behind an `MSB9008` warning naming the missing
+  csproj. AgentForge and the judge agent reference it transitively and fail the same way.
+  `dotnet build` at the solution level never noticed, because there the project is right
+  where the reference says it is; and images were built only on a release tag, so the
+  failure had nowhere to surface until CI started building them. Every Dockerfile now
+  copies `ServiceDefaults`, the two that restore in a separate layer copy its csproj first
+  so that layer stays cached, and the new `containers` CI job builds and starts all five on
+  every pull request.
+
 ### Changed
 - **The in-app and published setup instructions now match what the tools actually read.** The
   dashboard's own Docs page told Claude Code users to set an endpoint and a protocol and

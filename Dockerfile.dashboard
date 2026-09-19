@@ -3,8 +3,12 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
+# ServiceDefaults is a ProjectReference of the dashboard — see the comment in
+# ./Dockerfile for what its absence from the context costs.
+COPY src/CopilotScope.ServiceDefaults/*.csproj src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Dashboard/*.csproj src/CopilotScope.Dashboard/
 RUN dotnet restore src/CopilotScope.Dashboard
+COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Dashboard/ src/CopilotScope.Dashboard/
 RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish --no-restore
 

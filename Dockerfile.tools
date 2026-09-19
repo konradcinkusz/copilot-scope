@@ -16,6 +16,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
+# ServiceDefaults is a ProjectReference of the collector, which all three tools
+# reference — see the comment in ./Dockerfile.
+COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 COPY tools/CopilotScope.Seeder/ tools/CopilotScope.Seeder/
 COPY tools/CopilotScope.LogImporter/ tools/CopilotScope.LogImporter/
