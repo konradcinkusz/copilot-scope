@@ -10,7 +10,16 @@ COPY src/CopilotScope.Dashboard/*.csproj src/CopilotScope.Dashboard/
 RUN dotnet restore src/CopilotScope.Dashboard
 COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Dashboard/ src/CopilotScope.Dashboard/
-RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish --no-restore
+# Deliberately NOT --no-restore. The restore above runs against a context that
+# holds the .csproj files and nothing else, and it caches the static web asset
+# set it can see at that moment into obj/. A publish that trusts that cache
+# emits a wwwroot without _framework/, so blazor.web.js 404s and the Blazor
+# circuit never starts: the dashboard renders once, server-side, and then every
+# control on it is dead — filters, the view-mode toggle, selecting a session,
+# the 2 s refresh. It still answers 200 on /, which is why the container
+# healthcheck and CI both stayed green while the published image shipped a UI
+# nobody could click. Re-running restore here costs one cached-package layer.
+RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope

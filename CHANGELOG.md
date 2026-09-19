@@ -270,6 +270,23 @@ release asset.
   silently moved measuring stick.
 
 ### Fixed
+- **The published dashboard image shipped a UI nobody could click.** `Dockerfile.dashboard`
+  restored against a context holding the `.csproj` files alone — the layer-caching pattern —
+  and then published with `--no-restore`. That publish trusts the static web asset set the
+  restore cached at a moment when the project's `wwwroot` was not in the context yet, so the
+  output carried `app.css`, `app.js` and `favicon.svg` and no `_framework/` at all.
+  `blazor.web.js` was therefore absent from the image, the Blazor circuit never started, and
+  the dashboard rendered exactly once, server-side, with every control on it inert: the
+  filters, the 7d/30d/90d range, the repository and assistant selectors, the
+  Basic/Advanced/Full toggle, selecting a session, delete, and the two-second refresh. The
+  page still answered `200` on `/`, which is precisely why nothing went red — the container
+  healthcheck curls `/`, and so did the `containers` CI job. Anyone following the README's
+  primary path, `docker compose -f docker-compose.ghcr.yml up -d`, got the dead copy; anyone
+  running `dotnet run` did not, because a development build resolves those assets from disk.
+  The publish no longer passes `--no-restore`, and the `containers` smoke test now also
+  fetches `/_framework/blazor.web.js`, so an image that serves a page it cannot animate fails
+  the build instead of shipping.
+
 - **Every container image was unbuildable, and nothing was checking** (#57). All four
   Dockerfiles copy their own project into the build context and nothing else, but the
   collector and the dashboard both carry a `ProjectReference` to

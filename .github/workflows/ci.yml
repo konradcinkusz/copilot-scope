@@ -58,6 +58,12 @@ jobs:
             smoke: http
             port: 8080
             healthpath: /
+            # A Blazor Server page answers 200 on / whether or not its circuit can
+            # start, so / alone cannot tell a working dashboard from a dead one.
+            # This is the script that starts the circuit; without it every control
+            # on the page is inert. It went missing once already, from a publish
+            # that trusted a stale --no-restore asset cache, and nothing went red.
+            assetpath: /_framework/blazor.web.js
           - image: copilotscope-tools
             dockerfile: Dockerfile.tools
             smoke: cli
@@ -111,6 +117,15 @@ jobs:
             exit 1
           fi
           echo "${{ matrix.image }} is healthy."
+          if [ -n "${{ matrix.assetpath }}" ]; then
+            if ! curl -fsS "http://localhost:${{ matrix.port }}${{ matrix.assetpath }}" >/dev/null 2>&1; then
+              echo "::error title=Smoke test failed::${{ matrix.image }} answers ${{ matrix.healthpath }} but not ${{ matrix.assetpath }}. The published image is missing a static asset it serves the page with, so the UI loads and then does nothing."
+              docker logs smoke || true
+              docker rm -f smoke || true
+              exit 1
+            fi
+            echo "${{ matrix.image }} serves ${{ matrix.assetpath }}."
+          fi
           docker rm -f smoke
 
       - name: Smoke test (entrypoint runs)
