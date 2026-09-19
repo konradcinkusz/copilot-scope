@@ -4,6 +4,17 @@
 * text=auto
 
 ###############################################################################
+# Shell scripts keep LF regardless of platform.
+#
+# `* text=auto` would hand a Windows checkout CRLF, and several of these are
+# copied into Linux container images or piped into `sh` — where a CRLF shebang
+# fails as "no such file or directory", which reads like a missing file rather
+# than a line ending.
+###############################################################################
+*.sh            text eol=lf
+scripts/copilotscope text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

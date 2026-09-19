@@ -57,8 +57,36 @@ over, then removing the old.
 
 The legacy single key (`CopilotScope__Ingest__ApiKey`) still works and still grants
 **every** scope — an upgrade never locks a running deployment out of itself. Scoping
-only takes effect once `CopilotScope:Keys` is populated. **With no key set at all,
-ingest and the query API are open**; that default suits localhost, not a shared host.
+only takes effect once `CopilotScope:Keys` is populated.
+
+**With no key set at all, ingest and the query API are open.** That is the shipped
+default, and it is deliberate: the compose files bind every port to `127.0.0.1`
+and publish no Postgres port at all, so the only thing that can reach the
+collector is the machine it runs on. A credential there protects nothing and costs
+a configuration step in every client — which is the step people get wrong, leaving
+them with a collector that receives nothing.
+
+It stops being defensible the moment a port is published anywhere else, and the
+collector cannot work that out for itself: behind Docker every request arrives
+from the bridge gateway, so the remote address says nothing about exposure. The
+compose files therefore pass the address they published on as
+`CopilotScope__Ingest__Bind`, and the collector logs a loud warning at startup
+when that is not loopback and no key is configured. Two other places refuse the
+combination outright rather than warning: `copilotscope up --bind` and
+`install.sh --bind` both require `--api-key` in the same command.
+
+So, for anything beyond one machine, set all four together:
+
+```bash
+COPILOTSCOPE_BIND=0.0.0.0
+COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+```
+
+The last two matter because the default Postgres posture is `trust` on an
+unpublished socket. That is safe while the socket is unreachable from outside the
+compose network, and it is the wrong thing to keep once the deployment is shared.
 
 **Dashboard — sign-in with two roles.** Set a password to turn it on:
 

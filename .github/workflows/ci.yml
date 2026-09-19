@@ -1,6 +1,13 @@
 # Builds the solution and runs the test suite on every pull request and on
-# pushes to master. Tests need neither Docker nor a live collector, so this is
-# a plain restore/build/test with no services.
+# pushes to master. Tests need neither Docker nor a live collector, so the
+# first job is a plain restore/build/test with no services.
+#
+# The second job builds the container images and checks that each one starts.
+# `dotnet build` does not cover them: a Dockerfile can be broken (a wrong base
+# image major, a missing COPY, a bad entrypoint) while the solution compiles,
+# and that used to surface only when a release tag was pushed — which is how a
+# release shipped images that exited at startup (#57, #55). Images are built
+# here and never pushed; publishing stays in build-containers.yml.
 name: ci
 
 on:
@@ -32,3 +39,171 @@ jobs:
 
       - name: Test
         run: dotnet test CopilotScope.sln --configuration Release --no-build --verbosity normal
+
+  # Mirrors the pre-publish gate in build-containers.yml, without the push. Kept as
+  # its own job so a Dockerfile problem is reported separately from a test failure.
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: copilotscope-collector
+            dockerfile: Dockerfile
+            smoke: http
+            port: 4318
+            healthpath: /api/health
+          - image: copilotscope-dashboard
+            dockerfile: Dockerfile.dashboard
+            smoke: http
+            port: 8080
+            healthpath: /
+          - image: copilotscope-tools
+            dockerfile: Dockerfile.tools
+            smoke: cli
+            smokeargs: help
+          - image: copilotscope-agentforge
+            dockerfile: Dockerfile.agentforge
+            smoke: http
+            port: 8080
+            healthpath: /api/health
+          - image: copilotscope-judgeagent
+            dockerfile: Dockerfile.judgeagent
+            smoke: http
+            port: 8080
+            healthpath: /api/health
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Shares the layer cache scope with the release workflow, so a release build
+      # after a green PR is near-instant.
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          push: false
+          tags: ${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Smoke test (server answers)
+        if: matrix.smoke == 'http'
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p ${{ matrix.port }}:${{ matrix.port }} ${{ matrix.image }}:ci
+          ok=false
+          for i in $(seq 1 30); do
+            if curl -fsS "http://localhost:${{ matrix.port }}${{ matrix.healthpath }}" >/dev/null 2>&1; then
+              ok=true; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != true ]; then
+            echo "::error title=Smoke test failed::${{ matrix.image }} did not answer ${{ matrix.healthpath }} on :${{ matrix.port }} within 60s."
+            docker logs smoke || true
+            docker rm -f smoke || true
+            exit 1
+          fi
+          echo "${{ matrix.image }} is healthy."
+          docker rm -f smoke
+
+      - name: Smoke test (entrypoint runs)
+        if: matrix.smoke == 'cli'
+        run: |
+          set -euo pipefail
+          if ! output=$(docker run --rm ${{ matrix.image }}:ci ${{ matrix.smokeargs }} 2>&1); then
+            echo "::error title=Smoke test failed::${{ matrix.image }} entrypoint exited non-zero."
+            echo "$output"
+            exit 1
+          fi
+          echo "$output"
+          echo "${{ matrix.image }} entrypoint runs."
+
+  # The installer and the control script are the first thing a user runs, and they
+  # are not covered by `dotnet build`. A syntax error in either is a broken front
+  # door, so both dialects are parsed here. pwsh is preinstalled on the Ubuntu
+  # runner image, so the Windows scripts are checked without a Windows job.
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          for file in install.sh scripts/tools-entrypoint.sh scripts/setup.sh \
+                      scripts/Enable-ClaudeCodeOtel.sh; do
+            sh -n "$file" 2>/dev/null || bash -n "$file"
+            echo "ok $file"
+          done
+          # The control script is bash, and is also parsed by dash-as-sh nowhere —
+          # it declares bash in its shebang.
+          bash -n scripts/copilotscope
+          echo "ok scripts/copilotscope"
+
+      - name: Shell lint
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # SC1090/SC1091 only: sourced paths resolve at runtime, not here.
+          shellcheck -S warning -e SC1090,SC1091 \
+            install.sh scripts/copilotscope scripts/tools-entrypoint.sh \
+            scripts/setup.sh scripts/Enable-ClaudeCodeOtel.sh
+
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in @('install.ps1', 'scripts/copilotscope.ps1', 'scripts/setup.ps1',
+                              'scripts/Enable-ClaudeCodeOtel.ps1', 'scripts/Enable-CopilotOtel.ps1')) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "::error file=$file::$($errors.Count) parse error(s)"
+              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            } else {
+              Write-Host "ok $file"
+            }
+          }
+          if ($failed) { exit 1 }
+
+  # The published compose files must stay parseable and must not silently require a
+  # variable a first run has no way to know about: `config` fails on a bad file, and
+  # the grep asserts the zero-declaration posture the README promises.
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate compose files
+        run: |
+          set -euo pipefail
+          for file in docker-compose.yml docker-compose.ghcr.yml docker-compose.grafana.yml; do
+            echo "── $file"
+            # No .env, no exported variables: exactly what a fresh machine has.
+            # --profile '*' so the on-demand services are parsed too, not just the
+            # ones a plain `up` starts.
+            env -u COPILOTSCOPE_API_KEY -u POSTGRES_PASSWORD -u COPILOTSCOPE_BIND \
+              docker compose -f "$file" --profile tools --profile agents config >/tmp/rendered.yml
+            # `${VAR:?message}` aborts a first run with an error about a variable the
+            # reader has no way to know about. That is the friction this posture removes.
+            if grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*:?\?' "$file"; then
+              echo "::error title=Required variable in $file::A first run cannot supply it; give it a safe local default instead."
+              exit 1
+            fi
+            # Ports must stay on loopback unless COPILOTSCOPE_BIND says otherwise (#65).
+            if grep -nE 'host_ip: (0\.0\.0\.0|::)$' /tmp/rendered.yml; then
+              echo "::error title=Port published on every interface in $file::Bind to 127.0.0.1 by default."
+              exit 1
+            fi
+          done

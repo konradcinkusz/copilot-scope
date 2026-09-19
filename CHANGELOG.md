@@ -3,12 +3,58 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-collector`,
-`-dashboard`, `-agentforge` and `-judgeagent` — plus the research paper PDF as a release asset.
+Releases publish five images to GHCR — `ghcr.io/konradcinkusz/copilotscope-collector`,
+`-dashboard`, `-tools`, `-agentforge` and `-judgeagent` — plus the research paper PDF as a
+release asset.
 
 ## [Unreleased]
 
 ### Added
+- **A one-command install, and nothing to declare on a local run.** Getting to a first scored
+  session took eight or nine steps: download a compose file, generate two secrets, export them,
+  start the stack, edit a JSON file by hand, reload a window, export a third variable for the
+  key, and — to see anything at all — install a .NET SDK to run a generator. `install.sh` /
+  `install.ps1` replace the first half and a `copilotscope` control script replaces the rest.
+  The pieces:
+  - **No credential on one machine.** Every published port now binds to `127.0.0.1` (#65),
+    Postgres publishes none at all and trusts its unpublished socket, and the ingest key is
+    empty — the collector's open mode. A key on loopback protects nothing and costs a
+    configuration step in *every* client, which is the step people got wrong. Publishing
+    beyond loopback is a different deployment and is treated as one: `copilotscope up --bind`
+    and `install.sh --bind` both refuse to run without `--api-key`, and the compose files pass
+    the published address as `CopilotScope__Ingest__Bind` so the collector can log a startup
+    warning when it is exposed without a key. It cannot infer that by itself — behind Docker
+    every request arrives from the bridge gateway, so the remote address proves nothing.
+  - **`copilotscope connect <assistant>` writes the assistant's own settings file.** Claude
+    Code gets an `env` block in `~/.claude/settings.json`, which applies to every terminal and
+    every project, so the most common failure here disappears: exporting variables in one shell
+    and starting `claude` in another. VS Code gets its user `settings.json` (a window reload is
+    still needed, and is still not automatable). Copilot CLI remains environment variables
+    because they are the only thing it reads. Cowork prints what to type into the desktop app,
+    including the `/v1/logs` path it wants and the base endpoint it does not. Merging goes
+    through a real JSON parser with a `.copilotscope.bak` beside the file; a settings file with
+    comments in it is reported and left alone rather than rewritten by a regex.
+    `copilotscope disconnect` removes exactly the keys that were added.
+  - **`copilotscope doctor`** automates the thirteen-point troubleshooting list: Docker, the
+    containers, the collector's health document, exposure without a key, what each assistant's
+    settings file actually says, whether an exported `OTEL_EXPORTER_OTLP_ENDPOINT` is
+    overriding it, and how many transcripts are sitting on disk unimported.
+  - **A `copilotscope-tools` image** carrying the seeder, the transcript importer and the
+    telemetry generator, so `copilotscope import`, `demo` and `probe` work with no .NET SDK and
+    no clone. This is what finally makes the no-configuration import path
+    (`tools/CopilotScope.LogImporter`, added for #98) reachable by the users it was written
+    for. One caveat, stated in the output: the container cannot read git remotes, so imports
+    run this way carry no repository label — run the importer from a clone when that matters.
+  - **AgentForge and the judge agent moved behind a compose profile.** Both used to start with
+    every stack and neither serves traffic until model configuration is supplied, so a first
+    run paid for two idle containers.
+- **CI now builds the container images and checks the scripts** (#57). `dotnet build` never
+  covered either, so a broken Dockerfile or a syntax error in the installer surfaced at release
+  time — which is how a release once shipped images that exited at startup (#55). Three new
+  jobs: build and smoke-test all five images, parse every shell and PowerShell script
+  (`pwsh` is preinstalled on the Ubuntu runner, so the Windows scripts are covered without a
+  Windows job) and run `shellcheck`, and render the compose files with no environment at all to
+  assert that a first run needs no variable and that nothing binds beyond loopback.
 - **`GOVERNANCE.md` — the "who maintains it?" answer** (#103). The first question anyone asks
   before putting a tool in their telemetry path, and until now unanswerable: one maintainer,
   no stated response posture beyond security reports, and no schema-stability guarantee, so an
@@ -190,6 +236,28 @@ Releases publish four images to GHCR — `ghcr.io/konradcinkusz/copilotscope-col
   silently moved measuring stick.
 
 ### Changed
+- **The in-app and published setup instructions now match what the tools actually read.** The
+  dashboard's own Docs page told Claude Code users to set an endpoint and a protocol and
+  nothing else — omitting `CLAUDE_CODE_ENABLE_TELEMETRY=1`, without which nothing is exported
+  at all, and `OTEL_LOGS_EXPORTER=otlp`, which is what carries the session — and pointed at
+  `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` for content capture, a variable Claude
+  Code does not read. Anyone following that page saw an empty dashboard and no error. The row
+  now names all four required values, the three separate content opt-ins and the tracing beta
+  that is the only source of time-to-first-token, and a Cowork row was added. The landing
+  page's quick start could not work as written either (it omitted the two secrets the compose
+  file then required) and claimed "GHCR packages start private", which has not been true since
+  they were made public; both are corrected, along with a `.NET 8` badge and prerequisite on a
+  repository that targets `net10.0`. The tutorial's §1 said `.NET 8 SDK` and advertised the
+  removed `dev-secret-123`, and the setup scripts pointed at "section 8" for troubleshooting
+  that lives in §9.
+- **`scripts/setup.sh` / `setup.ps1` no longer generate an ingest key for a local run.** They
+  wrote two random secrets into `.env` because the compose files demanded them; with the
+  loopback-only posture that just puts an `x-api-key` step back into every client. A key is
+  used only when one is passed explicitly or already sits in `.env`.
+- **The dashboard's empty state carries the next action.** It used to name a `dotnet run`
+  command as the way to see anything, which required the SDK the pull-and-run path exists to
+  avoid, and described the problem rather than the fix. It now lists the `connect`, `import`,
+  `demo` and `doctor` commands, all of which run in a container.
 - **Positioning restated for a post-DX/Datadog market** (#99,
   [ADR-003](docs/architecture/ADR-003-positioning.md)). `docs/STRATEGY.md` claimed this was
   "the only open-source tool that turns telemetry from any AI coding assistant into a session

@@ -23,12 +23,36 @@ that score to Prometheus and Grafana if you already run them.
 ![CopilotScope sessions view](docs/img/dashboard-sessions.png)
 
 ```bash
-curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-# Two secrets, no defaults — the compose file fails loudly rather than shipping a known key:
-export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
-export POSTGRES_PASSWORD=$(openssl rand -hex 16)
-docker compose -f docker-compose.ghcr.yml up
-# dashboard on http://localhost:5200 · point your assistant at http://localhost:4318
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
+```
+
+That starts the stack and offers to point the assistants it finds on your machine
+at it. **There is nothing to declare**: no key to generate, no environment
+variable to export, no JSON to hand-edit. The collector binds to `127.0.0.1` and
+Postgres publishes no port at all, so on one machine a credential would buy
+nothing and cost a step in every client.
+
+Two commands is the whole setup:
+
+```bash
+copilotscope up                    # dashboard on http://localhost:5200
+copilotscope connect claude-code   # or: vscode · copilot-cli · cowork · all
+```
+
+`connect` writes the settings file the assistant itself reads — `~/.claude/settings.json`
+for Claude Code, VS Code's user settings for Copilot Chat — so the configuration
+survives new terminals, new projects and reboots. If nothing shows up,
+`copilotscope doctor` walks the whole path and says which link is broken.
+
+Already use Claude Code? Your history is on disk already, and scoring it needs no
+telemetry setup at all:
+
+```bash
+copilotscope import
 ```
 
 No clone, no .NET, no login — the images are public on GHCR. Full walkthrough for
@@ -187,23 +211,64 @@ biggest regressions — as the artefact a lead forwards instead of a dashboard l
 
 ## Quick start — no clone, just pull
 
-Each GitHub release publishes four images to GHCR — collector, dashboard, agentforge
-and judgeagent (see `.github/workflows/build-containers.yml`). Users don't need the
-repository at all:
+Each GitHub release publishes five images to GHCR — collector, dashboard, tools,
+agentforge and judgeagent (see `.github/workflows/build-containers.yml`). Users
+don't need the repository at all.
 
 ```bash
-# Durable (Postgres + collector + dashboard) — download ONE file, no clone:
-# Linux / macOS / Git Bash:
-curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-# Windows PowerShell:
-curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-# Set the two required secrets first (no default — an unset value fails loudly):
-export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
-export POSTGRES_PASSWORD=$(openssl rand -hex 16)
-docker compose -f docker-compose.ghcr.yml up
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
 ```
 
-The images are public — no login, no token, no clone.
+```powershell
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
+```
+
+The installer checks Docker, drops the compose file and a `copilotscope` control
+script into `~/.copilotscope`, starts the stack, waits for the collector to
+answer, and offers to configure each assistant it finds. Options go after
+`| sh -s --`, e.g. `--yes` to skip the questions or `--capture` to include prompt
+text. `copilotscope uninstall` reverses all of it.
+
+Prefer to drive compose yourself? The same posture, without the control script:
+
+```bash
+curl -O https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/docker-compose.ghcr.yml
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+The images are public — no login, no token, no clone. Nothing to set: ports bind
+to `127.0.0.1`, Postgres publishes no port and trusts its unpublished socket, and
+the ingest key is empty, which is the collector's open mode.
+
+### What the control script does
+
+| Command | |
+|---|---|
+| `copilotscope up` | start the stack; `--bind`/`--api-key` for a shared deployment |
+| `copilotscope connect <target>` | write the assistant's own settings file — `claude-code`, `vscode`, `copilot-cli`, `cowork`, `all` |
+| `copilotscope disconnect <target>` | remove exactly those keys again |
+| `copilotscope import` | score the Claude Code transcripts already on disk |
+| `copilotscope demo` | load fabricated demo sessions, badged `demo` |
+| `copilotscope probe` | push one session through the real OTLP path |
+| `copilotscope doctor` | check Docker, the collector, each client's configuration, and the overrides that beat it |
+| `copilotscope status` · `logs` · `open` · `update` · `down` · `uninstall` | the rest |
+
+`import`, `demo` and `probe` run in the `copilotscope-tools` container, so none of
+them needs a .NET SDK or a clone.
+
+### Shared deployments
+
+The zero-credential posture is for one machine. Publishing the collector beyond
+loopback requires a key in the same breath, and both the installer and
+`copilotscope up` refuse the combination without one:
+
+```bash
+copilotscope up --bind 0.0.0.0 --api-key "$(openssl rand -hex 24)"
+```
+
+Then set `POSTGRES_PASSWORD` and `POSTGRES_HOST_AUTH_METHOD=scram-sha-256` too,
+and read **[SECURITY.md](SECURITY.md)** for what the key gates and how to split it
+into ingest / read / admin scopes.
 
 ## Quick start — from source
 
@@ -435,14 +500,26 @@ matches the table above.
 
 | Mode | Command | Containers |
 |---|---|---|
+| **GHCR (recommended)** | `copilotscope up`, or `docker compose -f docker-compose.ghcr.yml up -d` | postgres, collector, dashboard |
+| **With Grafana** | `docker compose -f docker-compose.grafana.yml up -d` | + prometheus, grafana |
+| Compose from source | `docker compose up -d --build` | postgres, collector, dashboard |
 | Dev (Aspire) | `dotnet run --project src/CopilotScope.AppHost` | postgres, pgadmin |
-| Compose | `docker compose up --build` | postgres, collector, dashboard |
-| **GHCR (durable)** | see "Quick start — no clone, just pull" above | postgres, collector, dashboard |
-| **With Grafana** | `docker compose -f docker-compose.grafana.yml up` | + prometheus, grafana |
 | Azure Container Apps | `infra/main.bicep` | collector (+ your PG) |
 
-In Production mode `/v1/*` requires `x-api-key` (`CopilotScope__Ingest__ApiKey`);
-clients add it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`.
+Two service groups sit behind compose profiles, so a normal start never pays for
+them: `--profile tools` (the one-shot import / demo / probe container, which is
+what `copilotscope import` runs) and `--profile agents` (AgentForge and the judge
+agent, neither of which serves traffic until you supply model configuration).
+
+Ingest auth follows the **key, not the environment**: with
+`CopilotScope__Ingest__ApiKey` empty the collector runs open, and with a key set
+`/v1/*`, `/api/*` and `/metrics` all require it — in any environment. Clients add
+it via `OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"`. Open mode is the right
+answer on `127.0.0.1` and the wrong one anywhere else, so the compose files tell
+the collector which address they published it on (`CopilotScope__Ingest__Bind`)
+and it logs a loud startup warning when that is not loopback and no key is set.
+The collector cannot infer this for itself — behind Docker every request arrives
+from the bridge gateway, so the remote address proves nothing.
 
 For a shared deployment, split that one key into scopes and put a password on the
 dashboard — the key every editor holds should not also be the key that reads

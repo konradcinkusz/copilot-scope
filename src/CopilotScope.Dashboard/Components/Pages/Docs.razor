@@ -46,35 +46,72 @@
                     <td>GitHub Copilot — VS Code</td>
                     <td><code>VS Code</code></td>
                     <td>
-                        Add to VS Code settings.json:<br/>
+                        <code>copilotscope connect vscode</code><br/>
+                        Writes your user settings.json, then <b>reload the window</b> — settings are
+                        read at extension startup. By hand:<br/>
                         <code>"github.copilot.chat.otel.enabled": true</code><br/>
                         <code>"github.copilot.chat.otel.otlpEndpoint": "http://localhost:4318"</code>
                     </td>
-                    <td>Full signal set — spans, metrics, logs. Edit acceptance, feedback, LOC all available.</td>
+                    <td>
+                        Full signal set — spans, metrics, logs. Edit acceptance, feedback, LOC all available.
+                        Telemetry comes from <i>chat/agent</i> turns; inline completions alone produce none.
+                    </td>
                 </tr>
                 <tr>
                     <td>GitHub Copilot — CLI</td>
                     <td><code>Copilot CLI</code></td>
                     <td>
-                        Run <code>scripts/Enable-CopilotOtel.ps1</code> (PowerShell) then launch <code>copilot</code> from the same terminal.
+                        <code>copilotscope connect copilot-cli</code>, then a new terminal.<br/>
+                        The CLI reads environment variables only, so this one has no settings file:
+                        the command writes a block into your shell rc (or the Windows User
+                        environment).
                     </td>
-                    <td>Span + metric signals. No edit acceptance or feedback (CLI has no editor UI).</td>
+                    <td>
+                        Span + metric signals. No edit acceptance or feedback (CLI has no editor UI).
+                        Content capture is the OTel GenAI standard variable,
+                        <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code> —
+                        <code>COPILOT_OTEL_CAPTURE_CONTENT</code> does not exist and silently does nothing.
+                    </td>
                 </tr>
                 <tr>
                     <td>Claude Code</td>
                     <td><code>Claude Code</code></td>
                     <td>
-                        <b>Linux/macOS:</b> <code>source scripts/Enable-ClaudeCodeOtel.sh</code><br/>
-                        <b>Windows:</b> <code>.\scripts\Enable-ClaudeCodeOtel.ps1</code><br/>
-                        Then launch <code>claude</code> from the same terminal.<br/>
-                        Or set env vars directly:<br/>
-                        <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code><br/>
-                        <code>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf</code>
+                        <code>copilotscope connect claude-code</code><br/>
+                        Writes an <code>env</code> block into <code>~/.claude/settings.json</code>, so it
+                        applies to every terminal and project — no "same terminal" rule. By hand, all
+                        four matter:<br/>
+                        <code>CLAUDE_CODE_ENABLE_TELEMETRY=1</code> (master switch — nothing at all is
+                        exported without it)<br/>
+                        <code>OTEL_LOGS_EXPORTER=otlp</code> (the log events are what carry the session)<br/>
+                        <code>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf</code><br/>
+                        <code>OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318</code>
                     </td>
                     <td>
                         Detected via <code>service.name=claude-code</code> or <code>gen_ai.system=anthropic</code>.
                         <code>claude_code.*</code> attributes are normalized. Anthropic model pricing is pre-configured.
-                        Content capture: <code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true</code>.
+                        Content capture is three separate opt-ins —
+                        <code>OTEL_LOG_USER_PROMPTS</code>, <code>OTEL_LOG_ASSISTANT_RESPONSES</code>,
+                        <code>OTEL_LOG_TOOL_DETAILS</code> (<code>--capture</code> sets all three);
+                        the GenAI standard variable is <i>not</i> read here. Time-to-first-token needs the
+                        tracing beta, <code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code> (<code>--traces</code>).
+                        Already-recorded sessions can be scored with no setup at all:
+                        <code>copilotscope import</code>.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Claude Cowork — desktop app</td>
+                    <td><code>Cowork</code></td>
+                    <td>
+                        Configured in the app's own settings UI, not by environment variables: Claude
+                        Desktop → organization / Cowork settings → monitoring. Wants the <b>full path</b>,
+                        <code>http://localhost:4318/v1/logs</code>, and a restart afterwards.
+                        <code>copilotscope connect cowork</code> prints these values.
+                    </td>
+                    <td>
+                        Log events only — so calls, tokens, tools, edit decisions and turns, but no
+                        lines-of-code and no time-to-first-token. Needs a Team or Enterprise plan,
+                        Claude Desktop 1.1.4173+, and org admin access.
                     </td>
                 </tr>
                 <tr class="unverified">

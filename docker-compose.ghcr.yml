@@ -1,19 +1,49 @@
-# Pull-and-run — NO repository clone needed. Download just this file:
-#   Linux/macOS/Git Bash: curl -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-#   Windows PowerShell:   curl.exe -O https://raw.githubusercontent.com/konradcinkusz/copilotscope/master/docker-compose.ghcr.yml
-# Then set the two required secrets (no default — an unset value fails loudly
-# rather than shipping a known key), e.g.:
-#   export COPILOTSCOPE_API_KEY=$(openssl rand -hex 24)
-#   export POSTGRES_PASSWORD=$(openssl rand -hex 16)
-#   docker compose -f docker-compose.ghcr.yml up
-# Dashboard: http://localhost:5200 · OTLP ingest: http://localhost:4318 (x-api-key: $COPILOTSCOPE_API_KEY)
+# CopilotScope — pull and run. No clone, no SDK, nothing to declare.
+#
+#   docker compose -f docker-compose.ghcr.yml up -d
+#
+#   Dashboard   http://localhost:5200
+#   OTLP ingest http://localhost:4318   ← point every assistant here
+#
+# `install.sh` / `install.ps1` wrap this file plus the client configuration; see
+# README.md. Running compose by hand works identically.
+#
+# ---------------------------------------------------------------------------
+# Why there is nothing to set for a local run
+#
+# Ports bind to 127.0.0.1 by default, so nothing here is reachable from the
+# network, and Postgres publishes no port at all — it is reachable only from
+# the collector over the compose network. On that footing an ingest key would
+# buy nothing while costing a step in every client, so there is none: an empty
+# CopilotScope__Ingest__ApiKey is the collector's open mode, and Postgres uses
+# `trust` on its unpublished socket. No credential is committed here, and none
+# is generated for you to keep track of.
+#
+# For anything beyond one machine, set both (the CLI's `up --bind` refuses the
+# first without the second):
+#
+#   COPILOTSCOPE_BIND=0.0.0.0            # publish beyond loopback
+#   COPILOTSCOPE_API_KEY=<secret>        # then clients need x-api-key
+#   POSTGRES_PASSWORD=<secret>           # and Postgres stops trusting
+#   POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+#
+# The collector is told which address it was published on and logs a loud startup
+# warning when that is not loopback and no key is set. See SECURITY.md for the
+# full trust model.
+# ---------------------------------------------------------------------------
+name: copilotscope
+
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see header)}
+      # Empty by default. Postgres accepts that only together with `trust`
+      # below, which is safe precisely because this service publishes no port:
+      # the socket is reachable from the collector container and nowhere else.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -21,51 +51,86 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   collector:
-    image: ghcr.io/konradcinkusz/copilotscope-collector:latest
+    image: ghcr.io/konradcinkusz/copilotscope-collector:${COPILOTSCOPE_TAG:-latest}
     ports:
-      - "4318:4318"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (see header)}"
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY (see header)}
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:-}"
+      # Empty = open mode. Set it for any deployment reachable beyond loopback.
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
+      # The address compose published this on. The collector cannot infer it —
+      # behind Docker every request arrives from the bridge gateway — and uses it
+      # only to warn at startup when it is exposed beyond loopback with no key.
+      CopilotScope__Ingest__Bind: ${COPILOTSCOPE_BIND:-127.0.0.1}
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/konradcinkusz/copilotscope-dashboard:latest
+    image: ghcr.io/konradcinkusz/copilotscope-dashboard:${COPILOTSCOPE_TAG:-latest}
     ports:
-      - "5200:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY (see header)}
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
     depends_on:
       - collector
     restart: unless-stopped
 
-  # Opt-in, experimental — see docs/AGENTFORGE.md before enabling for a team. No cohorts are
-  # configured by default, so this serves no persona traffic until you supply your own config.
+  # One-shot tooling: import Claude Code's own transcripts, load demo data, or
+  # send a probe session through the real OTLP path. Behind a profile, so a
+  # plain `up` never starts it:
+  #
+  #   docker compose -f docker-compose.ghcr.yml run --rm tools import
+  #   docker compose -f docker-compose.ghcr.yml run --rm tools demo quick
+  #   docker compose -f docker-compose.ghcr.yml run --rm tools probe
+  #
+  # `copilotscope import` / `demo` / `probe` are the same three commands.
+  tools:
+    image: ghcr.io/konradcinkusz/copilotscope-tools:${COPILOTSCOPE_TAG:-latest}
+    profiles: ["tools"]
+    environment:
+      COPILOTSCOPE_COLLECTOR: "http://collector:4318"
+      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:-}
+    volumes:
+      # Claude Code writes every session here whether or not OTel is configured,
+      # so this is the import path that needs no client setup at all. Read-only:
+      # the importer never writes to your transcripts. The installer resolves the
+      # real path into .env; the default below is where Claude Code puts it.
+      - ${CLAUDE_TRANSCRIPTS:-${HOME:-/root}/.claude/projects}:/transcripts:ro
+    depends_on:
+      - collector
+
+  # Opt-in, experimental — see docs/AGENTFORGE.md. Behind a profile because
+  # neither agent serves traffic until you supply your own model configuration,
+  # and two idle containers are not a thing a first run should pay for:
+  #   docker compose -f docker-compose.ghcr.yml --profile agents up -d
   agentforge:
-    image: ghcr.io/konradcinkusz/copilotscope-agentforge:latest
+    image: ghcr.io/konradcinkusz/copilotscope-agentforge:${COPILOTSCOPE_TAG:-latest}
+    profiles: ["agents"]
     ports:
-      - "5300:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5300:8080"
     environment:
       CopilotScope__AgentForge__CollectorBaseUrl: "http://collector:4318"
+      CopilotScope__AgentForge__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
     depends_on:
       - collector
     restart: unless-stopped
 
-  # Opt-in, cloud-only — see docs/JUDGE_AGENT.md before enabling for a team. Without Azure AI
-  # credentials this serves no judge traffic — /api/sessions/{id}/judge returns a clear
-  # "not configured" error until you supply your own config.
+  # Opt-in — see docs/JUDGE_AGENT.md. Without model configuration
+  # /api/sessions/{id}/judge returns a clear "not configured" error.
   judgeagent:
-    image: ghcr.io/konradcinkusz/copilotscope-judgeagent:latest
+    image: ghcr.io/konradcinkusz/copilotscope-judgeagent:${COPILOTSCOPE_TAG:-latest}
+    profiles: ["agents"]
     ports:
-      - "5400:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5400:8080"
     environment:
       CopilotScope__JudgeAgent__CollectorBaseUrl: "http://collector:4318"
+      CopilotScope__JudgeAgent__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
     depends_on:
       - collector
     restart: unless-stopped

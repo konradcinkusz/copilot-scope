@@ -1,18 +1,28 @@
-# Client mode without Aspire: collector + dashboard + Postgres in containers.
-#   cp .env.example .env   # then set COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD
-#   docker compose up --build
-#   Dashboard:  http://localhost:5200
-#   OTLP:       http://localhost:4318   (VS Code -> github.copilot.chat.otel.otlpEndpoint)
-#   Auth ingest: OTEL_EXPORTER_OTLP_HEADERS=x-api-key=$COPILOTSCOPE_API_KEY before starting VS Code.
-# The compose vars have no default on purpose — an unset value fails loudly here
-# instead of shipping a known key into a running deployment.
+# CopilotScope from source — builds the images from this checkout.
+#
+#   docker compose up -d --build
+#
+#   Dashboard   http://localhost:5200
+#   OTLP ingest http://localhost:4318
+#
+# For running CopilotScope rather than developing it, prefer the published
+# images — no clone and no build: see docker-compose.ghcr.yml or README.md.
+#
+# Same posture as that file: ports bind to 127.0.0.1, Postgres publishes no
+# port and trusts its unpublished socket, and the ingest key is empty (the
+# collector's open mode), so a local run has nothing to declare. Set
+# COPILOTSCOPE_BIND, COPILOTSCOPE_API_KEY, POSTGRES_PASSWORD and
+# POSTGRES_HOST_AUTH_METHOD together for anything beyond one machine.
+name: copilotscope
+
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_DB: copilotdb
       POSTGRES_USER: copilot
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
     volumes:
       - copilotscope-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,16 +30,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   collector:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "4318:4318"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:4318:4318"
     environment:
-      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}"
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      ConnectionStrings__copilotdb: "Host=postgres;Database=copilotdb;Username=copilot;Password=${POSTGRES_PASSWORD:-}"
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
+      # The address compose published this on. The collector cannot infer it —
+      # behind Docker every request arrives from the bridge gateway — and uses it
+      # only to warn at startup when it is exposed beyond loopback with no key.
+      CopilotScope__Ingest__Bind: ${COPILOTSCOPE_BIND:-127.0.0.1}
       # Optional forward to a second OTLP backend (e.g. Grafana Cloud):
       # CopilotScope__Forward__Endpoint: "https://otlp-gateway-....grafana.net/otlp"
       # CopilotScope__Forward__Headers__Authorization: "Basic <base64>"
@@ -43,27 +58,46 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     ports:
-      - "5200:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5200:8080"
     environment:
       Collector__BaseUrl: "http://collector:4318"
-      # The collector's /api group is gated by the ingest key, so the dashboard
-      # presents the same key.
-      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:?set COPILOTSCOPE_API_KEY in .env}
+      # The collector's /api group is gated when a key is configured, so the
+      # dashboard presents the same key.
+      CopilotScope__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
     depends_on:
       - collector
     restart: unless-stopped
 
-  # Opt-in, experimental — see docs/AGENTFORGE.md before enabling for a team. No cohorts are
-  # configured by default, so this serves no persona traffic until you edit appsettings.
+  # One-shot tooling built from this checkout — import, demo data, probe:
+  #   docker compose run --rm tools import
+  #   docker compose run --rm tools demo quick
+  #   docker compose run --rm tools probe
+  tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.tools
+    profiles: ["tools"]
+    environment:
+      COPILOTSCOPE_COLLECTOR: "http://collector:4318"
+      COPILOTSCOPE_API_KEY: ${COPILOTSCOPE_API_KEY:-}
+    volumes:
+      - ${CLAUDE_TRANSCRIPTS:-${HOME:-/root}/.claude/projects}:/transcripts:ro
+    depends_on:
+      - collector
+
+  # Opt-in, experimental — see docs/AGENTFORGE.md before enabling for a team. No
+  # cohorts are configured by default, so this serves no persona traffic until you
+  # edit appsettings. Behind a profile: --profile agents up
   agentforge:
     build:
       context: .
       dockerfile: Dockerfile.agentforge
+    profiles: ["agents"]
     ports:
-      - "5300:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5300:8080"
     environment:
       CopilotScope__AgentForge__CollectorBaseUrl: "http://collector:4318"
-      # CopilotScope__AgentForge__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY}
+      CopilotScope__AgentForge__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
       # CopilotScope__AgentForge__AzureAI__Endpoint: "https://<your-foundry-resource>.openai.azure.com"
       # CopilotScope__AgentForge__AzureAI__DeploymentName: "<your-model-deployment>"
       # CopilotScope__AgentForge__AzureAI__ApiKey: "<your-key>"   # omit to use DefaultAzureCredential
@@ -71,17 +105,18 @@ services:
       - collector
     restart: unless-stopped
 
-  # Opt-in, cloud-only — see docs/JUDGE_AGENT.md before enabling for a team. Without Azure AI
+  # Opt-in — see docs/JUDGE_AGENT.md before enabling for a team. Without model
   # credentials below, /api/sessions/{id}/judge returns a clear "not configured" error.
   judgeagent:
     build:
       context: .
       dockerfile: Dockerfile.judgeagent
+    profiles: ["agents"]
     ports:
-      - "5400:8080"
+      - "${COPILOTSCOPE_BIND:-127.0.0.1}:5400:8080"
     environment:
       CopilotScope__JudgeAgent__CollectorBaseUrl: "http://collector:4318"
-      # CopilotScope__JudgeAgent__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY}
+      CopilotScope__JudgeAgent__Ingest__ApiKey: ${COPILOTSCOPE_API_KEY:-}
       # CopilotScope__JudgeAgent__AzureAI__Endpoint: "https://<your-foundry-resource>.openai.azure.com"
       # CopilotScope__JudgeAgent__AzureAI__DeploymentName: "<your-model-deployment>"
       # CopilotScope__JudgeAgent__AzureAI__ApiKey: "<your-key>"   # omit to use DefaultAzureCredential

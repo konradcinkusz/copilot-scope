@@ -31,8 +31,9 @@
     OTLP endpoint of the CopilotScope collector. Default: http://localhost:4318
 
 .PARAMETER ApiKey
-    x-api-key for ingest auth. In -Mode compose a random key is generated into the
-    gitignored .env (reused on re-runs); otherwise unset.
+    x-api-key for ingest auth. Optional: a local run needs none, because the compose
+    ports bind to 127.0.0.1 and an empty key is the collector's open mode. In
+    -Mode compose it falls back to COPILOTSCOPE_API_KEY in .env.
 
 .PARAMETER Persist
     Also store the CLI env vars at User scope (via Enable-CopilotOtel.ps1 /
@@ -82,22 +83,18 @@ if ($Persist -and -not $CopilotCli -and -not $ClaudeCode) {
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 if ($Mode -eq 'compose') {
-    # Compose requires COPILOTSCOPE_API_KEY and POSTGRES_PASSWORD (no default).
-    # Reuse an existing .env so re-runs stay stable; otherwise generate secrets
-    # into the gitignored .env that docker compose reads.
+    # A local compose run needs no credential at all: ports bind to 127.0.0.1,
+    # Postgres publishes no port and trusts its unpublished socket, and an empty
+    # ingest key is the collector's open mode. Generating one here would put an
+    # x-api-key step back into every client for no gain — so the only key used is
+    # one the caller passed explicitly, or one already sitting in .env.
     $EnvFile = Join-Path $RepoRoot '.env'
-    function New-ScopeSecret { -join ((1..48) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) }) }
-    $existing = @{}
-    if (Test-Path $EnvFile) {
+    if (-not $ApiKey -and (Test-Path $EnvFile)) {
         foreach ($line in Get-Content $EnvFile) {
-            if ($line -match '^(?<k>[^=]+)=(?<v>.*)$') { $existing[$Matches.k] = $Matches.v }
+            if ($line -match '^COPILOTSCOPE_API_KEY=(.*)$') { $ApiKey = $Matches[1] }
         }
     }
-    $key = if ($existing.COPILOTSCOPE_API_KEY) { $existing.COPILOTSCOPE_API_KEY } else { New-ScopeSecret }
-    $pw  = if ($existing.POSTGRES_PASSWORD)    { $existing.POSTGRES_PASSWORD }    else { New-ScopeSecret }
-    "COPILOTSCOPE_API_KEY=$key`nPOSTGRES_PASSWORD=$pw`n" | Set-Content -Path $EnvFile -NoNewline
-    Write-Host "Wrote generated secrets to $EnvFile (gitignored)."
-    if (-not $ApiKey) { $ApiKey = $key }
+    if ($ApiKey) { Write-Host "Using an ingest key — clients will need x-api-key." }
 }
 
 Write-Host "=== CopilotScope setup ===" -ForegroundColor Cyan
@@ -140,7 +137,7 @@ while (-not $healthy) {
     } catch {
         if ($waited -ge $HealthTimeoutSeconds) {
             Write-Host ""
-            Write-Error "Timed out after ${HealthTimeoutSeconds}s waiting for $Endpoint/api/health. See docs/TUTORIAL.md section 8."
+            Write-Error "Timed out after ${HealthTimeoutSeconds}s waiting for $Endpoint/api/health. See docs/TUTORIAL.md section 9."
             return
         }
         Write-Host -NoNewline "."
@@ -196,7 +193,7 @@ Write-Host ""
 if (-not $SkipVerify) {
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Write-Host "dotnet not found — skipping smoke test. Open the dashboard and chat with a Copilot"
-        Write-Host "client to verify manually, or install the .NET 8 SDK and re-run without -SkipVerify."
+        Write-Host "client to verify manually, or install the .NET 10 SDK and re-run without -SkipVerify."
     } else {
         $probeId = "setup-probe-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
         $probeLog = Join-Path ([System.IO.Path]::GetTempPath()) "copilotscope-telemetrygen-$PID.log"
@@ -224,7 +221,7 @@ if (-not $SkipVerify) {
         if ($found) {
             Write-Host "Smoke test OK — '$probeId' is visible via the collector API. CopilotScope is healthy end to end."
         } else {
-            Write-Warning "Probe session did not appear within 15s. See $probeLog and docs/TUTORIAL.md section 8."
+            Write-Warning "Probe session did not appear within 15s. See $probeLog and docs/TUTORIAL.md section 9."
         }
     }
     Write-Host ""

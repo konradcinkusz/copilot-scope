@@ -3,6 +3,7 @@
 # automatically creates the tag and triggers this workflow. Images:
 #   ghcr.io/konradcinkusz/copilotscope-collector
 #   ghcr.io/konradcinkusz/copilotscope-dashboard
+#   ghcr.io/konradcinkusz/copilotscope-tools
 #   ghcr.io/konradcinkusz/copilotscope-agentforge
 #   ghcr.io/konradcinkusz/copilotscope-judgeagent
 #
@@ -43,18 +44,28 @@ jobs:
         include:
           - image: copilotscope-collector
             dockerfile: Dockerfile
+            smoke: http
             port: 4318
             healthpath: /api/health
           - image: copilotscope-dashboard
             dockerfile: Dockerfile.dashboard
+            smoke: http
             port: 8080
             healthpath: /            # dashboard has no /api/health; the Blazor root answers 200
+          # Console tools, not a server: nothing listens, so the smoke test runs the
+          # entrypoint instead of polling a port.
+          - image: copilotscope-tools
+            dockerfile: Dockerfile.tools
+            smoke: cli
+            smokeargs: help
           - image: copilotscope-agentforge
             dockerfile: Dockerfile.agentforge
+            smoke: http
             port: 8080
             healthpath: /api/health
           - image: copilotscope-judgeagent
             dockerfile: Dockerfile.judgeagent
+            smoke: http
             port: 8080
             healthpath: /api/health
     steps:
@@ -122,7 +133,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-      - name: Smoke test (container starts and answers)
+      - name: Smoke test (server answers)
+        if: matrix.smoke == 'http'
         run: |
           set -euo pipefail
           docker run -d --name smoke -p ${{ matrix.port }}:${{ matrix.port }} ${{ matrix.image }}:smoke
@@ -141,6 +153,21 @@ jobs:
           fi
           echo "${{ matrix.image }} is healthy."
           docker rm -f smoke
+
+      # Same gate, different shape: a console image has no port to poll, so the
+      # check is that the entrypoint runs and exits 0 on the published runtime —
+      # which is what catches a TFM/runtime mismatch here too.
+      - name: Smoke test (entrypoint runs)
+        if: matrix.smoke == 'cli'
+        run: |
+          set -euo pipefail
+          if ! output=$(docker run --rm ${{ matrix.image }}:smoke ${{ matrix.smokeargs }} 2>&1); then
+            echo "::error title=Smoke test failed::${{ matrix.image }} entrypoint exited non-zero."
+            echo "$output"
+            exit 1
+          fi
+          echo "$output"
+          echo "${{ matrix.image }} entrypoint runs."
 
       - name: Build and push
         uses: docker/build-push-action@v7

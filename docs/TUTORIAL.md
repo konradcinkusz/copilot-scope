@@ -4,40 +4,72 @@ Step-by-step configuration for every Copilot surface that can emit OpenTelemetry
 plus troubleshooting for the most common "everything starts but no sessions appear"
 situations.
 
-## 0. Fastest path: the setup wizard
-
-`scripts/setup.sh` / `scripts/setup.ps1` chain everything below into one command:
-start the stack, wait for it to be healthy, optionally export CLI env vars into
-your current shell, print the exact VS Code snippet for your endpoint/key, and
-run a smoke test to confirm telemetry actually reaches the collector.
+## 0. Fastest path: two commands
 
 ```bash
-# macOS / Linux — source it if you want Copilot CLI / Claude Code env vars
-# exported into THIS shell (export only survives in the sourcing shell):
-source ./scripts/setup.sh --copilot-cli
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
 ```
 
 ```powershell
-# Windows — env vars land in the current session either way
-.\scripts\setup.ps1 -CopilotCli
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
 ```
 
-Run `./scripts/setup.sh --help` / `Get-Help .\scripts\setup.ps1 -Full` for all
-options (`--mode compose|aspire|skip-start`, `--claude-code`,
-`--capture-content`, `--traces`, `--endpoint`, `--api-key`, `--skip-verify`). For VS Code,
-the wizard only prints the snippet — you still edit `settings.json` and reload
-the window (step 2 below explains why that step can't be automated).
+The installer checks Docker, drops the compose file and a `copilotscope` control
+script into `~/.copilotscope`, starts the stack, waits for the collector to
+answer, and offers to configure each assistant it finds on the machine. Then:
 
-CLI env vars (`--copilot-cli` / `--claude-code`) only live in the shell you
-sourced the wizard in — add `--persist` (`-Persist` on Windows) to also write
-them to your shell rc file (`~/.zshrc`/`~/.bashrc`, auto-detected) or the
-Windows User environment scope, so new terminals pick them up without
-re-running anything. Safe to re-run — it replaces its own block instead of
-duplicating.
+```bash
+copilotscope connect claude-code     # or: vscode · copilot-cli · cowork · all
+copilotscope doctor                  # check the whole path end to end
+```
 
-The rest of this document is the manual walkthrough the wizard automates —
-useful if you want to understand each step, configure a surface the wizard
-doesn't cover yet, or troubleshoot (section 9).
+**There is nothing to declare.** No key to generate, no `.env` to fill in, no
+environment variable to export. The collector binds to `127.0.0.1` and Postgres
+publishes no port at all, so on one machine a credential would buy nothing and
+cost a step in every client. Section 8 covers what changes when the deployment
+stops being local.
+
+### What `connect` actually writes
+
+This is the part that used to be fiddly, and the reason it is no longer:
+
+| Target | Written to | Scope |
+|---|---|---|
+| `claude-code` | `~/.claude/settings.json`, an `env` block | every terminal, every project, permanently |
+| `vscode` | VS Code's user `settings.json` | every window, after one reload |
+| `copilot-cli` | shell rc block (Unix) / User environment (Windows) | new terminals |
+| `cowork` | nothing — prints what to enter in the desktop app's own settings UI | — |
+
+Only Copilot CLI still needs environment variables, because environment
+variables are the only thing it reads. Claude Code and VS Code are configured
+through the file each one loads at startup, so there is no "run it from the same
+terminal" rule and nothing to re-export tomorrow.
+
+`copilotscope disconnect <target>` removes exactly the keys it added, leaving the
+rest of your settings untouched. Both commands merge with a real JSON parser and
+keep a `.copilotscope.bak` copy; a settings file with comments in it (VS Code
+allows them, strict JSON does not) is reported and left alone rather than
+rewritten by a regex.
+
+### Everything else the control script does
+
+| Command | |
+|---|---|
+| `copilotscope up` / `down` / `status` / `logs` / `open` | run the stack |
+| `copilotscope import` | score the Claude Code transcripts already on disk (§0.5) |
+| `copilotscope demo [quick\|demo]` | load fabricated demo sessions, badged `demo` |
+| `copilotscope probe` | push one session through the real OTLP path |
+| `copilotscope doctor` | diagnose "it starts but no sessions appear" (§9, automated) |
+| `copilotscope update` / `uninstall [--purge]` | upgrade images / remove everything |
+
+`import`, `demo` and `probe` run inside the `copilotscope-tools` container, so
+none of them needs a .NET SDK or a clone of this repository.
+
+> **Working from a clone?** `scripts/copilotscope` is the same script, and
+> `scripts/setup.sh` / `scripts/setup.ps1` remain for the from-source flow
+> (`--mode aspire`, building images locally). The rest of this document is the
+> manual walkthrough — useful to understand each step, to configure a surface the
+> control script does not cover, or to troubleshoot by hand (section 9).
 
 ## 0.5 No configuration at all: score the history you already have
 
@@ -46,13 +78,20 @@ If you use **Claude Code**, you already have a complete record of every session 
 environment variable. The importer reads those files and scores them.
 
 ```bash
-# Start the collector (see §1), then:
-dotnet run --project tools/CopilotScope.LogImporter -- --dry-run     # see what it found
-dotnet run --project tools/CopilotScope.LogImporter                  # import it
+copilotscope import --dry-run     # see what it found
+copilotscope import               # import it
 ```
 
 Open the dashboard and your past sessions are there, scored, with turn analysis. No env vars,
 no window reload, no configuration.
+
+From a clone, with a .NET SDK, the same tool runs directly — and this is the form to prefer
+when repository labels matter, because it can read your git remotes and the container cannot:
+
+```bash
+dotnet run --project tools/CopilotScope.LogImporter -- --dry-run
+dotnet run --project tools/CopilotScope.LogImporter
+```
 
 | Flag | |
 |---|---|
@@ -88,10 +127,24 @@ paths coexist: import your history today, turn on telemetry for tomorrow.
 
 ## 1. Start CopilotScope
 
-Pick one of two ways to run it — both expose the same two things: an OTLP ingest
-endpoint on **:4318** and the dashboard UI.
+Any of these exposes the same two things: an OTLP ingest endpoint on **:4318**
+and the dashboard UI on **:5200**. None of them asks you for a credential.
 
-**A. .NET Aspire (recommended for development)** — requires .NET 8 SDK + Docker:
+**A. Published images (what the installer uses)** — Docker only:
+
+```bash
+copilotscope up
+# equivalently, without the control script:
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+**B. From a clone, building the images** — Docker only:
+
+```bash
+docker compose up -d --build
+```
+
+**C. .NET Aspire (for developing CopilotScope itself)** — .NET 10 SDK + Docker:
 
 ```bash
 dotnet run --project src/CopilotScope.AppHost
@@ -102,19 +155,21 @@ The Aspire dashboard opens in your browser. It shows four resources: `postgres`
 table directly from here), `collector` (pinned to http://localhost:4318) and
 `dashboard` (click its endpoint link to open the UI).
 
-**B. docker-compose (containers + Postgres + API key):**
-
-```bash
-docker compose up --build     # dashboard on :5200, ingest on :4318, key: dev-secret-123
-```
-
 Verify the collector is up before configuring any client:
 
 ```bash
 curl http://localhost:4318/api/health
 ```
 
+The response names what is actually switched on — persistence, forwarding,
+Prometheus, and the environment — so it answers "is my Postgres wired up?"
+without reading logs.
+
 ## 2. VS Code (Copilot Chat)
+
+> `copilotscope connect vscode` writes all of this into your user settings for
+> you, and prints the snippet instead if the file has comments in it. The manual
+> steps follow.
 
 1. Open Settings JSON (`Ctrl+Shift+P` → *Preferences: Open User Settings (JSON)*).
 2. Add:
@@ -175,6 +230,14 @@ CopilotScope — but they are configured in completely different places, and
 neither speaks the `gen_ai.*` span vocabulary the Copilot surfaces use.
 
 ### 4.1 Claude Code — the one variable everything depends on
+
+> `copilotscope connect claude-code` writes all of this into `~/.claude/settings.json`
+> for you. Prefer that over exporting variables: an `env` block in the settings
+> file applies to every terminal and every project, which removes the single most
+> common failure here — configuring one shell and then starting `claude` in
+> another. Add `--capture` for prompt text and `--traces` for time-to-first-token.
+> The manual form follows, and is still what you want for a one-off session or a
+> CI job.
 
 `CLAUDE_CODE_ENABLE_TELEMETRY=1` is the master switch. Without it Claude Code
 exports **nothing**, no matter what else is set — a correct endpoint and
@@ -343,7 +406,18 @@ export OTEL_EXPORTER_OTLP_HEADERS="x-api-key=<secret>"
 
 ## 9. Troubleshooting: "it starts fine but no sessions show up"
 
-Work through these in order — they cover, in practice, every case we've seen:
+**Start here:**
+
+```bash
+copilotscope doctor
+```
+
+It walks the whole path — Docker, the containers, the collector's health
+document, whether the deployment is exposed without a key, what each assistant's
+settings file actually says, whether an exported `OTEL_EXPORTER_OTLP_ENDPOINT` is
+overriding it, and how many transcripts are sitting on disk unimported — and
+names the broken link. The list below is the same reasoning by hand, in the order
+it is worth checking:
 
 1. **Did you reload the VS Code window after changing settings?** OTel settings
    are read at startup. `Developer: Reload Window`, then chat again.
@@ -390,11 +464,12 @@ Work through these in order — they cover, in practice, every case we've seen:
    not the base endpoint Claude Code takes: `http://localhost:4318/v1/logs`. It
    also reads its configuration at session start — restart Claude Desktop.
 12. **Sanity check the pipeline without Copilot:**
-   `dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 probe`
-   — if `probe` shows up on the dashboard, CopilotScope is healthy and the issue
+   `copilotscope probe` (or, from a clone,
+   `dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318 probe`)
+   — if the probe session shows up on the dashboard, CopilotScope is healthy and the issue
    is purely client configuration.
 13. **Want a populated dashboard instead of one probe session?** Run
-   `dotnet run --project tools/CopilotScope.Seeder -- demo` — it builds a big,
+   `copilotscope demo demo` — it builds a big,
    varied set of comprehensive sessions (clean, error-prone, laggy,
    rejected-edits, repair-loop, internal helper calls, ...) plus a 30+ turn
    **showcase** chat that exercises every dashboard panel at once, and posts
