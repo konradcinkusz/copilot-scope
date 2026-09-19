@@ -1,0 +1,25 @@
+flowchart LR
+    pr(["Pull request"])
+
+    subgraph gates["What must be green"]
+        build["build-and-test<br/><i>solution + xUnit</i>"]
+        containers["containers<br/><i>five images built and started</i>"]
+        scripts["scripts<br/><i>shell + PowerShell parse, shellcheck</i>"]
+        compose["compose<br/><i>renders with no environment,<br/>nothing binds beyond loopback</i>"]
+        docs["docs<br/><i>diagrams paired, translations coupled</i>"]
+        leaks["gitleaks"]
+    end
+
+    merge(["Merge to master"])
+    pages["GitHub Pages deploy"]
+    tag(["Release tag"])
+    ghcr["Five images to GHCR"]
+    pdfs["Research + manual PDFs<br/>attached to the release"]
+
+    pr --> gates --> merge
+    merge --> pages
+    tag --> ghcr
+    tag --> pdfs
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class containers star

@@ -1,0 +1,19 @@
+flowchart TD
+    start(["curl -fsSL .../install.sh | sh"])
+    docker{"Docker present<br/>and running?"}
+    fetch["Fetch compose file<br/>and control script into ~/.copilotscope"]
+    up["copilotscope up<br/><i>pull, start, wait for health</i>"]
+    detect["Detect assistants<br/>on this machine"]
+    connect["copilotscope connect &lt;assistant&gt;<br/><i>writes the settings file it reads</i>"]
+    manual["Reload VS Code window<br/>restart Claude Desktop<br/>new terminal for Copilot CLI"]
+    first(["First scored session<br/>appears on the dashboard"])
+    doctor["copilotscope doctor<br/><i>names the broken link</i>"]
+
+    start --> docker
+    docker -- no --> stop["Stop with an actionable message"]
+    docker -- yes --> fetch --> up --> detect --> connect --> manual --> first
+    first -. "nothing arrives" .-> doctor
+    doctor -.-> connect
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class connect star

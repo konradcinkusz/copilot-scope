@@ -1,0 +1,20 @@
+flowchart TD
+    disk[("~/.claude/projects/**/*.jsonl<br/><i>written whether or not OTel is configured</i>")]
+    parse["Parse transcript<br/><i>turns, tokens, models, tools, timings</i>"]
+    repo{"git remote<br/>resolvable?"}
+    label["Repository label<br/>normalized like outcome linkage"]
+    nolabel["No repository label<br/><i>honest absence, not a guess</i>"]
+    post["POST /api/import<br/><i>admin scope</i>"]
+    exists{"session already held<br/>from live telemetry?"}
+    refuse["Refused — the import carries<br/>less signal and would lower the score"]
+    store["Stored, badged <b>imported</b><br/>lower confidence"]
+
+    disk --> parse --> repo
+    repo -- yes --> label --> post
+    repo -- no --> nolabel --> post
+    post --> exists
+    exists -- yes --> refuse
+    exists -- no --> store
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class store star

@@ -1,0 +1,16 @@
+{
+  "name": "copilot-scope-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Documentation toolchain for CopilotScope: renders docs/diagrams/*.mmd to vector PDF for the LaTeX editions, and checks that the bilingual documents stay paired. The product itself is .NET — this package.json exists only for the documentation build, which is why it declares no dependencies beyond the two tools that build it.",
+  "type": "module",
+  "scripts": {
+    "render:diagrams": "node scripts/render-diagrams.mjs",
+    "check:diagrams": "node scripts/check-diagrams.mjs",
+    "check:parity": "node scripts/check-doc-parity.mjs",
+    "lint:docs": "npm run check:diagrams && npm run check:parity"
+  },
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "11.16.0"
+  }
+}

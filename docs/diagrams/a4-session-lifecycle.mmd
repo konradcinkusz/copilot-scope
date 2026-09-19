@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> Live: first OTLP batch
+    Live --> Live: more telemetry
+    Live --> Flushed: PersistenceWriter upsert<br/>(once per second)
+    Flushed --> Live: more telemetry
+    Flushed --> Evicted: bounded working set<br/>overflows
+    Evicted --> Rehydrated: late telemetry, or<br/>GET /api/sessions/{id}
+    Rehydrated --> Flushed: merged, not overwritten
+    Flushed --> [*]: retention sweep<br/>(off by default)
+
+    note right of Evicted
+        Eviction is not deletion.
+        The snapshot stays in Postgres
+        and still resolves by id.
+    end note

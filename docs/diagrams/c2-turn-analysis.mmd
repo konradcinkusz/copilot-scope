@@ -1,0 +1,20 @@
+flowchart LR
+    trace["One invoke_agent trace<br/>= one turn"]
+    err{"LLM or tool<br/>error?"}
+    slow{"TTFT above this<br/>session's own median?"}
+    loop{"tool-call burst<br/>with failures?"}
+    scoreturn["Turn friction score"]
+    best["Best turn, with reasons"]
+    worst["Worst turn, with reasons"]
+    mean["Mean turn score<br/>= the friction component"]
+
+    trace --> err --> slow --> loop --> scoreturn
+    scoreturn --> best
+    scoreturn --> worst
+    scoreturn --> mean
+
+    note["The median is per session, not global:<br/>a slow model is not a slow turn."]
+    slow -.-> note
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class scoreturn star

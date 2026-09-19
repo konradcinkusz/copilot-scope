@@ -1,0 +1,29 @@
+flowchart TD
+    subgraph components["Six components, each scored only if it has data"]
+        rel["Reliability 0.25<br/><i>squared error-free rate</i>"]
+        acc["Acceptance 0.20<br/><i>paired with edit survival</i>"]
+        fri["Friction 0.20<br/><i>mean TFRA turn score</i>"]
+        lat["Latency 0.15<br/><i>2 s attention, 8 s abandonment</i>"]
+        fee["Feedback 0.10<br/><i>thumbs</i>"]
+        eff["Efficiency 0.10<br/><i>token economics</i>"]
+    end
+
+    renorm["Renormalize over the components<br/>that actually reported"]
+    score["Composite 0-100"]
+    conf["Confidence<br/><i>coverage x sample ramp</i>"]
+    grade["Grade: 85+ excellent · 70+ good<br/>55+ fair · 40+ poor"]
+
+    rel --> renorm
+    acc --> renorm
+    fri --> renorm
+    lat --> renorm
+    fee --> renorm
+    eff --> renorm
+    renorm --> score --> grade
+    renorm --> conf
+
+    note["A session with no edit or feedback telemetry<br/>is scored on what it did produce,<br/>not pinned near a neutral prior."]
+    conf -.-> note
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class renorm star

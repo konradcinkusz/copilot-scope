@@ -1,0 +1,103 @@
+name: Build documentation PDF
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Renders the two language editions of the manual (docs/papers/*.tex) to PDF,
+#  on demand — English and Polish, one build each.
+#
+#  Manually triggered only, deliberately. This is a presentation of living
+#  documents (README.md, docs/TUTORIAL.md, docs/SIGNAL_COVERAGE.md and the rest),
+#  not a versioned release artifact: there is no tag, no changelog entry, and
+#  nothing depends on a specific build of it existing anywhere. Regenerate it
+#  when a source .tex changes and somebody wants the files.
+#
+#  PDFs are build output: nothing this workflow produces is committed — see the
+#  "LaTeX build output" block in .gitignore. Both editions are uploaded in one
+#  run artifact and downloaded from the Actions run itself.
+#
+#  This is deliberately NOT build-research-pdf.yml. That one builds the formal
+#  research papers, is triggered by a release tag, and attaches its output to a
+#  GitHub Release, so it needs `contents: write`. A manual and a research paper
+#  are different kinds of document with different audiences and different
+#  cadences; one workflow building both would blur that, and this one needs no
+#  write permission at all.
+#
+#  The diagrams are not redrawn for the PDF. They are rendered from the same
+#  docs/diagrams/*.mmd files that docs/DIAGRAMS.md embeds — GitHub speaks
+#  Mermaid, a PDF does not — rather than maintained a second time in TikZ, which
+#  would be two sources of truth for one picture. Both editions include the same
+#  rendered result.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-docs-pdf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build PDFs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Render diagrams
+        run: |
+          set -euo pipefail
+          # mermaid-cli is a pinned devDependency, so this installs the version
+          # the lockfile records rather than whatever the registry's floating
+          # latest is on the day the PDFs happen to be built.
+          npm ci
+          npm run render:diagrams
+
+      - name: Build English edition
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: copilotscope-manual.tex
+          working_directory: docs/papers
+
+      - name: Build Polish edition
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: copilotscope-manual.pl.tex
+          working_directory: docs/papers
+
+      - name: Rename PDFs
+        run: |
+          mv docs/papers/copilotscope-manual.pdf CopilotScope_Manual_EN.pdf
+          mv docs/papers/copilotscope-manual.pl.pdf CopilotScope_Manual_PL.pdf
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CopilotScope_Manual_PDF
+          path: |
+            CopilotScope_Manual_EN.pdf
+            CopilotScope_Manual_PL.pdf
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          {
+            echo "## Manual PDFs built"
+            echo
+            echo "Rendered from \`docs/papers/copilotscope-manual.tex\` and"
+            echo "\`copilotscope-manual.pl.tex\`, the English and Polish editions"
+            echo "of the CopilotScope manual — the system description and the"
+            echo "tutorial in one document."
+            echo
+            echo "Download **CopilotScope_Manual_PDF** from this run's Artifacts"
+            echo "section below; it contains both language editions."
+          } >> "$GITHUB_STEP_SUMMARY"

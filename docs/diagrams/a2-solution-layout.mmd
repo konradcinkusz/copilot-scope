@@ -1,0 +1,33 @@
+flowchart LR
+    subgraph runtime["Runs in every deployment"]
+        collector["CopilotScope.Collector<br/><i>ingest · quality engine · insights · REST</i>"]
+        dashboard["CopilotScope.Dashboard<br/><i>Blazor Server, zero JS deps</i>"]
+        defaults["CopilotScope.ServiceDefaults<br/><i>OTel · health · resilience</i>"]
+    end
+
+    subgraph optin["Opt-in, behind a Compose profile"]
+        judge["CopilotScope.JudgeAgent<br/><i>G-Eval · SPUR · RAGAS</i>"]
+        forge["CopilotScope.AgentForge<br/><i>persona agents</i>"]
+    end
+
+    subgraph tools["One-shot tooling, one image"]
+        seeder["Seeder<br/><i>demo data</i>"]
+        importer["LogImporter<br/><i>transcripts</i>"]
+        gen["TelemetryGen<br/><i>probe</i>"]
+    end
+
+    apphost["CopilotScope.AppHost<br/><i>Aspire, dev only</i>"]
+
+    defaults --> collector
+    defaults --> dashboard
+    collector --> dashboard
+    collector --> judge
+    collector --> forge
+    seeder --> collector
+    importer --> collector
+    gen --> collector
+    apphost -.-> collector
+    apphost -.-> dashboard
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class collector star

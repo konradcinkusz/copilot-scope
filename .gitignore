@@ -13,10 +13,20 @@ artifacts/
 .env
 !.env.example
 
-# LaTeX build artifacts (research/articles) — PDFs are built by CI and
-# attached to releases, not committed
+# LaTeX build artifacts — PDFs are build output, never committed. The research
+# papers are built by CI and attached to releases; the two manual editions
+# (docs/papers/) are built on demand and uploaded as run artifacts.
 *.aux
 *.log
 *.out
 *.toc
 research/articles/*.pdf
+docs/papers/*.pdf
+
+# --- Node, for the documentation toolchain only ---
+#     The product is .NET; package.json exists to pin the Mermaid CLI that
+#     renders docs/diagrams/*.mmd for the LaTeX editions.
+node_modules/
+
+# --- Rendered diagrams: build output of scripts/render-diagrams.mjs ---
+docs/diagrams/rendered/

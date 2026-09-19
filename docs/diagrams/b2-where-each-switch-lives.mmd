@@ -1,0 +1,23 @@
+flowchart LR
+    subgraph file["Written to a settings file — survives new terminals"]
+        cc["Claude Code<br/><code>~/.claude/settings.json</code><br/>an <code>env</code> block"]
+        vs["VS Code Copilot Chat<br/>user <code>settings.json</code><br/>reload the window"]
+    end
+
+    subgraph env["Environment variables — the only thing it reads"]
+        cli["GitHub Copilot CLI<br/>shell rc, or Windows User scope"]
+    end
+
+    subgraph ui["The app's own settings UI — no file to write"]
+        cw["Claude Cowork<br/>full <code>/v1/logs</code> path<br/>Team plan, admin, restart"]
+    end
+
+    collector["collector :4318"]
+
+    cc --> collector
+    vs --> collector
+    cli --> collector
+    cw --> collector
+
+    classDef star fill:#fdf0d5,stroke:#c8860d,stroke-width:2px,color:#3d2b00
+    class cc star
