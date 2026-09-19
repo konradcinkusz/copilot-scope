@@ -251,6 +251,16 @@ release asset.
   so that layer stays cached, and the new `containers` CI job builds and starts all five on
   every pull request.
 
+  Behind that failure sat a second one, reached only once the first was fixed: AgentForge and
+  the judge agent are web projects that reference the collector, itself a web project, so the
+  collector's `appsettings.json` and `appsettings.Development.json` land at the same
+  publish-relative path as their own — error `NETSDK1152`. Suppressing it with
+  `ErrorOnDuplicatePublishOutputFiles` would be worse than the error, because which copy wins
+  is unspecified and the collector's winning would hand those services the collector's
+  configuration under their own name, pricing and keys included. Each now drops the
+  referenced project's copies from its publish list and keeps its own. This is a publish-time
+  conflict only, which is why `dotnet build` and the test suite never saw it either.
+
 ### Changed
 - **The in-app and published setup instructions now match what the tools actually read.** The
   dashboard's own Docs page told Claude Code users to set an endpoint and a protocol and
