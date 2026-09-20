@@ -149,6 +149,34 @@ a session it already holds from live telemetry. Imported sessions are badged *im
 carry lower confidence: the transcript has no latency, edit-decision or feedback signal, so
 those components are absent rather than defaulted. See [docs/TUTORIAL.md §0.5](docs/TUTORIAL.md).
 
+### Letting the assistant read its own scores
+
+The score is most useful to the person the session belonged to, at the moment it ended —
+which is when nobody is looking at a dashboard. So two optional pieces put it back in
+front of the assistant that produced it:
+
+```bash
+copilotscope mcp install      # read-only MCP server: sessions, scores, turn analysis
+copilotscope skill install    # the skill that teaches it to read them correctly
+```
+
+Then *"why did my last session score 62?"* is answered from the turn analysis — the turn
+that stalled and why — instead of from a number.
+
+Both are off until you run those commands, and the MCP server exposes reads only: no
+write, delete, seed or import tool, and no way to configure one. It talks to the collector
+over the same HTTP API as any other client, so the privacy guard, the *k*-anonymity floor
+and the access audit log apply to it too.
+
+One thing had to be fixed before this could ship honestly. An MCP call is made from inside
+the session being scored, and tool calls are part of the formula: reliability is the
+error-free rate over `ChatCalls * 2 + ToolCalls`, so a counted read would have raised the
+score it just read, and repair-loop detection compares a turn's tool-to-chat ratio against
+the session median, which injected calls move on both sides. The collector now drops its
+own reads at ingest, before any counter sees them, while still recording them in the
+session timeline. Asking what a session scored does not change what it scored.
+[docs/MCP.md](docs/MCP.md) has the rest, including what this means on a shared deployment.
+
 ### Team views
 
 Both pages take a **window** (7/30/90 days/all) and a **cohort** (repository, assistant,
@@ -217,7 +245,8 @@ Three shapes, for three different moments. They do not repeat each other.
 
 Plus **[docs/DIAGRAMS.md](docs/DIAGRAMS.md)** — every structural claim in this
 repository as a picture, rendered by GitHub, and the same sources the manual
-includes as vector PDFs.
+includes as vector PDFs. And **[docs/MCP.md](docs/MCP.md)** — the read-only MCP
+server and the skill, and why a measurement tool may not measure itself.
 
 The manual is not committed as a PDF, because a PDF is build output. Build both
 editions from the Actions tab (*Build documentation PDF*), or locally:
@@ -247,6 +276,7 @@ it.
 | `tools/CopilotScope.TelemetryGen` | realistic demo telemetry generator (incl. gzip + captured content) | zero |
 | `tools/CopilotScope.Seeder` | pushes a batch of comprehensive demo/local sessions into a running collector via `/api/admin/seed` | zero |
 | `tools/CopilotScope.LogImporter` | parses Claude Code's local `*.jsonl` transcripts into scored sessions via `/api/import` — the no-OTel-setup path | zero |
+| `tools/CopilotScope.Mcp` | read-only MCP server so an assistant can read its own scores; takes no project reference, so reads pass the privacy guard and audit log like any other client, see [docs/MCP.md](docs/MCP.md) | zero |
 | `grafana/` | provisioned Prometheus scrape config, Grafana datasource and the CopilotScope dashboard JSON | — |
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
 | `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep workflow-friction scoring, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
@@ -292,11 +322,13 @@ the ingest key is empty, which is the collector's open mode.
 | `copilotscope import` | score the Claude Code transcripts already on disk |
 | `copilotscope demo` | load fabricated demo sessions, badged `demo` |
 | `copilotscope probe` | push one session through the real OTLP path |
+| `copilotscope mcp install` | register the read-only MCP server with Claude Code |
+| `copilotscope skill install` | write the score-reading skill into `~/.claude/skills` |
 | `copilotscope doctor` | check Docker, the collector, each client's configuration, and the overrides that beat it |
 | `copilotscope status` · `logs` · `open` · `update` · `down` · `uninstall` | the rest |
 
-`import`, `demo` and `probe` run in the `copilotscope-tools` container, so none of
-them needs a .NET SDK or a clone.
+`import`, `demo`, `probe`, `mcp` and `skill` all run in the `copilotscope-tools`
+container, so none of them needs a .NET SDK or a clone.
 
 ### Shared deployments
 

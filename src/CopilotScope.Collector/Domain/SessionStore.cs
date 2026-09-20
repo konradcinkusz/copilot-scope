@@ -229,9 +229,14 @@ public sealed class SessionStore
                     break;
 
                 case "execute_tool":
+                    var tool = span.Attr(Sem.ToolName) ?? span.Name;
+                    // CopilotScope reading its own scores is not part of the work this
+                    // session is being measured on, and counting it would let a read
+                    // move the number it read. See SelfObservation. The timeline event
+                    // is added outside this block, so the call stays visible.
+                    if (SelfObservation.IsSelfObservation(tool)) break;
                     s.ToolCalls++;
                     if (isError) s.ToolErrors++;
-                    var tool = span.Attr(Sem.ToolName) ?? span.Name;
                     s.Tools.AddOrUpdate(tool,
                         (1, isError ? 1 : 0, span.DurationMs),
                         (_, t) => (t.Calls + 1, t.Errors + (isError ? 1 : 0), t.TotalMs + span.DurationMs));

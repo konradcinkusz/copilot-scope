@@ -10,6 +10,43 @@ release asset.
 ## [Unreleased]
 
 ### Added
+- **A read-only MCP server, a skill, and the ingest fix that had to come first.** The score
+  is most useful to the person whose session it was, at the moment the session ended — which
+  is exactly when nobody is looking at a dashboard. Three pieces, all opt-in:
+  - **`tools/CopilotScope.Mcp`** — a zero-dependency stdio MCP server exposing five reads:
+    `health`, `list_sessions`, `get_session`, `overview`, `signal_coverage`. No write, delete,
+    seed or import tool, and no way to configure one; a test enforces the list. It takes *no*
+    project reference to the Collector and talks to it over the same HTTP API as any other
+    client, deliberately: the privacy guard, the k-anonymity floor and the access audit log
+    all live on that path, and an in-process reader would route around all three. 401 and 403
+    are reported differently, because the collector answers 403 only when privacy mode is
+    withholding a view on purpose, and telling someone to go find an API key for that would
+    be advice to work around a control their organisation chose.
+  - **`SelfObservation` in the Collector, and the exclusion at both ingest paths.** An MCP
+    call is made from inside the session being scored, and tool calls are part of the formula.
+    Reliability — 0.25 of the composite, its largest single weight — is the error-free rate
+    over `ChatCalls * 2 + ToolCalls`, so every successful read of a score would have raised
+    the score being read; and `SegmentAnalyzer` compares each turn's tool-to-chat ratio
+    against the session median to find repair loops, which injected calls move on both sides,
+    masking real ones and manufacturing false ones. The collector now drops its own reads
+    before they reach any counter, on the `execute_tool` span path and the `tool_result` log
+    path alike — the latter being Claude Code's default, not an opt-in extra. The call is
+    still recorded in the session timeline: dropped from the counters, not from the record.
+    Recognition is by tool name, which is why `copilotscope mcp install` registers the server
+    as `copilotscope` and why registering it by hand under another name will move your scores.
+  - **`skills/copilotscope/SKILL.md`**, installed by `copilotscope skill install` and shipped
+    inside the tools image so it needs no clone. A quality score is easy to quote badly in
+    predictable ways, so the skill teaches the assistant to quote confidence alongside the
+    number, check signal coverage before comparing two assistants, read the turn analysis
+    instead of restating the composite, and never rank people with a session score. Those
+    rules were already in the README; the difference is that a skill is read by the thing
+    generating the answer rather than by someone who has already been given a wrong one.
+
+  Also **`CLAUDE.md`**, which the repository had never had: the build and test commands, and
+  the invariants that compile, pass review and fail later — `PersistedSession` mirroring
+  `CopilotSession` through both conversions, the TFM and the `Dockerfile*` base images
+  retargeting together (#55), scoring staying a pure function, and the bilingual pairs.
+  Documentation in `docs/MCP.md`.
 - **A bilingual manual, built from LaTeX, and the toolchain that keeps it honest.** The
   repository had reference documentation and no explanation: `docs/TUTORIAL.md` tells a reader
   which variable to set, and nothing told them what the composite score is made of, why

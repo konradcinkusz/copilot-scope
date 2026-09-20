@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\CopilotScope.Collector\CopilotScope.Collector.csproj" />
     <ProjectReference Include="..\..\tools\CopilotScope.Seeder\CopilotScope.Seeder.csproj" />
     <ProjectReference Include="..\..\tools\CopilotScope.LogImporter\CopilotScope.LogImporter.csproj" />
+    <ProjectReference Include="..\..\tools\CopilotScope.Mcp\CopilotScope.Mcp.csproj" />
     <ProjectReference Include="..\..\src\CopilotScope.AgentForge\CopilotScope.AgentForge.csproj" />
     <ProjectReference Include="..\..\src\CopilotScope.JudgeAgent\CopilotScope.JudgeAgent.csproj" />
     <ProjectReference Include="..\..\src\CopilotScope.Dashboard\CopilotScope.Dashboard.csproj" />

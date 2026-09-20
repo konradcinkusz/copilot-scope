@@ -10,6 +10,8 @@
 #   copilotscope import                score the Claude Code history already on disk
 #   copilotscope demo                  load fabricated demo sessions
 #   copilotscope probe                 send one session through the real OTLP path
+#   copilotscope mcp install           let Claude Code read its own scores, read-only
+#   copilotscope skill install         teach it to read those scores correctly
 #   copilotscope doctor                diagnose "it runs but no sessions appear"
 #   copilotscope status | logs | open | update | down | uninstall
 #
@@ -761,6 +763,110 @@ cmd_probe() {
 
 # ----------------------------------------------------------- command: doctor
 
+# --------------------------------------------------------------- mcp and skill
+
+mcp_usage() {
+    cat <<'USAGE'
+usage: copilotscope mcp [install]
+
+  (no argument)  run the read-only MCP server on stdin/stdout. An MCP client
+                 starts this; running it in a terminal just waits for input.
+  install        register it with Claude Code as "copilotscope".
+
+Tools: health · list_sessions · get_session · overview · signal_coverage
+There is no write, delete, seed or import tool, by design.
+USAGE
+}
+
+# The server has to be registered under the name "copilotscope": the collector
+# recognises its own reads by tool name (mcp__copilotscope__*) in order to keep them
+# out of the scores, and a server registered under another name would be counted like
+# any other tool — quietly moving the numbers it was asked about.
+mcp_install() {
+    local self
+    self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+    head1 "MCP server"
+    if ! command -v claude >/dev/null 2>&1; then
+        warn "claude is not on PATH, so nothing was registered."
+        info "Register it yourself with:"
+        info "  claude mcp add copilotscope -- $self mcp"
+        return 1
+    fi
+
+    if claude mcp add copilotscope -- "$self" mcp; then
+        ok "registered with Claude Code as 'copilotscope'."
+        info "Read-only: sessions, scores, turn analysis, signal coverage."
+        info "Its own calls are excluded from scoring at ingest, so asking about a"
+        info "score does not change it."
+        return 0
+    fi
+
+    bad "claude mcp add failed."
+    info "Register it by hand with: claude mcp add copilotscope -- $self mcp"
+    return 1
+}
+
+cmd_mcp() {
+    case "${1:-}" in
+        install) shift; mcp_install "$@"; return $? ;;
+        -h | --help | help) mcp_usage; return 0 ;;
+    esac
+
+    require_docker
+    # -T is load-bearing. `compose run` allocates a TTY by default, and a TTY echoes
+    # what it reads and rewrites line endings, which corrupts a transport framed as
+    # one JSON message per line. --quiet-pull keeps image progress off the stream.
+    compose run --rm -T --quiet-pull tools mcp "$@"
+}
+
+# The skill text ships inside the tools image so this works without a clone; a clone,
+# when there is one, wins so an edit can be tried without rebuilding the image.
+skill_source() {
+    local script_dir repo_root
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    repo_root="$(cd "$script_dir/.." && pwd)"
+    if [ -f "$repo_root/skills/copilotscope/SKILL.md" ]; then
+        cat "$repo_root/skills/copilotscope/SKILL.md"
+        return 0
+    fi
+    require_docker
+    compose run --rm -T --quiet-pull tools skill
+}
+
+cmd_skill() {
+    local action="${1:-install}" dest text
+    case "$action" in
+        show | print) skill_source; return $? ;;
+        install) ;;
+        -h | --help | help)
+            say "usage: copilotscope skill [install|show]"
+            say ""
+            say "  install  write it to $(claude_config_dir)/skills/copilotscope/SKILL.md"
+            say "  show     print it and change nothing"
+            return 0
+            ;;
+        *) die "unknown skill action '$action' — try: copilotscope skill install" ;;
+    esac
+
+    dest="$(claude_config_dir)/skills/copilotscope"
+
+    head1 "Claude Code skill"
+    text="$(skill_source)" || { bad "could not read the skill."; return 1; }
+    # An empty file would install cleanly and teach nothing, which is the failure a
+    # user would never notice. Refuse it instead.
+    [ -n "$text" ] || { bad "the skill came back empty; nothing was written."; return 1; }
+
+    mkdir -p "$dest" || { bad "could not create $dest"; return 1; }
+    printf '%s\n' "$text" > "$dest/SKILL.md" || { bad "could not write $dest/SKILL.md"; return 1; }
+
+    ok "$dest/SKILL.md written."
+    info "Teaches the assistant to read a score correctly: quote confidence with the"
+    info "number, check signal coverage before comparing assistants, and never rank"
+    info "people with it. Also carries the 'no sessions appear' triage path."
+    info "Restart claude to pick it up."
+}
+
 cmd_doctor() {
     local problems=0
     head1 "CopilotScope doctor"
@@ -961,6 +1067,8 @@ ${C_BOLD}copilotscope${C_RESET} — quality scoring for AI coding-assistant sess
   ${C_BOLD}import${C_RESET} [--dry-run] […]           score the Claude Code history already on disk
   ${C_BOLD}demo${C_RESET} [quick|demo]                load fabricated demo sessions
   ${C_BOLD}probe${C_RESET}                            send one session over the real OTLP path
+  ${C_BOLD}mcp${C_RESET} [install]                    read-only MCP server over the collector's API
+  ${C_BOLD}skill${C_RESET} [install|show]             the skill that teaches an assistant to read a score
   ${C_BOLD}doctor${C_RESET}                           diagnose "it runs but no sessions appear"
   ${C_BOLD}status${C_RESET} | ${C_BOLD}logs${C_RESET} [service] | ${C_BOLD}open${C_RESET}     inspect the running stack
   ${C_BOLD}update${C_RESET} | ${C_BOLD}down${C_RESET} | ${C_BOLD}uninstall${C_RESET} [--purge]
@@ -977,6 +1085,8 @@ case "${1:-}" in
     import) shift; cmd_import "$@" ;;
     demo|seed) shift; cmd_demo "$@" ;;
     probe) shift; cmd_probe "$@" ;;
+    mcp) shift; cmd_mcp "$@" ;;
+    skill) shift; cmd_skill "$@" ;;
     doctor) shift; cmd_doctor "$@" ;;
     status|ps) shift; cmd_status "$@" ;;
     logs) shift; cmd_logs "$@" ;;

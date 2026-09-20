@@ -1,10 +1,12 @@
 #!/bin/sh
-# Entrypoint for the copilotscope-tools image: the three things a user needs on a
-# first run, without a .NET SDK or a clone of this repository.
+# Entrypoint for the copilotscope-tools image: what a user needs on a first run, and
+# afterwards, without a .NET SDK or a clone of this repository.
 #
 #   import [flags]        score the Claude Code transcripts mounted at /transcripts
 #   demo   [quick|demo]   load a demo dataset into a running collector
 #   probe  [id]           send one real OTLP/HTTP session through the ingest path
+#   mcp                   speak the Model Context Protocol on stdin/stdout
+#   skill                 print the skill shipped for CopilotScope's users
 #
 # The collector URL comes from $COPILOTSCOPE_COLLECTOR and the key, when the
 # deployment has one, from $COPILOTSCOPE_API_KEY. Both are set by the compose
@@ -25,6 +27,11 @@ copilotscope-tools — first-run tooling for a running CopilotScope collector.
                         badged "demo" in the dashboard.
   probe [id]            Send one simulated session over real OTLP/HTTP protobuf.
                         Exercises ingest, decoding, scoring and persistence.
+  mcp                   Read-only MCP server over the collector's API, on stdio.
+                        Started by an MCP client, not by hand — run it with
+                        `docker ... -i` or nothing can write to its stdin.
+  skill                 Print skills/copilotscope/SKILL.md, which
+                        `copilotscope skill install` writes into ~/.claude/skills.
   help                  This text.
 
 Collector: $COLLECTOR
@@ -60,6 +67,16 @@ case "$command" in
         id="${1:-probe-$(date +%s)}"
         if [ "$#" -gt 0 ]; then shift; fi
         exec dotnet /app/telemetrygen/CopilotScope.TelemetryGen.dll "$COLLECTOR" "$id" "$@"
+        ;;
+    mcp)
+        # stdout is the protocol transport, so nothing may be echoed here. The server
+        # reads COPILOTSCOPE_COLLECTOR and COPILOTSCOPE_API_KEY from the environment
+        # itself rather than taking them as arguments, because an MCP client launches
+        # it with no arguments at all.
+        exec dotnet /app/mcp/copilotscope-mcp.dll "$@"
+        ;;
+    skill)
+        exec cat /app/skills/copilotscope/SKILL.md
         ;;
     help | --help | -h)
         usage
