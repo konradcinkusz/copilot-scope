@@ -14,6 +14,8 @@
       copilotscope connect copilot-cli   point GitHub Copilot CLI at it
       copilotscope import                score the Claude Code history on disk
       copilotscope demo | probe          demo sessions / one real OTLP session
+      copilotscope mcp install           let Claude Code read its own scores, read-only
+      copilotscope skill install         teach it to read those scores correctly
       copilotscope doctor                diagnose "it runs but no sessions appear"
       copilotscope status | logs | open | url | update | down | uninstall
 
@@ -701,6 +703,121 @@ function Invoke-Doctor {
     exit 1
 }
 
+function Show-McpUsage {
+    Write-Host 'usage: copilotscope mcp [install]'
+    Write-Host ''
+    Write-Host '  (no argument)  run the read-only MCP server on stdin/stdout. An MCP client'
+    Write-Host '                 starts this; running it in a terminal just waits for input.'
+    Write-Host '  install        register it with Claude Code as "copilotscope".'
+    Write-Host ''
+    Write-Host '  Tools: health, list_sessions, get_session, overview, signal_coverage'
+    Write-Host '  There is no write, delete, seed or import tool, by design.'
+}
+
+# The server has to be registered under the name "copilotscope": the collector
+# recognises its own reads by tool name (mcp__copilotscope__*) to keep them out of the
+# scores, and a server registered under another name would be counted like any other
+# tool -- quietly moving the numbers it was asked about.
+#
+# What gets registered is the docker command, not this script. PowerShell re-emits a
+# native command's stdout through its own object pipeline, which is fine for log lines
+# and is not a safe carrier for a byte-framed protocol; the client launching docker
+# itself takes this script out of the data path entirely.
+function Get-McpCommand {
+    $file = Get-ComposeFile
+    if (-not $file) {
+        Stop-WithError "no compose file found. Re-run the installer, or run this from a clone of the repository."
+    }
+    $dockerArgs = @('compose', '-p', 'copilotscope', '-f', $file)
+    $envFile = Get-EnvFile
+    if (Test-Path $envFile) { $dockerArgs += @('--env-file', $envFile) }
+    # -T: `compose run` allocates a TTY by default, and a TTY echoes what it reads and
+    # rewrites line endings, corrupting a transport framed one JSON message per line.
+    $dockerArgs += @('run', '--rm', '-T', '--quiet-pull', 'tools', 'mcp')
+    return $dockerArgs
+}
+
+function Install-Mcp {
+    $dockerArgs = Get-McpCommand
+    $printable = 'docker ' + ($dockerArgs -join ' ')
+
+    Write-Head 'MCP server'
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        Write-Warn 'claude is not on PATH, so nothing was registered.'
+        Write-Info 'Register it yourself with:'
+        Write-Info "  claude mcp add copilotscope -- $printable"
+        return
+    }
+
+    & claude mcp add copilotscope -- docker @dockerArgs
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok "registered with Claude Code as 'copilotscope'."
+        Write-Info 'Read-only: sessions, scores, turn analysis, signal coverage.'
+        Write-Info 'Its own calls are excluded from scoring at ingest, so asking about a'
+        Write-Info 'score does not change it.'
+    }
+    else {
+        Write-Bad 'claude mcp add failed.'
+        Write-Info "Register it by hand with: claude mcp add copilotscope -- $printable"
+    }
+}
+
+function Invoke-Mcp {
+    if ($Target -eq 'install') { Install-Mcp; return }
+    if ($Target -eq 'help') { Show-McpUsage; return }
+
+    Assert-Docker
+    # -T is load-bearing: `compose run` allocates a TTY by default, and a TTY echoes
+    # what it reads and rewrites line endings, which corrupts a transport framed as
+    # one JSON message per line.
+    Invoke-Compose run --rm -T --quiet-pull tools mcp
+}
+
+# The skill text ships inside the tools image so this works without a clone; a clone,
+# when there is one, wins so an edit can be tried without rebuilding the image.
+function Get-SkillText {
+    if ($PSCommandPath) {
+        $repoRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+        $local = Join-Path $repoRoot 'skills/copilotscope/SKILL.md'
+        if (Test-Path $local) { return [System.IO.File]::ReadAllText($local) }
+    }
+    Assert-Docker
+    return (Invoke-Compose run --rm -T --quiet-pull tools skill | Out-String)
+}
+
+function Invoke-Skill {
+    $action = if ($Target) { $Target } else { 'install' }
+
+    if ($action -in @('show', 'print')) { Write-Host (Get-SkillText); return }
+    if ($action -eq 'help') {
+        Write-Host 'usage: copilotscope skill [install|show]'
+        Write-Host ''
+        Write-Host "  install  write it to $(Join-Path (Get-ClaudeConfigDir) 'skills/copilotscope/SKILL.md')"
+        Write-Host '  show     print it and change nothing'
+        return
+    }
+    if ($action -ne 'install') {
+        Stop-WithError "unknown skill action '$action' -- try: copilotscope skill install"
+    }
+
+    Write-Head 'Claude Code skill'
+    $text = Get-SkillText
+    # An empty file would install cleanly and teach nothing, which is the failure a
+    # user would never notice. Refuse it instead.
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        Write-Bad 'the skill came back empty; nothing was written.'
+        return
+    }
+
+    $dest = Join-Path (Get-ClaudeConfigDir) 'skills/copilotscope/SKILL.md'
+    Write-TextNoBom $dest $text
+    Write-Ok "$dest written."
+    Write-Info 'Teaches the assistant to read a score correctly: quote confidence with the'
+    Write-Info 'number, check signal coverage before comparing assistants, and never rank'
+    Write-Info 'people with it. Also carries the "no sessions appear" triage path.'
+    Write-Info 'Restart claude to pick it up.'
+}
+
 function Show-Usage {
     Write-Host ''
     Write-Host 'copilotscope — quality scoring for AI coding-assistant sessions, on your machine.'
@@ -711,6 +828,8 @@ function Show-Usage {
     Write-Host '  import [--dry-run]               score the Claude Code history already on disk'
     Write-Host '  demo [quick|demo]                load fabricated demo sessions'
     Write-Host '  probe                            send one session over the real OTLP path'
+    Write-Host "  mcp [install]                    read-only MCP server over the collector's API"
+    Write-Host '  skill [install|show]             the skill that teaches an assistant to read a score'
     Write-Host '  doctor                           diagnose "it runs but no sessions appear"'
     Write-Host '  status | logs | open | url        inspect the running stack'
     Write-Host '  update | down | uninstall [-Purge]'
@@ -728,6 +847,8 @@ switch ($Command.ToLowerInvariant()) {
     'demo' { Invoke-Tool @('demo', $(if ($Target) { $Target } else { 'quick' })) }
     'seed' { Invoke-Tool @('demo', $(if ($Target) { $Target } else { 'quick' })) }
     'probe' { Invoke-Probe }
+    'mcp' { Invoke-Mcp }
+    'skill' { Invoke-Skill }
     'doctor' { Invoke-Doctor }
     'status' { Assert-Docker; Invoke-Compose ps | Out-Host; if (Get-Health) { Write-Ok "collector healthy at $(Get-Endpoint)"; Write-Ok "dashboard at $(Get-DashboardUrl)" } else { Write-Warn 'the collector is not answering — copilotscope doctor' } }
     'ps' { Assert-Docker; Invoke-Compose ps | Out-Host }

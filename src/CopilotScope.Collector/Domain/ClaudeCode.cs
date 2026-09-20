@@ -162,8 +162,12 @@ public static class ClaudeCode
                 break;
 
             case "tool_result":
+                // Same exclusion as the span path in SessionStore: a read of this
+                // session's own score is not one of its tool calls. See SelfObservation.
+                var toolName = Attr(log, "tool_name") ?? "unknown";
+                if (SelfObservation.IsSelfObservation(toolName)) break;
                 var failed = string.Equals(Attr(log, "success"), "false", StringComparison.OrdinalIgnoreCase);
-                RecordTool(s, turn, Attr(log, "tool_name") ?? "unknown", failed, AttrDouble(log, "duration_ms") ?? 0);
+                RecordTool(s, turn, toolName, failed, AttrDouble(log, "duration_ms") ?? 0);
                 if (failed)
                     s.ErrorTypes.AddOrUpdate(Attr(log, "error_type") ?? "tool_error", 1, (_, c) => c + 1);
                 break;

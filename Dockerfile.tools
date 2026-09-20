@@ -1,37 +1,45 @@
-# CopilotScope tooling in one image — import, demo data and a probe session,
-# with no .NET SDK and no clone of this repository.
+# CopilotScope tooling in one image — import, demo data, a probe session and the
+# read-only MCP server, with no .NET SDK and no clone of this repository.
 #
 # Build:  docker build -f Dockerfile.tools -t copilotscope-tools .
 # Run:    docker run --rm -e COPILOTSCOPE_COLLECTOR=http://host.docker.internal:4318 \
 #                    -v ~/.claude/projects:/transcripts:ro copilotscope-tools import
 #
-# Three small console apps rather than three images: they share the Collector
-# project reference (so a seeded or imported session has exactly the shape real
-# ingestion produces), and one image means one pull for a first run.
+# Four small console apps rather than four images: the three that write sessions
+# share the Collector project reference (so a seeded or imported session has exactly
+# the shape real ingestion produces), the MCP server only reads and takes no
+# reference at all, and one image means one pull for a first run.
 #
 # The image major version tracks the TFM (net10.0) — see the comment in
 # ./Dockerfile. The runtime is the ASP.NET Core image, not the plain runtime,
-# because all three tools reference CopilotScope.Collector and so resolve
-# against the ASP.NET Core shared framework.
+# because the three writing tools reference CopilotScope.Collector and so resolve
+# against the ASP.NET Core shared framework. The MCP server needs only the base
+# runtime, but shares the image rather than earning a second pull.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY nuget.config .
-# ServiceDefaults is a ProjectReference of the collector, which all three tools
-# reference — see the comment in ./Dockerfile.
+# ServiceDefaults is a ProjectReference of the collector, which the three writing
+# tools reference — see the comment in ./Dockerfile.
 COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 COPY tools/CopilotScope.Seeder/ tools/CopilotScope.Seeder/
 COPY tools/CopilotScope.LogImporter/ tools/CopilotScope.LogImporter/
 COPY tools/CopilotScope.TelemetryGen/ tools/CopilotScope.TelemetryGen/
+# The MCP server takes no project reference — it reads the collector over HTTP like any
+# other client, so the privacy guard and the access audit log apply to it too.
+COPY tools/CopilotScope.Mcp/ tools/CopilotScope.Mcp/
 RUN dotnet publish tools/CopilotScope.Seeder      -c Release -o /app/seeder \
  && dotnet publish tools/CopilotScope.LogImporter -c Release -o /app/importer \
- && dotnet publish tools/CopilotScope.TelemetryGen -c Release -o /app/telemetrygen
+ && dotnet publish tools/CopilotScope.TelemetryGen -c Release -o /app/telemetrygen \
+ && dotnet publish tools/CopilotScope.Mcp         -c Release -o /app/mcp
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
 WORKDIR /app
 COPY --from=build /app/ /app/
 COPY scripts/tools-entrypoint.sh /app/copilotscope-tools
+# Shipped so `copilotscope skill install` works without a clone of this repository.
+COPY skills/ /app/skills/
 RUN chmod +x /app/copilotscope-tools
 
 # Where the compose service mounts the host's Claude Code transcripts, read-only.

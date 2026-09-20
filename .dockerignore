@@ -5,3 +5,9 @@
 docs/
 tests/
 *.md
+# …except the skill shipped to users, which `copilotscope skill install` reads out of
+# this image so it works without a clone. It is Markdown, and `*.md` above is read by
+# some Docker versions as matching at every depth rather than only at the root; an
+# empty skills/ directory in the image would fail silently, at install time, on a
+# user's machine.
+!skills/**

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>copilotscope-mcp</AssemblyName>
+    <RootNamespace>CopilotScope.Mcp</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Deliberately no ProjectReference to the Collector, and no packages.
+       The other three tools reference it because they *write* sessions and must not
+       drift from the ingest shape. This one only reads, over the same HTTP API any
+       other client uses, which is the whole point: every read passes through the
+       privacy guard, the k-anonymity floor and the access audit log. Reaching into
+       the collector's types in-process would route around all three. Responses are
+       passed through as the JSON the collector produced, so there is no local model
+       of them to drift either. -->
+
+</Project>
