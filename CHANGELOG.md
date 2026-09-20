@@ -270,6 +270,23 @@ release asset.
   silently moved measuring stick.
 
 ### Fixed
+- **The published dashboard image shipped a UI nobody could click.** `Dockerfile.dashboard`
+  restored against a context holding the `.csproj` files alone — the layer-caching pattern —
+  and then published with `--no-restore`. That publish trusts the static web asset set the
+  restore cached at a moment when the project's `wwwroot` was not in the context yet, so the
+  output carried `app.css`, `app.js` and `favicon.svg` and no `_framework/` at all.
+  `blazor.web.js` was therefore absent from the image, the Blazor circuit never started, and
+  the dashboard rendered exactly once, server-side, with every control on it inert: the
+  filters, the 7d/30d/90d range, the repository and assistant selectors, the
+  Basic/Advanced/Full toggle, selecting a session, delete, and the two-second refresh. The
+  page still answered `200` on `/`, which is precisely why nothing went red — the container
+  healthcheck curls `/`, and so did the `containers` CI job. Anyone following the README's
+  primary path, `docker compose -f docker-compose.ghcr.yml up -d`, got the dead copy; anyone
+  running `dotnet run` did not, because a development build resolves those assets from disk.
+  The publish no longer passes `--no-restore`, and the `containers` smoke test now also
+  fetches `/_framework/blazor.web.js`, so an image that serves a page it cannot animate fails
+  the build instead of shipping.
+
 - **Every container image was unbuildable, and nothing was checking** (#57). All four
   Dockerfiles copy their own project into the build context and nothing else, but the
   collector and the dashboard both carry a `ProjectReference` to
@@ -296,6 +313,30 @@ release asset.
   conflict only, which is why `dotnet build` and the test suite never saw it either.
 
 ### Changed
+- **The dashboard screenshots are current again, and there are two more of them.** The
+  committed shots predated the Overview rewrite: the file showed an "all chats — token burn"
+  page that the application no longer leads with, next to a Sessions view from before the
+  Basic/Advanced/Full split. All four are now captured from the running stack against the
+  seeded demo dataset over a 60-day window — wide enough that the Overview's
+  this-window-versus-the-one-before-it table compares two populated windows instead of
+  printing its too-few-sessions caveat. `docs/img/dashboard-session-detail.png` and
+  `docs/img/dashboard-docs.png` are new: the first is the Advanced breakdown of a single
+  session, which is the one view that shows what the product actually computes, and the
+  second is the built-in documentation page. Both tutorials that describe a screen now show
+  it, in each language. The README says once, under the hero, that every screenshot in it is
+  seeded demo data — the `DEMO` badge is visible in the images, and the tutorials already
+  made the same promise in prose.
+
+- **Dependencies.** `actions/setup-node` 4 → 7 and `actions/github-script` 7 → 9 (the v9
+  breaks are `require('@actions/github')` and redeclaring `getOctokit`; the one script in
+  `semconv-canary.yml` reaches only `github.rest.issues.*` and `context.repo`), Aspire
+  hosting 13.4.6 → 13.5.4, the three OpenTelemetry packages in `ServiceDefaults` 1.17.0 →
+  1.18.0, and `Microsoft.Agents.AI` 1.17.0 → 1.19.0 — whose two breaking changes in that
+  range, the `AgentIsolationKeyProvider` rename and the MCP long-running task migration, name
+  nothing AgentForge or the judge agent use. Dependabot closed its own
+  `OpenTelemetry.Extensions.Hosting` pull request as "updatable in another way" after its two
+  siblings merged, leaving that one package a version behind the set; it is bumped here.
+
 - **The docs that the install change left behind are now correct too.** Moving AgentForge and
   the judge agent behind a Compose profile made `docs/JUDGE_AGENT.md` state something false:
   it said the judge agent "isn't gated behind a Compose profile, so it starts by default", and

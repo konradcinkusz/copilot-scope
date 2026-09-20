@@ -3,6 +3,17 @@
 **Situation:** real sessions are arriving. **Result:** you can tell a bad session
 from a badly-measured one, and you know which number to act on.
 
+Everything this tutorial describes is on one page. Pick a session, switch
+`View:` to **Advanced**, and you get all of it at once:
+
+![One session in the Advanced view](../img/dashboard-session-detail.png)
+
+Reading that screenshot against the sections below: the score and its
+percentile are at the top (step 1), the per-turn heatmap and `Turn analysis —
+TFRA` give the worst turn and why (step 2), the six weighted bars are the
+components (step 3), and `Edit survival` is the first of the four insight
+cards (step 4).
+
 ## Read it in this order
 
 ### 1. Grade and confidence, together
