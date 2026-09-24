@@ -124,8 +124,21 @@ public sealed class PersistenceWriter(
     /// shutdown — Ctrl+C on a laptop, <c>docker compose down</c> — dropped up to a second of
     /// telemetry: the loop above only ever flushes on its next tick, and there is no next tick.
     /// Bounded, because a store that has gone away must not hold the shutdown hostage.
+    ///
+    /// Idempotent: every caller shares the one final flush. A host can be stopped twice at once
+    /// — WebApplicationFactory stops it while the application's own RunAsync, seeing the stop,
+    /// stops it again and then disposes the container. The second call used to find nothing
+    /// left to flush, return at once, and let the store be disposed under the write the first
+    /// call was still making, which lost that session.
     /// </summary>
-    public override async Task StopAsync(CancellationToken ct)
+    public override Task StopAsync(CancellationToken ct)
+    {
+        lock (_lock) return _stopping ??= StopOnceAsync(ct);
+    }
+
+    private Task? _stopping;
+
+    private async Task StopOnceAsync(CancellationToken ct)
     {
         // Stop the loop first, so the final flush is the only writer.
         await base.StopAsync(ct);
