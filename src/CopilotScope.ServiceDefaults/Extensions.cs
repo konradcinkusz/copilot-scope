@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -22,6 +24,33 @@ namespace CopilotScope.ServiceDefaults;
 /// </summary>
 public static class Extensions
 {
+    /// <summary>
+    /// Adds an application's own <c>appsettings.json</c>, compiled into its assembly as
+    /// <paramref name="resourceName"/>, as the lowest-priority configuration source — but only
+    /// when the content root has no <c>appsettings.json</c> of its own.
+    ///
+    /// A service normally reads its defaults (the model pricing table, the history limits) from
+    /// the file next to it. A host that runs the service inside another process — the native
+    /// <c>copilotscope</c> binary — has no such file, because two applications' copies would
+    /// collide in one publish directory. Loaded into memory rather than as a stream source: a
+    /// stream can be read once, and the configuration manager re-reads every source each time
+    /// another one is added.
+    /// </summary>
+    public static TBuilder AddEmbeddedDefaults<TBuilder>(this TBuilder builder, System.Reflection.Assembly assembly,
+        string resourceName) where TBuilder : IHostApplicationBuilder
+    {
+        if (File.Exists(Path.Combine(builder.Environment.ContentRootPath, "appsettings.json"))) return builder;
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream is null) return builder;
+
+        var defaults = new ConfigurationBuilder().AddJsonStream(stream).Build()
+            .AsEnumerable()
+            .Where(kv => kv.Value is not null)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+        builder.Configuration.Sources.Insert(0, new MemoryConfigurationSource { InitialData = defaults });
+        return builder;
+    }
+
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {

@@ -9,6 +9,19 @@ release asset.
 
 ## [Unreleased]
 
+### Changed
+- **The collector and the dashboard are built, not just run.** Everything their `Program.cs`
+  did inline now lives in `CollectorApp.BuildAsync` and `DashboardApp.Build`, and each
+  `Program.cs` is a single line that builds the application and runs it. Nothing changes for the
+  container images, the Aspire AppHost or `dotnet run`. What it allows is the next step of
+  [ADR-004](docs/architecture/ADR-004-native-distribution.md): one native `copilotscope` process
+  that runs both applications side by side. A host passes its content root, web root and
+  environment up front, since none of them can change once the builder exists, and gets a
+  callback before anything reads configuration. Each application also carries its
+  `appsettings.json` compiled in, and uses it only when its content root has none. A host's
+  publish directory can't hold two applications' copies, and without the collector's copy the
+  model pricing table would go with it.
+
 ### Added
 - **Session history on disk without a database, and the decision it starts.** Without Postgres
   the collector kept only the 200 most recently active sessions, in memory, and lost them all
