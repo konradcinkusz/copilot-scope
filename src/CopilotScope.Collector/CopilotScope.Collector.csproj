@@ -22,4 +22,11 @@
     <ProjectReference Include="..\CopilotScope.ServiceDefaults\CopilotScope.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Compiled in as well as copied out: a host running this application inside its own
+         process (the native copilotscope binary, ADR-004) has no appsettings.json beside it,
+         and falls back to this one. See ServiceDefaults' AddEmbeddedDefaults. -->
+    <EmbeddedResource Include="appsettings.json" LogicalName="CopilotScope.Collector.appsettings.json" />
+  </ItemGroup>
+
 </Project>
