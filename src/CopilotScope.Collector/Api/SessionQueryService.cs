@@ -10,8 +10,8 @@ public sealed record SessionPage(
     int Total,
     int Limit,
     int Offset,
-    /// <summary>False when the collector is running without Postgres, so the caller knows
-    /// the window is bounded by what memory holds rather than by the query.</summary>
+    /// <summary>False when the collector is running without durable storage, so the caller
+    /// knows the window is bounded by what memory holds rather than by the query.</summary>
     bool Durable,
     /// <summary>Distinct origins the page covers, for the k-anonymity floor. Counted here
     /// because the page is where the caller's filters have already been applied — the floor
@@ -37,23 +37,24 @@ public sealed record SessionPage(
 /// The in-memory <see cref="SessionStore"/> is capped, so it holds only the most recently
 /// active sessions — a team churns past that cap in hours. Reading the API off memory alone
 /// therefore made a team's history vanish shortly after it was written, even though every
-/// session was safely in Postgres. This service reads from Postgres and overlays the live
-/// aggregates on top, so the answer is both complete and current:
+/// session was safely in Postgres. This service reads from the session repository — Postgres,
+/// or one file per session on a single machine — and overlays the live aggregates on top, so
+/// the answer is both complete and current:
 ///
-///   - Postgres supplies the window (paged, ordered by last activity).
+///   - The repository supplies the window (paged, ordered by last activity).
 ///   - Live sessions override their stored row, because the write-behind flush lags by up
 ///     to a second and a session being typed into right now must not look stale.
 ///   - Live sessions missing from the page (created since the last flush) are added, so a
 ///     new conversation appears immediately instead of on the next flush.
 ///
-/// Without Postgres the collector still runs; the same methods then serve memory alone and
-/// say so via <see cref="SessionPage.Durable"/>.
+/// Without durable storage the collector still runs; the same methods then serve memory alone
+/// and say so via <see cref="SessionPage.Durable"/>.
 /// </summary>
 public sealed class SessionQueryService(
     SessionStore store,
     QualityEngine quality,
     HistoryOptions options,
-    SessionRepository? repository = null)
+    ISessionRepository? repository = null)
 {
     /// <summary>Deepest offset served. Paging is capped rather than unbounded because the
     /// merge below materializes limit+offset rows to keep the ordering honest.</summary>

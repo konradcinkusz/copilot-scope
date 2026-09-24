@@ -20,13 +20,13 @@ builder.AddServiceDefaults();
 
 builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<QualityEngine>();
-// Registered with an optional SessionRepository so the same read path serves the
-// Postgres-backed and in-memory-only deployments.
+// Registered with an optional ISessionRepository so the same read path serves the durable
+// (Postgres or local files) and in-memory-only deployments.
 builder.Services.AddSingleton(sp => new SessionQueryService(
     sp.GetRequiredService<SessionStore>(),
     sp.GetRequiredService<QualityEngine>(),
     sp.GetRequiredService<HistoryOptions>(),
-    sp.GetService<SessionRepository>()));
+    sp.GetService<ISessionRepository>()));
 
 // Insight pipeline — pluggable per-algorithm analyzers (docs/ANALYSIS.md §8).
 var pricing = new PricingOptions();
@@ -69,7 +69,15 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<OtlpForwarder>());
 // Aspire AppHost (WithReference(db)); without it the collector runs in-memory only,
 // so `dotnet run` on a bare machine still works.
 var connectionString = builder.Configuration.GetConnectionString("copilotdb");
-var persistenceEnabled = !string.IsNullOrEmpty(connectionString);
+var postgresConfigured = !string.IsNullOrEmpty(connectionString);
+
+// Where sessions are kept (ADR-004): Postgres for a team, one JSON file per session for a single
+// machine, or memory. Resolved here rather than from the built container, like the connection
+// string above, because it decides what gets registered; a mode that cannot be honoured stops
+// startup instead of quietly running in memory.
+var storageOptions = new StorageOptions();
+builder.Configuration.GetSection("CopilotScope:Storage").Bind(storageOptions);
+var storage = StoragePlan.Resolve(storageOptions, connectionString);
 
 // History/retention knobs. Bound even without Postgres so the paging limits below
 // behave identically in the in-memory fallback.
@@ -135,12 +143,24 @@ builder.Services.AddSingleton<PrivacyRedactor>();
 builder.Services.AddSingleton<PrivacyGuard>();
 builder.Services.AddSingleton<AccessAuditLog>();
 
-if (persistenceEnabled)
+// Registered through a factory, not as an instance, so the container disposes it at shutdown:
+// the file store releases its directory lock and writes its index cache then.
+if (storage.Kind == StorageKind.Postgres)
+    builder.Services.AddSingleton<ISessionRepository>(_ => new PostgresSessionRepository(connectionString!));
+else if (storage.Kind == StorageKind.Files)
+    builder.Services.AddSingleton<ISessionRepository>(sp => new FileSessionRepository(storage.Directory!,
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<FileSessionRepository>()));
+
+if (storage.Durable)
 {
-    builder.Services.AddSingleton(new SessionRepository(connectionString!));
     builder.Services.AddSingleton<PersistenceWriter>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<PersistenceWriter>());
+}
 
+// Everything below is a team feature with no file-based equivalent, so it follows the
+// connection string whatever CopilotScope:Storage:Mode chose for sessions.
+if (postgresConfigured)
+{
     if (outcomeOptions.Enabled)
         builder.Services.AddSingleton(new OutcomeRepository(connectionString!));
 
@@ -337,14 +357,14 @@ otlp.MapPost("/{signal}", async (string signal, HttpRequest request, ILogger<Pro
     var touched = store.Ingest(batch, request.HttpContext.Connection.RemoteIpAddress?.ToString());
     persistence?.MarkDirty(touched);
 
-    // Buckets consumed by a merge must also disappear from Postgres, or they'd
+    // Buckets consumed by a merge must also disappear from storage, or they'd
     // come back as ghosts on the next rehydration.
     var merged = store.DrainRemoved();
-    if (merged.Count > 0 && app.Services.GetService<SessionRepository>() is { } mergeRepo)
+    if (merged.Count > 0 && app.Services.GetService<ISessionRepository>() is { } mergeRepo)
         foreach (var id in merged)
         {
             try { await mergeRepo.DeleteAsync(id, CancellationToken.None); }
-            catch (Exception ex) { logger.LogDebug(ex, "Could not delete merged bucket {Id} from Postgres.", id); }
+            catch (Exception ex) { logger.LogDebug(ex, "Could not delete merged bucket {Id} from storage.", id); }
         }
 
     if (forwardRaw) forwarder.Enqueue($"/v1/{signal}", payload);
@@ -470,14 +490,14 @@ api.MapDelete("/sessions/{id}", async (string id, HttpRequest request, ILogger<P
     if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
     var key = Uri.UnescapeDataString(id);
     var removed = store.Remove(key);
-    // Existing only in Postgres is now the normal case for anything older than the
+    // Existing only in storage is now the normal case for anything older than the
     // in-memory working set, so the outcome cannot be decided by the store alone: that
     // reported 404 for a session it had just successfully deleted.
     var removedFromDb = false;
-    if (app.Services.GetService<SessionRepository>() is { } repo)
+    if (app.Services.GetService<ISessionRepository>() is { } repo)
     {
         try { removedFromDb = await repo.DeleteAsync(key, CancellationToken.None) > 0; }
-        catch (Exception ex) { logger.LogWarning(ex, "Failed to delete session {Id} from Postgres.", key); }
+        catch (Exception ex) { logger.LogWarning(ex, "Failed to delete session {Id} from storage.", key); }
     }
     logger.LogInformation("Session {Id} deleted (memory: {Memory}, database: {Db}).",
         key, removed, removedFromDb);
@@ -954,13 +974,13 @@ api.MapPost("/admin/seed", async (SeedRequest req, HttpRequest request, ILogger<
     if (offending is not null)
         return Results.BadRequest(new { error = $"Seed session ids must start with '{SeedIdPrefix}'; refusing '{offending}' to avoid overwriting real sessions." });
 
-    var repo = app.Services.GetService<SessionRepository>();
+    var repo = app.Services.GetService<ISessionRepository>();
 
     if (req.Reset)
     {
         var removedMemory = store.RemoveWhere(id => id.StartsWith(SeedIdPrefix, StringComparison.Ordinal));
         var removedDb = repo is not null ? await repo.DeleteByPrefixAsync(SeedIdPrefix, CancellationToken.None) : 0;
-        logger.LogInformation("Seed reset: cleared {Memory} in-memory / {Db} Postgres seed session(s).", removedMemory, removedDb);
+        logger.LogInformation("Seed reset: cleared {Memory} in-memory / {Db} stored seed session(s).", removedMemory, removedDb);
     }
 
     foreach (var persisted in req.Sessions)
@@ -994,11 +1014,11 @@ api.MapPost("/import", async (ImportRequest req, HttpRequest request, ILogger<Pr
     // Fabricating session data is administrative, exactly as seeding is.
     if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
 
-    // Resolved here rather than injected: SessionRepository is only registered when Postgres is
-    // configured, and a minimal-API handler parameter for an unregistered service is bound as a
+    // Resolved here rather than injected: ISessionRepository is only registered when storage is
+    // durable, and a minimal-API handler parameter for an unregistered service is bound as a
     // second request body — which fails route building for the whole application, not just this
     // endpoint.
-    var repo = app.Services.GetService<SessionRepository>();
+    var repo = app.Services.GetService<ISessionRepository>();
 
     var rejected = new List<string>();
     int imported = 0, updated = 0, skipped = 0;
@@ -1140,7 +1160,10 @@ app.MapGet("/api/health", () => Results.Ok(new
     status = "ok",
     sessions = store.All.Count,
     hostlessSignals = store.HostlessSignals,
-    persistence = persistenceEnabled,
+    // "persistence" predates file storage and is kept for the control scripts' doctor, which
+    // reads it; "storage" says which kind: memory, postgres or files.
+    persistence = storage.Durable,
+    storage = storage.Name,
     forwarding = forwarder.Enabled,
     prometheus = prometheusOptions.Enabled,
     environment = app.Environment.EnvironmentName
@@ -1202,7 +1225,7 @@ app.Logger.LogInformation(
         ? $"GET /metrics (per-session series: {(prometheusOptions.PerSession ? "on" : "off")})"
         : "disabled",
     apiKeys.Describe(),
-    persistenceEnabled ? "Postgres" : "in-memory only",
+    app.Services.GetService<ISessionRepository>()?.Description ?? "in-memory only",
     forwarder.Enabled ? (forwardRaw ? "enabled" : "blocked by privacy mode") : "disabled",
     privacyOptions.Describe(),
     alertOptions.Describe(),

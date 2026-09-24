@@ -5,14 +5,14 @@ namespace CopilotScope.Collector.Persistence;
 
 /// <summary>
 /// Write-behind persistence: OTLP ingest marks sessions dirty, a background loop
-/// flushes their snapshots to Postgres at most once per second, so bursts of
-/// telemetry batches don't turn into a write storm. On startup it bootstraps the
-/// schema and rehydrates the in-memory store, so a collector restart doesn't lose
-/// session history. A Postgres outage degrades to in-memory-only (logged), it never
-/// blocks ingest.
+/// flushes their snapshots to the session repository (Postgres, or local files) at most
+/// once per second, so bursts of telemetry batches don't turn into a write storm. On
+/// startup it bootstraps the schema and rehydrates the in-memory store, so a collector
+/// restart doesn't lose session history. A storage outage degrades to in-memory-only
+/// (logged), it never blocks ingest.
 /// </summary>
 public sealed class PersistenceWriter(
-    SessionRepository repository,
+    ISessionRepository repository,
     SessionStore store,
     QualityEngine quality,
     HistoryOptions history,
@@ -86,11 +86,13 @@ public sealed class PersistenceWriter(
             await repository.EnsureSchemaAsync(ct);
             var persisted = await repository.LoadAllAsync(limit: 200, ct);
             var restored = store.Rehydrate(persisted.Select(p => p.ToSession()));
-            logger.LogInformation("Persistence ready — rehydrated {Count} session(s) from Postgres.", restored);
+            logger.LogInformation("Persistence ready — rehydrated {Count} session(s) from {Store}.",
+                restored, repository.Description);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Postgres unavailable at startup — continuing in-memory only, will retry on writes.");
+            logger.LogError(ex, "{Store} unavailable at startup — continuing in-memory only, will retry on writes.",
+                repository.Description);
         }
 
         await base.StartAsync(ct);
@@ -112,29 +114,67 @@ public sealed class PersistenceWriter(
             }
             catch (OperationCanceledException) { break; }
 
-            string[] ids;
-            lock (_lock)
-            {
-                if (_dirty.Count == 0) continue;
-                ids = _dirty.ToArray();
-                _dirty.Clear();
-            }
+            try { await FlushAsync(ct); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
 
-            foreach (var id in ids)
+    /// <summary>
+    /// Writes what the last second left dirty before the process exits. Without it a normal
+    /// shutdown — Ctrl+C on a laptop, <c>docker compose down</c> — dropped up to a second of
+    /// telemetry: the loop above only ever flushes on its next tick, and there is no next tick.
+    /// Bounded, because a store that has gone away must not hold the shutdown hostage.
+    /// </summary>
+    public override async Task StopAsync(CancellationToken ct)
+    {
+        // Stop the loop first, so the final flush is the only writer.
+        await base.StopAsync(ct);
+
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        bounded.CancelAfter(FinalFlushTimeout);
+        try { await FlushAsync(bounded.Token); }
+        catch (OperationCanceledException)
+        {
+            logger.LogWarning("Shutdown flush did not finish within {Timeout}; the newest changes may be lost.",
+                FinalFlushTimeout);
+        }
+    }
+
+    /// <summary>How long a shutdown waits for the final flush.</summary>
+    private static readonly TimeSpan FinalFlushTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>Writes every dirty session once. A failed write is re-queued for the next
+    /// pass; a cancelled one puts back everything it had not reached, so a shutdown that
+    /// interrupts the loop mid-flush still hands the rest to the final flush.</summary>
+    internal async Task FlushAsync(CancellationToken ct)
+    {
+        string[] ids;
+        lock (_lock)
+        {
+            if (_dirty.Count == 0) return;
+            ids = _dirty.ToArray();
+            _dirty.Clear();
+        }
+
+        for (var i = 0; i < ids.Length; i++)
+        {
+            var id = ids[i];
+            if (store.Get(id) is not { } session) continue;
+            try
             {
-                if (store.Get(id) is not { } session) continue;
-                try
-                {
-                    var report = quality.Evaluate(session);
-                    await repository.UpsertAsync(PersistedSession.From(session), report.Score, report.Grade, ct,
-                        session.Kind.ToString());
-                }
-                catch (OperationCanceledException) { return; }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to persist session {Id} — re-queueing.", id);
-                    lock (_lock) _dirty.Add(id); // retry on next tick
-                }
+                var report = quality.Evaluate(session);
+                await repository.UpsertAsync(PersistedSession.From(session), report.Score, report.Grade, ct,
+                    session.Kind.ToString());
+            }
+            catch (OperationCanceledException)
+            {
+                lock (_lock) foreach (var unwritten in ids[i..]) _dirty.Add(unwritten);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to persist session {Id} — re-queueing.", id);
+                lock (_lock) _dirty.Add(id); // retry on next tick
             }
         }
     }

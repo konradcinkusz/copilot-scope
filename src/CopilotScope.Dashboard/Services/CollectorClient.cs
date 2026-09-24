@@ -386,4 +386,16 @@ public sealed record DailyTokensDto(DateOnly Date, long InputTokens, long Output
 
 public sealed record TopSessionDto(string Id, long TotalTokens, double QualityScore, DateTimeOffset LastSeen);
 
-public sealed record HealthDto(string Status, int Sessions, bool Persistence, bool Forwarding, string Environment);
+public sealed record HealthDto(string Status, int Sessions, bool Persistence, bool Forwarding, string Environment,
+    string? Storage = null)
+{
+    /// <summary>How the status chip names the store. A collector that predates file storage
+    /// reports only the boolean, and for it durable meant Postgres.</summary>
+    public string StorageLabel => Storage switch
+    {
+        "files" => "local files",
+        "postgres" => "Postgres",
+        "memory" => "in-memory",
+        _ => Persistence ? "Postgres" : "in-memory"
+    };
+}
