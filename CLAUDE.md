@@ -16,12 +16,14 @@ npm run check:diagrams             # diagrams agree with their standalone source
 node scripts/check-doc-parity.mjs origin/master   # bilingual documents stayed paired
 ```
 
-CI runs all four on every pull request, plus three jobs nothing else covers: every
+CI runs all four on every pull request, plus four jobs nothing else covers: every
 container image is built and smoke-started, `scripts/copilotscope` is shellchecked at
-`-S warning` while every `.ps1` is parsed by `pwsh`, and the published compose files are
-rendered with no environment at all. Run at least `dotnet build` and `dotnet test` before
-pushing, and `shellcheck -S warning -e SC1090,SC1091 scripts/copilotscope` if you touched
-the control script.
+`-S warning` while every `.ps1` is parsed by `pwsh`, the published compose files are
+rendered with no environment at all, and the session-store contract suite runs against a
+real Postgres (`COPILOTSCOPE_TEST_PG`; without it the suite covers the file store only).
+Run at least `dotnet build` and `dotnet test` before pushing, and
+`shellcheck -S warning -e SC1090,SC1091 scripts/copilotscope` if you touched the control
+script.
 
 ## Invariants that break quietly
 
@@ -31,8 +33,15 @@ project something.
 **`PersistedSession` mirrors `CopilotSession` exactly.** Persistence is a single JSONB
 column per session. Adding a field to either one means adding it to the other *and* to
 both conversions, `ToSession()` and `From()`. Miss one and the field silently vanishes on
-the first round-trip through Postgres — the in-memory session looks right until the store
+the first round-trip through storage — the in-memory session looks right until the store
 trims it.
+
+**The two session stores answer identically.** `PostgresSessionRepository` states the read
+contract in SQL and `FileSessionRepository` in C#, and neither reads the other; the contract
+itself is written once, on `ISessionRepository`. The read path overlays live sessions on
+whatever the store returns, so a filter, a sort or a window bound that differs between them
+shows a different history for the same data. `SessionRepositoryContractTests` runs every case
+against both — add the case there, not beside one store.
 
 **The TFM and the `Dockerfile*` base images retarget together.** A runtime image on a
 different major than the target framework builds fine and then exits at startup with
@@ -92,6 +101,7 @@ src/CopilotScope.Collector/      OTLP ingest, session aggregation, quality engin
   Quality/                       QualityEngine, SegmentAnalyzer — pure scoring
   Privacy/                       pseudonymization, k-anonymity floor, access audit
   Api/                           DTOs, query service, Prometheus exporter
+  Persistence/                   session stores: Postgres, or one JSON file per session
 src/CopilotScope.Dashboard/      Blazor Server UI
 src/CopilotScope.AppHost/        Aspire orchestration
 src/CopilotScope.{AgentForge,JudgeAgent}/   opt-in agent services

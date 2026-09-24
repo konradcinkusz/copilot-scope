@@ -10,6 +10,35 @@ release asset.
 ## [Unreleased]
 
 ### Added
+- **Session history on disk without a database, and the decision it starts.** Without Postgres
+  the collector kept only the 200 most recently active sessions, in memory, and lost them all
+  on restart. That is how `dotnet run` has always behaved, and how the native binary for
+  individuals planned in [ADR-004](docs/architecture/ADR-004-native-distribution.md) would have
+  behaved too. `CopilotScope:Storage:Mode` now chooses: `postgres`; `files`, one JSON file per
+  session under `CopilotScope:Storage:Path` (default `~/.copilotscope/data`); `memory`; or
+  `auto`, the default, which does exactly what every existing deployment already did.
+  - **`ISessionRepository`**, extracted from the Npgsql repository (now
+    `PostgresSessionRepository`, its SQL unchanged), with the contract both stores owe the read
+    path written down once. `FileSessionRepository` keeps the same snapshot document Postgres
+    keeps in its jsonb column, and answers queries from an in-memory index. It writes
+    atomically, refuses a second collector on the same directory, and refuses a directory
+    written by a newer version. Its index cache is only a cache: startup re-reads any file
+    whose size or write time disagrees with it.
+  - **One contract suite, run against both stores**: pages, time windows, internal sessions,
+    cohort filters, the baseline population, retention and deletes. The new
+    `storage-contract` CI job runs it against a real Postgres. A filter added to one store
+    and not the other is the kind of difference that passes review and then shows two
+    different histories for the same data.
+  - **A shutdown flush.** `PersistenceWriter` wrote once a second and never on the way out, so
+    a normal stop — Ctrl+C on a laptop, `docker compose down` — dropped up to a second of
+    telemetry. It now writes what is pending before the host stops, within five seconds.
+  - `/api/health` gains `storage` (`memory`, `postgres` or `files`); `persistence` stays, for
+    the control scripts' `doctor`. The dashboard's status chip said "Postgres" for any durable
+    store; it now names the one in use.
+
+  ADR-004 records the wider decision: a native binary for individuals, Docker Compose for
+  teams, and the order the work lands in. This is the first step, and it is useful on its own:
+  `dotnet run` keeps its history now.
 - **A read-only MCP server, a skill, and the ingest fix that had to come first.** The score
   is most useful to the person whose session it was, at the moment the session ended — which
   is exactly when nobody is looking at a dashboard. Three pieces, all opt-in:

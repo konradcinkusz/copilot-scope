@@ -40,6 +40,42 @@ jobs:
       - name: Test
         run: dotnet test CopilotScope.sln --configuration Release --no-build --verbosity normal
 
+  # The session-store contract (tests/CopilotScope.Tests/SessionStorageTests.cs) runs
+  # against the file store everywhere and against Postgres only where COPILOTSCOPE_TEST_PG
+  # names a server. This job is that server. The two stores are interchangeable only if the
+  # same data gives the same pages, counts and baselines in both, and a contract checked
+  # against one of them is not a contract. Kept apart from build-and-test so that job stays
+  # free of services, like the suite it runs.
+  storage-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Session-store contract against Postgres
+        env:
+          COPILOTSCOPE_TEST_PG: Host=localhost;Port=5432;Username=postgres;Password=contract;Database=postgres
+        run: >-
+          dotnet test tests/CopilotScope.Tests --configuration Release
+          --filter "FullyQualifiedName~SessionRepositoryContractTests"
+
   # Mirrors the pre-publish gate in build-containers.yml, without the push. Kept as
   # its own job so a Dockerfile problem is reported separately from a test failure.
   containers:

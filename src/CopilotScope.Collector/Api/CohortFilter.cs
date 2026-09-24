@@ -50,13 +50,27 @@ public sealed record CohortFilter(
     /// candidate pass runs before anything has a <c>QualityEngine</c> in hand. Callers that
     /// filter on grade apply <see cref="MatchesGrade"/> once they have the score.
     /// </summary>
-    public bool MatchesExceptGrade(CopilotSession session)
+    public bool MatchesExceptGrade(CopilotSession session) =>
+        // Keys enumerated lazily: ConcurrentDictionary.Keys copies them under every bucket lock,
+        // and most filters never name a model.
+        MatchesExceptGrade(session.Repository, session.EmitterKind, () => session.Kind,
+            session.ModelCalls.Select(kv => kv.Key));
+
+    /// <summary>
+    /// The same test against plain values, for a store that indexes sessions without holding
+    /// them (<see cref="Persistence.FileSessionRepository"/>). One definition, so a stored page
+    /// and the live sessions overlaid on it are filtered by the same rules.
+    /// </summary>
+    /// <param name="kind">Deferred because classifying a live session takes its lock; it is
+    /// only evaluated when the filter names a kind.</param>
+    internal bool MatchesExceptGrade(string? repository, EmitterKind emitter, Func<SessionKind?> kind,
+        IEnumerable<string> models)
     {
         if (Repository is not null &&
-            !string.Equals(session.Repository, Repository, StringComparison.OrdinalIgnoreCase)) return false;
-        if (Emitter is { } emitter && session.EmitterKind != emitter) return false;
-        if (Kind is { } kind && session.Kind != kind) return false;
-        if (Model is not null && !session.ModelCalls.Keys.Any(
+            !string.Equals(repository, Repository, StringComparison.OrdinalIgnoreCase)) return false;
+        if (Emitter is { } wanted && emitter != wanted) return false;
+        if (Kind is { } wantedKind && kind() != wantedKind) return false;
+        if (Model is not null && !models.Any(
                 m => string.Equals(m, Model, StringComparison.OrdinalIgnoreCase))) return false;
         return true;
     }

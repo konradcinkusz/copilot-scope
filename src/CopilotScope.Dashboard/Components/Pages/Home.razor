@@ -29,7 +29,7 @@
         }
         else
         {
-            <text>@_health.Environment · @_health.Sessions sessions · @(_health.Persistence ? "Postgres" : "in-memory")@(_health.Forwarding ? " · forwarding" : "")</text>
+            <text>@_health.Environment · @_health.Sessions sessions · @_health.StorageLabel@(_health.Forwarding ? " · forwarding" : "")</text>
         }
     </div>
     @if (Auth.Enabled)
@@ -46,7 +46,7 @@
 <div class="grid">
     <aside class="rail">
         <div class="rail-title">
-            @* When history exceeds the rail page, say so — the rest is in Postgres, not lost. *@
+            @* When history exceeds the rail page, say so — the rest is in storage, not lost. *@
             <span>Sessions @if (_sessions is { Count: > 0 })
                 {
                     <em class="rail-count" title="@(_sessionTotal > FilteredSessions.Count ? $"Showing the newest {FilteredSessions.Count} of {_sessionTotal} stored sessions" : "")">

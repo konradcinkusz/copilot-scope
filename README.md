@@ -348,13 +348,18 @@ into ingest / read / admin scopes.
 
 Requirements: .NET 10 SDK. Docker is only needed for the full Aspire/Compose stack —
 the collector and dashboard also run as two plain `dotnet run`s with no container
-(the collector degrades to in-memory without Postgres). No workloads: Aspire comes via
-NuGet. Everything targets `net10.0`.
+(without Postgres the collector keeps sessions in memory, or on disk with
+`CopilotScope__Storage__Mode=files`). No workloads: Aspire comes via NuGet. Everything
+targets `net10.0`.
 
 ```bash
 # No Docker: two processes, collector in-memory —
 dotnet run --project src/CopilotScope.Collector      # OTLP on :4318, API + /metrics
 dotnet run --project src/CopilotScope.Dashboard      # UI on :5200, finds the collector
+
+# …or keep history across restarts with no database: one JSON file per session
+# under ~/.copilotscope/data (see "Where the data lives")
+CopilotScope__Storage__Mode=files dotnet run --project src/CopilotScope.Collector
 
 # Or the full orchestrated stack (Postgres + pgAdmin via Aspire, needs Docker):
 dotnet run --project src/CopilotScope.AppHost
@@ -421,28 +426,50 @@ dotnet test
 
 ## Where the data lives
 
-In **Postgres** (container managed by the AppHost, data on a named volume). Table
-`sessions`: key `id` (= `gen_ai.conversation.id`), queryable columns
+Wherever `CopilotScope:Storage:Mode` puts it
+([ADR-004](docs/architecture/ADR-004-native-distribution.md)). `/api/health` reports
+the answer as `storage`, and the dashboard's status chip shows it.
+
+| Mode | Sessions are kept in | For |
+|---|---|---|
+| `auto` (default) | Postgres if `ConnectionStrings:copilotdb` is set, else files if `CopilotScope:Storage:Path` is set, else memory | whatever you already run: nothing changes |
+| `postgres` | the `sessions` table | teams, shared servers, the Compose stacks |
+| `files` | one JSON file per session under `CopilotScope:Storage:Path` (default `~/.copilotscope/data`) | one machine, no database |
+| `memory` | nowhere durable: gone on restart | quick experiments |
+
+In **Postgres** (container managed by the AppHost or Compose, data on a named
+volume). Table `sessions`: key `id` (= `gen_ai.conversation.id`), queryable columns
 (`last_seen`, `quality_score`, `quality_grade`) plus the full session state as a
 **jsonb snapshot** — counters, TTFT samples, tool stats, per-turn aggregates,
 edits, feedback, the event tail and the captured transcript.
 
-Write path: ingest marks sessions dirty, `PersistenceWriter` upserts them once
-per second (telemetry bursts ≠ write storms). On startup the collector
-**rehydrates** sessions from the database. A Postgres outage degrades to
-in-memory and never blocks ingest.
+In **local files**, `sessions/<hash>.json` holds that same snapshot document, with
+the score, grade and filter keys beside it in the file so a query never opens a
+file it does not return. `index.json` caches those fields for a fast start and is
+rebuilt from the files whenever it disagrees with them; `.lock` keeps a second
+collector off the same directory. Every write goes to a temporary file, reaches
+the disk, and is renamed into place, so a crash leaves the old snapshot or the new
+one, never half of either. On Linux and macOS the files are readable by their owner
+only. Labels, outcome linkage, the vendor-metrics archive and the durable access
+audit are team features that still need Postgres: they follow the connection
+string whatever the mode says.
 
-Read path: `GET /api/sessions` and `/api/overview` are served **from Postgres**,
+Write path: ingest marks sessions dirty, `PersistenceWriter` upserts them once
+per second (telemetry bursts ≠ write storms), and a normal shutdown flushes what
+is still pending. On startup the collector **rehydrates** sessions from storage.
+A storage outage degrades to in-memory and never blocks ingest.
+
+Read path: `GET /api/sessions` and `/api/overview` are served **from storage**,
 with the live in-memory aggregates layered on top — so the API answers over the
 whole archive while a session being typed into right now is still current. The
 in-memory store is a bounded working set of the most recently active sessions,
 not the extent of your history; a team churns past that cap in hours. Endpoints
 take `days` (or `since`/`until`), `limit` and `offset`; the response carries
-`total` so a client can tell what it is paging through. Without Postgres the
-same endpoints serve memory alone and report `durable: false`.
+`total` so a client can tell what it is paging through. Without durable storage
+the same endpoints serve memory alone and report `durable: false`.
 
 Sessions evicted from memory are **not** deleted: their snapshots stay in
-Postgres, `GET /api/sessions/{id}` still resolves them, and late telemetry for an
+storage, `GET /api/sessions/{id}` still resolves them, and late telemetry for an
 evicted session merges the stored snapshot back in before the next flush rather
 than overwriting it.
 
@@ -665,11 +692,11 @@ needed and how commit access works.
 |---|---|
 | `POST /v1/traces` `/v1/metrics` `/v1/logs` | OTLP/HTTP ingest (protobuf; gzip/deflate supported) |
 | `GET /api/sessions` | paged session list with quality scores — `days`/`since`/`until`, `limit`, `offset`; returns `{sessions, total, limit, offset, durable}` |
-| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis (falls back to Postgres for sessions no longer in memory) |
+| `GET /api/sessions/{id}` | details: tools, errors, events, transcript, turn analysis (falls back to storage for sessions no longer in memory) |
 | `GET /api/overview` | cross-session summary: total token burn, per-model calls, daily usage, top sessions — accepts `days` |
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
 | `POST /api/outcomes/github` | GitHub webhook for PR outcomes (HMAC-verified; only mapped when a secret is configured) |
-| `GET /api/health` | health incl. persistence status |
+| `GET /api/health` | health incl. storage (`memory`, `postgres` or `files`) |
 | `GET /metrics` | Prometheus scrape endpoint — see below |
 
 ## Prometheus & Grafana

@@ -10,10 +10,14 @@ namespace CopilotScope.Collector.Persistence;
 /// debounced <see cref="PersistenceWriter"/>. No EF: the access pattern is a pure
 /// key/value upsert + full scan on startup, an ORM would only add weight.
 /// </summary>
-public sealed class SessionRepository(string connectionString) : IAsyncDisposable
+public sealed class PostgresSessionRepository(string connectionString) : ISessionRepository, IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly NpgsqlDataSource _dataSource = NpgsqlDataSource.Create(connectionString);
+
+    public string Kind => "postgres";
+
+    public string Description => "Postgres";
 
     public async Task EnsureSchemaAsync(CancellationToken ct)
     {
@@ -311,4 +315,8 @@ public sealed class SessionRepository(string connectionString) : IAsyncDisposabl
     }
 
     public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
+
+    /// <summary>For a container disposed synchronously, which refuses a service that can only be
+    /// disposed asynchronously.</summary>
+    public void Dispose() => _dataSource.Dispose();
 }

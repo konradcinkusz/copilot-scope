@@ -21,8 +21,8 @@ public partial class Home : ComponentBase, IDisposable
     private bool _canReadTranscripts = true;
     private bool _canDelete = true;
 
-    /// <summary>Sessions held in the rail. History beyond this lives in Postgres and is
-    /// reachable by id; the rail is a working set, not the archive.</summary>
+    /// <summary>Sessions held in the rail. History beyond this lives in the collector's storage
+    /// and is reachable by id; the rail is a working set, not the archive.</summary>
     private const int RailPageSize = 200;
 
     private static readonly (string Label, int Days)[] Ranges =
@@ -62,7 +62,8 @@ public partial class Home : ComponentBase, IDisposable
     private List<SessionSummaryDto>? _sessions;
 
     /// <summary>Total sessions matching the current query, which may exceed the rail page.
-    /// Whether that history is durable is already on the health chip (Postgres / in-memory).</summary>
+    /// Whether that history is durable is already on the health chip (Postgres / local files /
+    /// in-memory).</summary>
     private int _sessionTotal;
 
     /// <summary>What the collector's privacy mode enforces; null when it is off or unreachable.</summary>

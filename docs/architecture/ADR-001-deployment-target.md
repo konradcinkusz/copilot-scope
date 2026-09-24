@@ -1,6 +1,8 @@
 # ADR-001 — Deployment target: local-first, cloud deferred to Fly.io
 
-- Status: **Accepted**
+- Status: **Accepted**, decision 1 amended by
+  [ADR-004](ADR-004-native-distribution.md) (Compose is the distribution for teams and
+  shared servers; individuals get a native binary)
 - Date: 2026-08-14
 - Context: the review (`PRODUCT-REVIEW-2026-08.md`, P7/P12) flagged that CopilotScope
   "advertises two clouds and has neither working" — `architecture.mmd` and the README

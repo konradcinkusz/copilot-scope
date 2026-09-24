@@ -562,8 +562,8 @@ public sealed class SessionStore
         if (created && _evicted.TryRemove(key, out _))
         {
             _resurrected.Enqueue(key);
-            // Only PersistenceWriter drains this, and it exists only when Postgres is
-            // configured — so bound it, or an in-memory-only collector grows the queue
+            // Only PersistenceWriter drains this, and it exists only when storage is
+            // durable — so bound it, or an in-memory-only collector grows the queue
             // for the life of the process with nothing ever reading it.
             while (_resurrected.Count > MaxEvictedTracked) _resurrected.TryDequeue(out _);
         }
