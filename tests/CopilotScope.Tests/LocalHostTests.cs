@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using CopilotScope.Local;
 using CopilotScope.Local.Scanning;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace CopilotScope.Tests;
@@ -80,11 +81,23 @@ public sealed class LocalCommandLineTests
     [InlineData(new[] { "connect", "vscode", "--endpoint", "localhost:4318" }, "http:// or https://")]
     [InlineData(new[] { "start", "--capture" }, "apply to connect and setup")]
     [InlineData(new[] { "connect", "vscode", "--yes" }, "applies to setup")]
+    [InlineData(new[] { "capture-fixture" }, "needs an assistant")]
+    [InlineData(new[] { "capture-fixture", "cowork" }, "Unknown assistant")]
+    [InlineData(new[] { "capture-fixture", "vscode", "--limit", "0" }, "from 1 to 100")]
+    [InlineData(new[] { "status", "--report" }, "applies to scan")]
     public void ConnectMistakesAreRefusedWithAReason(string[] args, string reason)
     {
         var (options, error) = CommandLine.Parse(args);
         Assert.Null(options);
         Assert.Contains(reason, error);
+    }
+
+    [Fact]
+    public void CaptureAndReportTakeTheirOptions()
+    {
+        var (capture, _) = CommandLine.Parse(["capture-fixture", "code", "--out", "/tmp/x", "--limit", "5"]);
+        Assert.Equal(("vscode", "/tmp/x", 5), (capture!.Target, capture.Out, capture.Limit));
+        Assert.True(CommandLine.Parse(["scan", "--report"]).Options!.Report);
     }
 
     [Fact]
@@ -286,6 +299,20 @@ public sealed class LocalHostTests : IAsyncLifetime
         stop.Headers.Add("X-CopilotScope-Token", Token);
         Assert.Equal(HttpStatusCode.Accepted, (await http.SendAsync(stop)).StatusCode);
         await host.Stopped.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task NeitherApplicationWatchesTheHomeDirectory()
+    {
+        // The content root is ~/.copilotscope, where the sessions are written. A settings file
+        // reloaded on change would put a recursive watcher on it for each application.
+        await using var host = await LocalHost.StartAsync(Options(null));
+        foreach (var configuration in new[] { host.Collector.Configuration, host.Dashboard.Configuration })
+        {
+            var files = ((IConfigurationRoot)configuration).Providers.OfType<FileConfigurationProvider>().ToList();
+            Assert.NotEmpty(files);
+            Assert.All(files, file => Assert.False(file.Source.ReloadOnChange, $"{file} reloads on change"));
+        }
     }
 
     [Fact]

@@ -26,6 +26,14 @@ one setting:
   to the last 100 entries, 4 000 chars each. That text can contain source code,
   credentials a developer pasted into a chat, and customer data. Treat the Postgres
   volume and the dashboard as carrying whatever your developers typed.
+- **Local history (the native `copilotscope` binary).**
+  - It reads the Claude Code transcripts on its own machine, read-only. It imports counts,
+    timings and model names, never prompt or response text.
+  - `copilotscope capture-fixture` writes a redacted sample of an assistant's history to a local
+    folder, for a new reader to be built from. It keeps structure only, and sends nothing.
+  - Before writing, it searches the result for the user's home directory, user name, machine
+    name, git identity and token patterns. It refuses to write anything that still contains one,
+    and names the kind of match, never the value.
 
 ## Trust model
 

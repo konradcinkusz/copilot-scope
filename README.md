@@ -177,6 +177,29 @@ and a transcript Claude Code deletes never deletes the session. Imported session
 carry lower confidence: the transcript has no latency, edit-decision or feedback signal, so
 those components are absent rather than defaulted. See [docs/TUTORIAL.md §0.5](docs/TUTORIAL.md).
 
+### GitHub Copilot's history: help build the reader
+
+VS Code Copilot Chat and Copilot CLI keep chat history on disk too, but CopilotScope has no
+reader for either yet. It will not guess at one ([ADR-004](docs/architecture/ADR-004-native-distribution.md),
+decision 5): a parser written from a guess at a file format breaks silently the day the format
+changes. Two commands let you help, and neither sends anything anywhere:
+
+```bash
+copilotscope scan --report            # each assistant's files here: counts, sizes, field names — never content
+copilotscope capture-fixture vscode   # or copilot-cli: a redacted sample, written to ./copilotscope-capture
+```
+
+`capture-fixture` keeps the JSON structure, the field names, the numbers, and a short list of
+structural values (a record's type, a message's role, a model id). It changes the rest:
+- ids, paths, URLs and e-mail addresses become consistent stand-ins;
+- every timestamp moves by one random offset, so durations stay exact;
+- every other string becomes its length.
+
+It then searches the result for your home directory, user name, machine name, git name and
+e-mail, and for token patterns. Any match refuses the capture and nothing is written. Read the
+folder; if you are happy with what is in it, attach it to an issue. The reader gets built and
+tested against it.
+
 ### Letting the assistant read its own scores
 
 The score is most useful to the person the session belonged to, at the moment it ended —

@@ -32,6 +32,24 @@ release asset.
   the installed copy untouched.
 
 ### Added
+- **`copilotscope capture-fixture` and `scan --report` — so GitHub Copilot's history can be read
+  next ([ADR-004](docs/architecture/ADR-004-native-distribution.md), decision 5).** There is
+  still no reader for VS Code Copilot Chat's or Copilot CLI's files, and there will not be one
+  built from a guess at their format.
+  - `scan --report` describes what each assistant keeps on the machine — files, sizes, the field
+    names at the top of each record — and never a word of content.
+  - `capture-fixture <assistant>` writes a redacted sample to a local folder, to read and then
+    share. It keeps the structure, the field names, the numbers and a short list of structural
+    values. Ids, paths, URLs and e-mail addresses become stand-ins that stay consistent across
+    files, including fields named like ids whatever their shape, so records still pair up and
+    deduplicate. Timestamps move by one random offset. Every other string becomes its length.
+    MCP tool names are replaced too, except CopilotScope's own, because a server's name can name
+    something internal.
+  - Before anything is written, the result is searched for the home directory, the user and
+    machine names, the git name and e-mail, and token patterns. Any match refuses the whole
+    capture, and the refusal names the kind of match, never the value.
+  - Tested on a real Claude Code transcript. A redacted capture parses to the same calls, turns,
+    tool calls, tokens and duration as the original.
 - **`copilotscope setup`, `connect`, `disconnect` and `doctor` in the native binary — step five
   of [ADR-004](docs/architecture/ADR-004-native-distribution.md).** Pointing an assistant at
   CopilotScope no longer needs the control script, or the python or node it merged settings
@@ -157,6 +175,15 @@ release asset.
   making. `PersistenceWriter.StopAsync` is now idempotent — every caller waits on the one final
   flush — and `FileStorageCollectorTests.SessionsOutliveTheCollectorProcess`, which had become
   flaky on `master`, is deterministic again.
+- **`copilotscope` no longer watches its own data directory.** Both applications reloaded their
+  settings on change. That put a recursive file watcher on `~/.copilotscope`, sessions and all,
+  once for each application. On Linux each watcher holds one of the user's inotify instances.
+  There are 128 by default, shared with every editor and .NET tool the user runs, and at that
+  limit `copilotscope` could not start. Settings are now read once, at start.
+- **A failed native smoke test says why.** Where a command failed outside a check, the script
+  used to exit without a word: an unguarded `curl` exited 7 and printed nothing. Any failure
+  now names the line and prints the process's own output. The test also waits for the instance
+  to report itself running, rather than for the collector alone.
 
 ### Changed
 - **The collector and the dashboard are built, not just run.** Everything their `Program.cs`

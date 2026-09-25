@@ -41,6 +41,15 @@ internal sealed class LocalHost : IAsyncDisposable
     private const string CollectorName = "CopilotScope.Collector";
     private const string DashboardName = "CopilotScope.Dashboard";
 
+    /// <summary>
+    /// Settings are read once, at start. Reloading appsettings.json on change would watch the
+    /// content root — ~/.copilotscope, sessions and all — recursively, once per application, so
+    /// every session file written woke two watchers looking for a settings file. On Linux each
+    /// watcher also holds one of the user's inotify instances (128 by default, shared with every
+    /// editor and .NET tool they run), and a user at that limit could not start copilotscope.
+    /// </summary>
+    private static readonly string[] ApplicationArgs = ["--hostBuilder:reloadConfigOnChange=false"];
+
     private readonly TaskCompletionSource _stopRequested = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private HttpClient? _scanClient;
     private bool _disposed;
@@ -72,7 +81,7 @@ internal sealed class LocalHost : IAsyncDisposable
             ApplicationName = CollectorName,
             ContentRootPath = options.ContentRoot,
             EnvironmentName = Environments.Production,
-            Args = []
+            Args = ApplicationArgs
         }, b =>
         {
             b.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -129,7 +138,7 @@ internal sealed class LocalHost : IAsyncDisposable
                 ContentRootPath = options.ContentRoot,
                 WebRootPath = options.WebRoot,
                 EnvironmentName = Environments.Production,
-                Args = []
+                Args = ApplicationArgs
             }, b =>
             {
                 b.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
