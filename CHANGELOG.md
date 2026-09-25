@@ -10,6 +10,15 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
 
 ## [Unreleased]
 
+### Fixed
+- **`copilotscope` no longer writes outside `~/.copilotscope`, and its first start no longer
+  warns about unencrypted keys.** ASP.NET Core kept the keys that protect the dashboard's
+  antiforgery tokens and Blazor circuits in `~/.aspnet/DataProtection-Keys`. Deleting
+  `~/.copilotscope`, as the tutorial says to, left them behind. Every first start also logged
+  that they "may be persisted to storage in unencrypted form". The keys now live in memory:
+  nothing they protect outlives the process, because a circuit ends with it and a page left
+  open across a restart has to reload either way.
+
 ## [1.1.0] — 2026-09-25
 
 The first release since 1.0.7 with an entry here, and most of what CopilotScope now is. It
