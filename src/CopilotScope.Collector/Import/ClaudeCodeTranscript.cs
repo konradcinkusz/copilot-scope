@@ -1,7 +1,7 @@
 using System.Text.Json;
 using CopilotScope.Collector.Domain;
 
-namespace CopilotScope.LogImporter;
+namespace CopilotScope.Collector.Import;
 
 /// <summary>
 /// Turns one Claude Code JSONL transcript into a scored-ready <see cref="CopilotSession"/>.

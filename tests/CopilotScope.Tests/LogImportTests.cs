@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using CopilotScope.Collector.Api;
 using CopilotScope.Collector.Domain;
+using CopilotScope.Collector.Import;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Quality;
-using CopilotScope.LogImporter;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -335,7 +335,7 @@ public sealed class LogImportTests
     {
         // Claude Code's directory-name encoding is lossy — a project path containing a dash
         // cannot be recovered from it — so the cwd is read out of the file itself.
-        Assert.Equal("/home/dev/acme-api", ImportCommand.WorkingDirectoryOf(FixturePath()));
+        Assert.Equal("/home/dev/acme-api", ClaudeCodeFiles.WorkingDirectoryOf(FixturePath()));
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public sealed class LogImportTests
         // duplicate cohort is a wrong number.
         var cache = new Dictionary<string, string?>(StringComparer.Ordinal);
         var temp = Directory.CreateTempSubdirectory("copilotscope-import-test");
-        try { Assert.Null(ImportCommand.RepositoryFor(temp.FullName, cache)); }
+        try { Assert.Null(GitRemote.RepositoryFor(temp.FullName, cache)); }
         finally { temp.Delete(recursive: true); }
     }
 }

@@ -1,11 +1,8 @@
-using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using CopilotScope.Collector.Api;
-using CopilotScope.Collector.Domain;
-using CopilotScope.Collector.Outcomes;
+using CopilotScope.Collector.Import;
 using CopilotScope.Collector.Persistence;
-using CopilotScope.LogImporter;
 
 // ---------------------------------------------------------------------------------------
 // copilotscope-import — score the history you already have, with no OTel configuration.
@@ -27,7 +24,7 @@ if (options.Error is { } error)
     return 2;
 }
 
-var files = options.Roots.SelectMany(ImportCommand.Discover).Distinct(StringComparer.Ordinal).ToList();
+var files = options.Roots.SelectMany(ClaudeCodeFiles.Discover).Distinct(StringComparer.Ordinal).ToList();
 if (files.Count == 0)
 {
     Console.Error.WriteLine($"No Claude Code transcripts found under {string.Join(" or ", options.Roots)}.");
@@ -36,7 +33,7 @@ if (files.Count == 0)
     return 1;
 }
 
-var groups = ImportCommand.GroupBySession(files);
+var groups = ClaudeCodeFiles.GroupBySession(files);
 Console.WriteLine($"Found {files.Count} transcript file(s) under {string.Join(" and ", options.Roots)}, " +
                   $"holding {groups.Count} session(s).");
 if (!options.IncludeContent)
@@ -53,9 +50,9 @@ foreach (var group in groups)
     TranscriptSession? parsed;
     try
     {
-        var cwd = group.Files.Select(ImportCommand.WorkingDirectoryOf).FirstOrDefault(c => c is not null);
-        var repository = cwd is null ? null : ImportCommand.RepositoryFor(cwd, remotes);
-        parsed = ClaudeCodeTranscript.Parse(ImportCommand.LinesOf(group.Files), repository, options.IncludeContent);
+        var cwd = group.Files.Select(ClaudeCodeFiles.WorkingDirectoryOf).FirstOrDefault(c => c is not null);
+        var repository = cwd is null ? null : GitRemote.RepositoryFor(cwd, remotes);
+        parsed = ClaudeCodeTranscript.Parse(ClaudeCodeFiles.LinesOf(group.Files), repository, options.IncludeContent);
     }
     catch (IOException ex)
     {
@@ -149,18 +146,15 @@ Console.WriteLine($"Open the dashboard to see them scored. Imported sessions are
 return 0;
 
 /// <summary>
-/// Command-line parsing, file discovery and repository resolution. Separated from the flow
-/// above so the parts worth testing are reachable without running the process.
+/// Command-line parsing, separated from the flow above so it is reachable without running the
+/// process. Finding and reading the transcripts is <see cref="ClaudeCodeFiles"/>'s, in the
+/// Collector, because the native binary's scanner reads the same files the same way.
 /// </summary>
 public static class ImportCommand
 {
     public sealed record Options(
         IReadOnlyList<string> Roots, string Collector, string? ApiKey, bool IncludeContent, bool DryRun,
         DateTimeOffset? Since, string? Error = null);
-
-    /// <summary>One session's transcript files: the main one, and any a subagent wrote under
-    /// the same session id.</summary>
-    public sealed record SessionFiles(string SessionId, IReadOnlyList<string> Files);
 
     public static Options? Parse(string[] args)
     {
@@ -184,7 +178,7 @@ public static class ImportCommand
             return null;
         }
 
-        IReadOnlyList<string> root = Value(args, "--root") is { } explicitRoot ? [explicitRoot] : DefaultRoots();
+        IReadOnlyList<string> root = Value(args, "--root") is { } explicitRoot ? [explicitRoot] : ClaudeCodeFiles.DefaultRoots();
         var collector = Value(args, "--collector") ?? "http://localhost:4318";
         var apiKey = Value(args, "--api-key") ?? Environment.GetEnvironmentVariable("COPILOTSCOPE_API_KEY");
         var includeContent = args.Contains("--include-content");
@@ -211,162 +205,5 @@ public static class ImportCommand
     {
         var i = Array.IndexOf(args, name);
         return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
-    }
-
-    /// <summary>
-    /// Where Claude Code keeps its transcripts: <c>$CLAUDE_CONFIG_DIR/projects</c> when that is
-    /// set, otherwise both <c>~/.claude/projects</c> and <c>~/.config/claude/projects</c> — Claude
-    /// Code has used both locations, and a machine upgraded across the change has history in
-    /// each. Reading one would silently leave the other half of someone's history out.
-    /// </summary>
-    public static IReadOnlyList<string> DefaultRoots()
-    {
-        var configured = Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR");
-        if (!string.IsNullOrWhiteSpace(configured)) return [Path.Combine(configured, "projects")];
-
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return [Path.Combine(home, ".claude", "projects"), Path.Combine(home, ".config", "claude", "projects")];
-    }
-
-    /// <summary>Every transcript under the root. Claude Code nests one directory per project.</summary>
-    public static IEnumerable<string> Discover(string root) =>
-        Directory.Exists(root)
-            ? Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories)
-            : [];
-
-    /// <summary>
-    /// Groups transcript files by the session id written inside them, not by file name. A
-    /// subagent's transcript carries its parent's session id; imported one file at a time, the
-    /// two became two imports of the same session and whichever was sent last replaced the
-    /// other — a session's whole main conversation lost to its subagent's side trip. Files with
-    /// no session id in them hold nothing to import and are left out.
-    /// </summary>
-    public static IReadOnlyList<SessionFiles> GroupBySession(IEnumerable<string> files) =>
-        files.Select(file => (File: file, SessionId: SessionIdOf(file)))
-            .Where(f => f.SessionId is not null)
-            .GroupBy(f => f.SessionId!, StringComparer.Ordinal)
-            .Select(g => new SessionFiles(g.Key, g.Select(f => f.File).Order(StringComparer.Ordinal).ToList()))
-            .ToList();
-
-    /// <summary>
-    /// A session's lines. One file is read as it is, lazily. Several are interleaved by each
-    /// line's own timestamp, so a subagent's calls land in the turn that ran them rather than
-    /// all in the last one. A line without a timestamp travels with the line before it in its
-    /// own file; one before any timestamp at all goes ahead of everything, in file order.
-    /// </summary>
-    public static IEnumerable<string> LinesOf(IReadOnlyList<string> files)
-    {
-        if (files.Count == 1) return File.ReadLines(files[0]);
-
-        var lines = new List<(string Line, DateTimeOffset? At, int Order)>();
-        foreach (var file in files)
-        {
-            DateTimeOffset? last = null;
-            foreach (var line in File.ReadLines(file))
-            {
-                last = TimestampOf(line) ?? last;
-                lines.Add((line, last, lines.Count));
-            }
-        }
-        // Stable, with nulls first: equal times keep the order they were read in, so a line
-        // without a timestamp stays right behind the line whose time it took.
-        return lines.OrderBy(l => l.At).ThenBy(l => l.Order).Select(l => l.Line).ToList();
-    }
-
-    /// <summary>A line's own top-level timestamp, or null when it has none that parses.</summary>
-    private static DateTimeOffset? TimestampOf(string line)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(line);
-            return doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("timestamp", out var at)
-                && at.ValueKind == JsonValueKind.String
-                && DateTimeOffset.TryParse(at.GetString(), System.Globalization.CultureInfo.InvariantCulture,
-                    System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed)
-                    ? parsed
-                    : null;
-        }
-        catch (JsonException) { return null; }
-    }
-
-    /// <summary>The session id a transcript belongs to, from the first line that carries one.</summary>
-    public static string? SessionIdOf(string file) => FirstString(file, "sessionId");
-
-    /// <summary>
-    /// The working directory a transcript was recorded in, read from its first line. Cheaper
-    /// and more reliable than decoding it out of Claude Code's directory-name encoding, which
-    /// is lossy — a path containing a dash cannot be recovered from it.
-    /// </summary>
-    public static string? WorkingDirectoryOf(string file) => FirstString(file, "cwd");
-
-    private static string? FirstString(string file, string property)
-    {
-        // Scans until it finds one, rather than reading only the first line: a transcript
-        // routinely opens with a `summary` line, which carries neither a cwd nor a session id.
-        // Bounded, because a transcript without one in its first few lines has none at all.
-        const int MaxLines = 50;
-        var seen = 0;
-
-        try
-        {
-            foreach (var line in File.ReadLines(file))
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                if (++seen > MaxLines) break;
-                try
-                {
-                    using var doc = JsonDocument.Parse(line);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Object
-                        && doc.RootElement.TryGetProperty(property, out var value)
-                        && value.ValueKind == JsonValueKind.String
-                        && value.GetString() is { Length: > 0 } found)
-                        return found;
-                }
-                catch (JsonException) { /* a half-written line proves nothing about the rest */ }
-            }
-        }
-        catch (IOException) { /* locked or vanished: the caller reports what it could not read */ }
-        return null;
-    }
-
-    /// <summary>
-    /// The repository label for a working directory.
-    ///
-    /// This is the one thing the importer can do that the OTel path cannot help with: it runs
-    /// on the developer's machine, where the repository is checked out, so it can read the
-    /// actual git remote and normalize it exactly the way outcome linkage does. Without that
-    /// an imported session would be labelled with a bare directory name and would form its own
-    /// cohort next to the live sessions from the same repository — two rows for one project,
-    /// which is worse than no label.
-    /// </summary>
-    public static string? RepositoryFor(string cwd, Dictionary<string, string?> cache)
-    {
-        if (cache.TryGetValue(cwd, out var cached)) return cached;
-
-        string? resolved = null;
-        try
-        {
-            using var git = Process.Start(new ProcessStartInfo("git", "remote get-url origin")
-            {
-                WorkingDirectory = cwd,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            });
-            if (git is not null)
-            {
-                var url = git.StandardOutput.ReadToEnd().Trim();
-                git.WaitForExit(5000);
-                if (git.ExitCode == 0 && url.Length > 0)
-                    resolved = OutcomeLinker.NormalizeRepository(url);
-            }
-        }
-        catch (Exception) { /* no git, not a repo, or a directory that no longer exists */ }
-
-        // Falling back to the directory name would invent a second cohort for a repository the
-        // collector already knows by its remote. A missing label is the honest answer.
-        cache[cwd] = resolved;
-        return resolved;
     }
 }
