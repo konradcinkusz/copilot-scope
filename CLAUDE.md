@@ -112,12 +112,13 @@ src/CopilotScope.Collector/      OTLP ingest, session aggregation, quality engin
   Privacy/                       pseudonymization, k-anonymity floor, access audit
   Api/                           DTOs, query service, Prometheus exporter
   Persistence/                   session stores: Postgres, or one JSON file per session
+  Import/                        assistants' own history files: Claude Code transcripts
 src/CopilotScope.Dashboard/      Blazor Server UI
 src/CopilotScope.Local/          the native `copilotscope` binary: both apps in one process (ADR-004)
 src/CopilotScope.AppHost/        Aspire orchestration
 src/CopilotScope.{AgentForge,JudgeAgent}/   opt-in agent services
 tools/CopilotScope.Seeder/       demo data into a running collector
-tools/CopilotScope.LogImporter/  Claude Code transcripts → scored sessions
+tools/CopilotScope.LogImporter/  Claude Code transcripts → scored sessions, over /api/import
 tools/CopilotScope.TelemetryGen/ synthetic OTLP over the real ingest path
 tools/CopilotScope.FixtureCapture/ records real payloads as test fixtures
 tools/CopilotScope.Mcp/          read-only MCP server over the collector's API

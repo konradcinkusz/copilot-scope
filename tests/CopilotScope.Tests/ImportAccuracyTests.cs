@@ -3,9 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using CopilotScope.Collector.Api;
 using CopilotScope.Collector.Domain;
+using CopilotScope.Collector.Import;
 using CopilotScope.Collector.Otlp;
 using CopilotScope.Collector.Persistence;
-using CopilotScope.LogImporter;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
@@ -201,10 +201,10 @@ public sealed class ImportAccuracyTests
                 Assistant("s2", "2026-09-01T10:00:03Z", "msg_s1", 300, 20, sidechain: true)
             ]);
 
-            var group = Assert.Single(ImportCommand.GroupBySession(ImportCommand.Discover(root.FullName)));
+            var group = Assert.Single(ClaudeCodeFiles.GroupBySession(ClaudeCodeFiles.Discover(root.FullName)));
             Assert.Equal(2, group.Files.Count);
 
-            var session = ClaudeCodeTranscript.Parse(ImportCommand.LinesOf(group.Files))!.Session;
+            var session = ClaudeCodeTranscript.Parse(ClaudeCodeFiles.LinesOf(group.Files))!.Session;
             Assert.Equal(2, session.Turns);
             Assert.Equal(3, session.ChatCalls);
             // Interleaved by time: the subagent's call belongs to the turn that ran it.
@@ -233,8 +233,8 @@ public sealed class ImportAccuracyTests
                 Assistant("s2", null, "msg_s1", 300, 20, sidechain: true)
             ]);
 
-            var group = Assert.Single(ImportCommand.GroupBySession(ImportCommand.Discover(root.FullName)));
-            var session = ClaudeCodeTranscript.Parse(ImportCommand.LinesOf(group.Files))!.Session;
+            var group = Assert.Single(ClaudeCodeFiles.GroupBySession(ClaudeCodeFiles.Discover(root.FullName)));
+            var session = ClaudeCodeTranscript.Parse(ClaudeCodeFiles.LinesOf(group.Files))!.Session;
 
             Assert.Equal(3, session.ChatCalls);
             Assert.Equal(2, session.TurnList[0].ChatCalls);
@@ -246,7 +246,7 @@ public sealed class ImportAccuracyTests
     public void BothOfClaudeCodesDataDirectoriesAreReadByDefault()
     {
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR"))) return;
-        var roots = ImportCommand.DefaultRoots();
+        var roots = ClaudeCodeFiles.DefaultRoots();
         Assert.Contains(roots, r => r.EndsWith(Path.Combine(".claude", "projects"), StringComparison.Ordinal));
         Assert.Contains(roots, r => r.EndsWith(Path.Combine(".config", "claude", "projects"), StringComparison.Ordinal));
     }
