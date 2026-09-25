@@ -33,7 +33,17 @@ fail() {
 }
 
 case "$archive" in
-  *.zip) (cd "$tmp" && unzip -q "$archive") ;;
+  *.zip)
+    # Git Bash on a Windows runner may have no unzip; it has 7-Zip, and PowerShell.
+    if command -v unzip >/dev/null 2>&1; then
+      (cd "$tmp" && unzip -q "$archive")
+    elif command -v 7z >/dev/null 2>&1; then
+      7z x -bso0 -bsp0 "-o$tmp" "$archive"
+    else
+      native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+      pwsh -NoProfile -Command "Expand-Archive -Path '$(native "$archive")' -DestinationPath '$(native "$tmp")'"
+    fi
+    ;;
   *) tar -C "$tmp" -xzf "$archive" ;;
 esac
 dir="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d -name 'copilotscope-*' | head -n 1)"

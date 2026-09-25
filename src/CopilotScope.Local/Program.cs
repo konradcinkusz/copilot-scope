@@ -264,9 +264,11 @@ namespace CopilotScope.Local
     }
 
     /// <summary>
-    /// Ctrl+C and SIGTERM (and on Windows, closing the console) start an orderly stop: the
-    /// dashboard first, then the collector with its final flush. A second signal is not
-    /// intercepted, so someone who presses Ctrl+C twice gets the process ended at once.
+    /// Ctrl+C, SIGTERM, and a closed terminal (SIGHUP; on Windows, closing the console window)
+    /// start an orderly stop: the dashboard first, then the collector with its final flush.
+    /// Without SIGHUP, closing the terminal CopilotScope runs in would end it mid-write. A second
+    /// signal is not intercepted, so someone who presses Ctrl+C twice gets the process ended at
+    /// once.
     /// </summary>
     internal sealed class Signals : IDisposable
     {
@@ -285,7 +287,8 @@ namespace CopilotScope.Local
             [
                 PosixSignalRegistration.Create(PosixSignal.SIGINT, Handle),
                 PosixSignalRegistration.Create(PosixSignal.SIGTERM, Handle),
-                PosixSignalRegistration.Create(PosixSignal.SIGQUIT, Handle)
+                PosixSignalRegistration.Create(PosixSignal.SIGQUIT, Handle),
+                PosixSignalRegistration.Create(PosixSignal.SIGHUP, Handle)
             ];
         }
 

@@ -59,11 +59,14 @@ fi
 
 case "$archive" in
   *.zip)
+    # Git Bash on a Windows runner has no zip; it has 7-Zip, and PowerShell as a last resort.
     if command -v zip >/dev/null 2>&1; then
       (cd "$work" && zip -qr "$archive" "$name")
+    elif command -v 7z >/dev/null 2>&1; then
+      (cd "$work" && 7z a -tzip -bso0 -bsp0 "$archive" "$name")
     else
-      # Windows runners have PowerShell, not zip.
-      pwsh -NoProfile -Command "Compress-Archive -Path '$work/$name' -DestinationPath '$archive'"
+      native() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+      pwsh -NoProfile -Command "Compress-Archive -Path '$(native "$work/$name")' -DestinationPath '$(native "$archive")'"
     fi
     ;;
   *)

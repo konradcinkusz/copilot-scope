@@ -55,6 +55,12 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || (inputs.tag_name != '' && inputs.tag_name || format('manual-run-{0}', github.run_number)) }}
+          # A manual run publishes a PDF-only release. Marked as a pre-release and never
+          # "latest": releases/latest/download/... is where the installers fetch the native
+          # binaries (release-native.yml), and a PDF-only release there makes every download 404
+          # — as manual-run-9 did, once it became the newest release.
+          prerelease: ${{ github.event_name != 'push' }}
+          make_latest: ${{ github.event_name == 'push' }}
           files: |
             CopilotScope_Quality_Framework.pdf
             CopilotScope_Thesis_Topics.pdf

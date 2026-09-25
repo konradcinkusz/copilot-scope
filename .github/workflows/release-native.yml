@@ -1,0 +1,180 @@
+# Builds the native `copilotscope` archives (ADR-004) and, for a release tag, attaches them to
+# that tag's GitHub Release with a SHA256SUMS file:
+#
+#   copilotscope-linux-x64.tar.gz   copilotscope-linux-arm64.tar.gz
+#   copilotscope-osx-arm64.tar.gz   copilotscope-osx-x64.tar.gz
+#   copilotscope-win-x64.zip        copilotscope-win-arm64.zip
+#
+# The names carry no version on purpose: releases/latest/download/<name> then always resolves
+# to the newest release, which is what the installers and the README point at.
+#
+# Every platform is packaged AND smoke-tested on its own kind of runner (scripts/smoke-native.sh
+# runs the extracted archive: dashboard assets, ingest, stop/start, no self-telemetry). A binary
+# built on one machine and only ever run on another is how a release ships dead — the same
+# lesson as the container smoke tests in build-containers.yml. macOS in particular must be
+# built on macOS: the SDK signs the binary there, and an unsigned arm64 binary does not start.
+#
+# Triggers:
+#   - a v<major>.<minor>.<patch> tag (capital V accepted, as in build-containers.yml): build,
+#     test, attach, and mark that release "latest";
+#   - a pull request touching the native binary or this workflow: build and test all six
+#     platforms, attach nothing — so Windows, macOS and ARM breakage shows up before a tag does;
+#   - a manual run: with `tag`, rebuild and re-attach that release's archives; without, build
+#     and test only.
+#
+# The binaries are not signed yet (ADR-004, decision 7): the installers download with curl and
+# Invoke-WebRequest, which set no quarantine attribute or Mark-of-the-Web. Signing and
+# notarization steps belong here once certificates exist.
+name: release native
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'V*'
+  pull_request:
+    paths:
+      - .github/workflows/release-native.yml
+      - scripts/package-native.sh
+      - scripts/smoke-native.sh
+      - src/CopilotScope.Local/**
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to rebuild and attach archives to (e.g. v1.1.0). Empty: build and test only.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.resolve.outputs.publish }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve the tag and version
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "$EVENT" = "push" ]; then tag="$GITHUB_REF_NAME"; fi
+          if [ "$EVENT" = "workflow_dispatch" ]; then tag="$INPUT_TAG"; fi
+          if [ -z "$tag" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-ci.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "Not a release: building and testing every platform, attaching nothing."
+            exit 0
+          fi
+          if [[ ! "$tag" =~ ^[vV]([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error title=Unrecognised release tag::'$tag' is not v<major>.<minor>.<patch>. Nothing was built or attached."
+            exit 1
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "Building ${BASH_REMATCH[1]} for release $tag."
+
+  build:
+    needs: version
+    strategy:
+      # One broken platform must not cancel the others mid-build; the release job still waits
+      # for all six, so a partial set is never attached.
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+          - rid: osx-arm64
+            runner: macos-latest
+          - rid: osx-x64
+            runner: macos-15-intel
+          - rid: win-x64
+            runner: windows-latest
+          - rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag || github.ref }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Package ${{ matrix.rid }}
+        run: scripts/package-native.sh "${{ matrix.rid }}" "${{ needs.version.outputs.version }}"
+
+      - name: Smoke test the extracted archive
+        run: scripts/smoke-native.sh artifacts/native/copilotscope-${{ matrix.rid }}.*
+
+      - name: Keep the archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: copilotscope-${{ matrix.rid }}
+          path: artifacts/native/copilotscope-${{ matrix.rid }}.*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [version, build]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Collect the archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: copilotscope-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          count="$(find . -maxdepth 1 -name 'copilotscope-*' | wc -l)"
+          if [ "$count" -ne 6 ]; then
+            echo "::error title=Incomplete release::expected 6 archives, found $count. Nothing was attached."
+            exit 1
+          fi
+          sha256sum copilotscope-* > SHA256SUMS
+          cat SHA256SUMS
+
+      # The container and research-PDF workflows run on the same tag, and whichever gets there
+      # first creates the release; the others attach to it. `create` losing that race is fine —
+      # the release exists, which is all the upload needs.
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
+              --notes "Native binaries: pick the archive for your platform, check it against SHA256SUMS, extract it and run \`copilotscope\`. See the README for the install script and CHANGELOG.md for what changed." \
+              || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*
+          # A new tag is the newest release. A manual rebuild of an older one must not take
+          # "latest" away from a newer release, or releases/latest/download would go backwards.
+          if [ "$EVENT" = "push" ]; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest
+          fi
+          echo "Attached $(ls dist | wc -l) file(s) to $TAG."
