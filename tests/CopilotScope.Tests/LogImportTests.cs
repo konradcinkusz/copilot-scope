@@ -24,7 +24,7 @@ namespace CopilotScope.Tests;
 /// </summary>
 public sealed class LogImportTests
 {
-    private static string FixturePath()
+    internal static string FixturePath()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)

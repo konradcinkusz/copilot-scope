@@ -64,7 +64,8 @@ No clone, no .NET, no login — the images are public on GHCR.
 **Or skip Docker entirely** ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
 Releases from the next tag on carry a self-contained `copilotscope` for Windows, macOS and
 Linux, x64 and arm64: the collector and the dashboard in one process, sessions kept in
-`~/.copilotscope/data`, nothing else to install.
+`~/.copilotscope/data`, nothing else to install. It also reads the Claude Code history already
+on your disk, with no import step, and keeps reading it as new sessions finish.
 
 ```bash
 curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/latest/download/copilotscope-linux-x64.tar.gz
@@ -165,7 +166,14 @@ container cannot.
 
 Re-running replaces rather than duplicates (sessions keep Claude Code's own id), prompt text
 is **not** imported unless you pass `--include-content`, and the collector refuses to overwrite
-a session it already holds from live telemetry. Imported sessions are badged *imported* and
+a session it already holds from live telemetry.
+
+The native `copilotscope` binary does all of this by itself, with the same parser and the same
+import endpoint: it reads those files in the background, imports each session once it has been
+quiet for ten minutes (so live telemetry, when the assistant sends any, wins the race), and
+reads a file again only when it changes. `copilotscope scan` does it now and says what it
+found; `--no-scan` turns it off. It never writes to those files, never imports prompt text,
+and a transcript Claude Code deletes never deletes the session. Imported sessions are badged *imported* and
 carry lower confidence: the transcript has no latency, edit-decision or feedback signal, so
 those components are absent rather than defaulted. See [docs/TUTORIAL.md §0.5](docs/TUTORIAL.md).
 

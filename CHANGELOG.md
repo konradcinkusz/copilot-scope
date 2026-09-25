@@ -10,6 +10,32 @@ release asset.
 ## [Unreleased]
 
 ### Added
+- **`copilotscope` reads your Claude Code history by itself — step four of
+  [ADR-004](docs/architecture/ADR-004-native-distribution.md).** Transcripts Claude Code already
+  keeps on disk (`~/.claude/projects`, `~/.config/claude/projects`, or `$CLAUDE_CONFIG_DIR`) are
+  scored without an import step, from the first start on. The native binary looks once a
+  minute, reads only what changed, and hands sessions to the collector through
+  `POST /api/import` over HTTP, the way the importer does, so the endpoint's guards apply
+  unchanged. The start-up banner names the folders it reads; `copilotscope scan` scans now and
+  says what it found; `--no-scan` turns it off.
+  - **Telemetry wins the race.** A session is imported only after its files have been quiet
+    for ten minutes. An import never replaces a live session, but telemetry arriving after an
+    import is added to it and would count the same calls twice; ten minutes is longer than any
+    exporter an assistant uses waits to send.
+  - **Read again only when something changed.** `scan-state.json`, kept in the data directory
+    it describes, records a fingerprint of each session's files and the version of the reader
+    that read them. A grown transcript is imported again and replaces its session; a parser fix
+    (`ClaudeCodeTranscript.Version`) reaches the whole history, not only what comes after it.
+    Deleting the history, or pointing `--data` elsewhere, starts the import over.
+  - **Read-only, and nothing lost.** Transcripts are never written to, prompt and response
+    text is never imported, and a transcript Claude Code deletes after a month never deletes
+    its session. A collector that cannot be reached, a file that cannot be read, or a session
+    the collector refuses costs that session one retry, never the rest of the pass.
+  - **Repository labels without running `git`.** `GitRemote` now reads the origin remote from
+    the repository's own config file, linked worktrees included. The scanner runs unattended
+    over every project in someone's history: git may not be installed, a process per project
+    is the wrong cost, and on a Mac without the developer tools `/usr/bin/git` opens an
+    installer dialog. The importer gets the same labels, faster.
 - **`copilotscope`, the native binary — step three of
   [ADR-004](docs/architecture/ADR-004-native-distribution.md).** One self-contained executable
   that runs the collector and the dashboard in one process on this machine: no Docker, no
@@ -32,8 +58,8 @@ release asset.
   - ServiceDefaults' self-telemetry is now switchable (`CopilotScope:SelfTelemetry:Enabled`,
     on by default, so every other deployment is unchanged).
 
-  Not yet in this step: the installers, and scanning of existing chat history — each follows
-  as its own change.
+  Not yet in this step: the installers, which follow as their own change. Scanning existing
+  chat history followed in step four, above.
 - **Native binaries on every release** (`.github/workflows/release-native.yml`). A
   `v<major>.<minor>.<patch>` tag builds `copilotscope` for linux-x64, linux-arm64, osx-arm64,
   osx-x64, win-x64 and win-arm64, each packaged and smoke-tested on its own kind of runner, and

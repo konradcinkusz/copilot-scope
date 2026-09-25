@@ -27,6 +27,13 @@ public sealed record TranscriptSession(CopilotSession Session, int Lines, int Sk
 public static class ClaudeCodeTranscript
 {
     /// <summary>
+    /// Bumped whenever a change here changes what a transcript is read as. The native binary's
+    /// scanner records which version read each session and reads them all again when this
+    /// moves, so a fix reaches the history imported before it, not only what comes after.
+    /// </summary>
+    public const int Version = 1;
+
+    /// <summary>
     /// Parses a transcript file. Malformed lines are counted and skipped rather than aborting:
     /// these files are appended to by a live process, so the last line of an in-progress
     /// session is routinely half-written, and refusing the whole session over it would make

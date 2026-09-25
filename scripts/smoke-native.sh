@@ -9,12 +9,14 @@
 #   - the dashboard serves _framework/blazor.web.js from the extracted archive, not just "/";
 #   - sessions land in files and survive a stop and a start;
 #   - a second start finds the first instead of failing on the port;
+#   - Claude Code history already on disk is imported without being asked, and `scan` reports it;
 #   - OTEL_EXPORTER_OTLP_ENDPOINT pointing at the collector itself does not make it ingest its
 #     own telemetry.
 set -euo pipefail
 
 archive="${1:?usage: scripts/smoke-native.sh <archive>}"
 archive="$(cd "$(dirname "$archive")" && pwd)/$(basename "$archive")"
+repo="$(cd "$(dirname "$0")/.." && pwd)"
 otlp="${SMOKE_OTLP_PORT:-34318}"
 dash="${SMOKE_DASHBOARD_PORT:-35200}"
 
@@ -55,6 +57,16 @@ bin="$dir/copilotscope"
 export COPILOTSCOPE_HOME="$tmp/home"
 "$bin" version
 
+# Claude Code history, where Claude Code would keep it. CLAUDE_CONFIG_DIR also keeps the scan
+# away from whatever real history the machine running this has. Last written long ago, so it
+# counts as quiet and is imported on the first pass rather than ten minutes later.
+export CLAUDE_CONFIG_DIR="$tmp/claude"
+transcript_id="11111111-2222-3333-4444-555555555555"
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/-home-dev-acme-api"
+cp "$repo/tests/transcripts/claude-code/sample-session.jsonl" \
+  "$CLAUDE_CONFIG_DIR/projects/-home-dev-acme-api/$transcript_id.jsonl"
+touch -t 202601010000 "$CLAUDE_CONFIG_DIR/projects/-home-dev-acme-api/$transcript_id.jsonl"
+
 start() {
   "$bin" start --otlp-port "$otlp" --dashboard-port "$dash" --no-browser >>"$tmp/run.log" 2>&1 &
   pid=$!
@@ -88,6 +100,17 @@ curl -fsS -H 'Content-Type: application/json' --data "$span" "http://127.0.0.1:$
   || fail "OTLP ingest was refused"
 expect_status /api/sessions/conv-native-smoke "$otlp" 200
 
+imported=""
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:$otlp/api/sessions/$transcript_id" >/dev/null 2>&1; then imported=1; break; fi
+  sleep 1
+done
+[ -n "$imported" ] || fail "the Claude Code transcript was not imported within 30 s"
+echo "ok local history imported"
+scanned="$("$bin" scan 2>&1)" || fail "scan failed: $scanned"
+echo "$scanned" | grep -q "Claude Code: 1 session(s)" || fail "scan did not report the transcript: $scanned"
+echo "ok scan: $scanned"
+
 "$bin" status || fail "status says it is not running"
 second="$("$bin" start --otlp-port "$otlp" --dashboard-port "$dash" --no-browser 2>&1)" \
   || fail "a second start failed instead of finding the first: $second"
@@ -98,7 +121,8 @@ for _ in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
 kill -0 "$pid" 2>/dev/null && fail "the process is still running after stop"
 [ ! -f "$COPILOTSCOPE_HOME/run/instance.json" ] || fail "stop left the instance file behind"
 ls "$COPILOTSCOPE_HOME/data/sessions/"*.json >/dev/null 2>&1 || fail "no session file was written"
-echo "ok stopped, session on disk"
+[ -f "$COPILOTSCOPE_HOME/data/scan-state.json" ] || fail "no scan state beside the sessions"
+echo "ok stopped, sessions and scan state on disk"
 
 # ── second run: history survives, and self-telemetry stays off even when the environment
 # points OpenTelemetry at the collector itself — the usual state of a shell `copilotscope
@@ -109,7 +133,7 @@ start
 expect_status /api/sessions/conv-native-smoke "$otlp" 200
 sleep 8   # longer than the OpenTelemetry batch exporter's 5 s schedule
 sessions="$(curl -fsS "http://127.0.0.1:$otlp/api/health" | sed -E 's/.*"sessions":([0-9]+).*/\1/')"
-[ "$sessions" = "1" ] || fail "expected exactly the one smoke session, found $sessions — is the collector ingesting its own telemetry?"
+[ "$sessions" = "2" ] || fail "expected the smoke session and the imported one, found $sessions — is the collector ingesting its own telemetry?"
 echo "ok no self-telemetry"
 "$bin" stop || fail "second stop failed"
 

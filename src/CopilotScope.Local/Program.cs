@@ -1,9 +1,11 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using CopilotScope.Local;
+using CopilotScope.Local.Scanning;
 
 // The native `copilotscope` binary (ADR-004): one command that runs the collector and the
 // dashboard on this machine, with history kept in ~/.copilotscope/data.
@@ -24,12 +26,19 @@ try
         "stop" => await Commands.StopAsync(),
         "open" => await Commands.OpenAsync(),
         "url" => await Commands.UrlAsync(),
+        "scan" => await Commands.ScanAsync(),
         _ => await Commands.StartAsync(options)
     };
 }
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
+                               or HttpRequestException)
 {
     Console.Error.WriteLine($"copilotscope: {ex.Message}");
+    return 1;
+}
+catch (TaskCanceledException)
+{
+    Console.Error.WriteLine("copilotscope: the running instance did not answer in time.");
     return 1;
 }
 
@@ -100,6 +109,7 @@ namespace CopilotScope.Local
 
             var dataDirectory = options.Memory ? null : Path.GetFullPath(options.DataDirectory ?? paths.Data);
             var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+            IReadOnlyList<IScanSource> sources = options.NoScan ? [] : [new ClaudeCodeSource()];
 
             using var shutdown = new CancellationTokenSource();
             using var signals = Signals.Register(shutdown);
@@ -108,8 +118,8 @@ namespace CopilotScope.Local
             try
             {
                 host = await LocalHost.StartAsync(new LocalHostOptions(
-                    options.OtlpPort, dashboardPort.Value, paths.Home, dataDirectory, webRoot, token, options.Verbose),
-                    shutdown.Token);
+                    options.OtlpPort, dashboardPort.Value, paths.Home, dataDirectory, webRoot, token, options.Verbose,
+                    sources), shutdown.Token);
             }
             catch (IOException ex)
             {
@@ -134,6 +144,7 @@ namespace CopilotScope.Local
                           Dashboard   {instance.DashboardUrl}
                           Telemetry   {instance.CollectorUrl}   (point your assistant's OTLP/HTTP exporter here)
                           Sessions    {(dataDirectory is null ? "in memory only — gone when this stops" : dataDirectory)}
+                          History     {DescribeScanning(sources)}
 
                         Press Ctrl+C to stop.
                         """);
@@ -147,6 +158,48 @@ namespace CopilotScope.Local
                     Instance.Delete(paths.InstanceFile, token);
                 }
             }
+            return 0;
+        }
+
+        /// <summary>What local history is read, and from where: nobody should have to guess which
+        /// of their files a program is reading.</summary>
+        private static string DescribeScanning(IReadOnlyList<IScanSource> sources)
+        {
+            if (sources.Count == 0) return "not read (--no-scan)";
+            return string.Join("; ", sources.Select(source =>
+                source.Roots.Where(Directory.Exists).ToList() is { Count: > 0 } found
+                    ? $"{source.DisplayName}, read from {string.Join(" and ", found)} (never changed)"
+                    : $"none from {source.DisplayName} yet — read from {string.Join(" or ", source.Roots)} once it appears"));
+        }
+
+        public static async Task<int> ScanAsync()
+        {
+            if (await RunningAsync(LocalPaths.Resolve()) is not { } running)
+            {
+                Console.Error.WriteLine("CopilotScope is not running. Start it with `copilotscope`: it reads local history as it starts.");
+                return 1;
+            }
+
+            // A first scan over a long history reads every file once; give it time.
+            using var http = Client(running, TimeSpan.FromMinutes(10));
+            var request = new HttpRequestMessage(HttpMethod.Post, "/_copilotscope/scan");
+            request.Headers.Add("X-CopilotScope-Token", running.Token);
+            using var response = await http.SendAsync(request);
+            switch (response.StatusCode)
+            {
+                case HttpStatusCode.Conflict:
+                    Console.Error.WriteLine("The running CopilotScope was started with --no-scan, so it reads no local history.");
+                    return 1;
+                case HttpStatusCode.NotFound:
+                    Console.Error.WriteLine($"The running CopilotScope ({running.Version}) cannot scan on request. " +
+                                            "Restart it: `copilotscope stop`, then `copilotscope`.");
+                    return 1;
+            }
+            response.EnsureSuccessStatusCode();
+
+            var report = await response.Content.ReadFromJsonAsync<ScanReport>(new JsonSerializerOptions(JsonSerializerDefaults.Web))
+                ?? throw new InvalidOperationException("The running instance sent an empty scan report.");
+            foreach (var source in report.Sources) Console.WriteLine(source.Describe(report.SettleMinutes));
             return 0;
         }
 
@@ -250,10 +303,10 @@ namespace CopilotScope.Local
             }
         }
 
-        private static HttpClient Client(Instance instance) => new()
+        private static HttpClient Client(Instance instance, TimeSpan? timeout = null) => new()
         {
             BaseAddress = new Uri($"http://127.0.0.1:{instance.OtlpPort}"),
-            Timeout = TimeSpan.FromSeconds(3)
+            Timeout = timeout ?? TimeSpan.FromSeconds(3)
         };
 
         private static void OpenBrowser(string url, bool suppressed)

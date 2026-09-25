@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using CopilotScope.Collector;
 using CopilotScope.Dashboard;
+using CopilotScope.Local.Scanning;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 
@@ -16,7 +17,9 @@ internal sealed record LocalHostOptions(
     string? DataDirectory,
     string WebRoot,
     string Token,
-    bool Verbose = false);
+    bool Verbose = false,
+    IReadOnlyList<IScanSource>? ScanSources = null,
+    ScannerOptions? Scan = null);
 
 /// <summary>
 /// The collector and the dashboard, running side by side in this process (ADR-004).
@@ -39,6 +42,7 @@ internal sealed class LocalHost : IAsyncDisposable
     private const string DashboardName = "CopilotScope.Dashboard";
 
     private readonly TaskCompletionSource _stopRequested = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private HttpClient? _scanClient;
     private bool _disposed;
 
     private LocalHost(WebApplication collector, WebApplication dashboard, string collectorUrl, string dashboardUrl)
@@ -53,6 +57,9 @@ internal sealed class LocalHost : IAsyncDisposable
     public WebApplication Dashboard { get; }
     public string CollectorUrl { get; }
     public string DashboardUrl { get; }
+
+    /// <summary>Reading assistants' local history into the collector; null when scanning is off.</summary>
+    public Scanner? Scanner { get; private set; }
 
     /// <summary>Completes when something asked this host to stop: <c>copilotscope stop</c>, or one
     /// of the two applications shutting itself down (a background service that failed).</summary>
@@ -91,6 +98,15 @@ internal sealed class LocalHost : IAsyncDisposable
             if (!TokenMatches(request, options.Token)) return Results.NotFound();
             host?._stopRequested.TrySetResult();
             return Results.Accepted();
+        });
+        // `copilotscope scan`: a pass now, answered with what it found. Token-bound like stop —
+        // it reads every transcript on the machine — and served by the process that owns the
+        // scan state, so no second process ever writes it.
+        collector.MapPost("/_copilotscope/scan", async (HttpRequest request, CancellationToken requestAborted) =>
+        {
+            if (!TokenMatches(request, options.Token)) return Results.NotFound();
+            if (host?.Scanner is not { } scanner) return Results.Conflict();
+            return Results.Ok(await scanner.ScanNowAsync(requestAborted));
         });
 
         try
@@ -159,16 +175,43 @@ internal sealed class LocalHost : IAsyncDisposable
         // collecting into a dashboard that is gone or serving one whose collector is.
         collector.Lifetime.ApplicationStopping.Register(() => host._stopRequested.TrySetResult());
         dashboard.Lifetime.ApplicationStopping.Register(() => host._stopRequested.TrySetResult());
+        if (options.ScanSources is { Count: > 0 } sources) host.StartScanning(sources, options);
         return host;
     }
 
-    /// <summary>Stops the dashboard first, so nothing reads a collector that is going away, and
-    /// the collector last, so its final flush writes everything that arrived.</summary>
+    /// <summary>
+    /// Starts reading local history once the collector is listening: it arrives the way the
+    /// importer's does, over HTTP to <c>/api/import</c>, and never into the store directly
+    /// (CLAUDE.md). The scan state lives in the data directory it describes, or in memory when
+    /// that is where the sessions live too.
+    /// </summary>
+    private void StartScanning(IReadOnlyList<IScanSource> sources, LocalHostOptions options)
+    {
+        var logger = Collector.Services.GetRequiredService<ILoggerFactory>().CreateLogger<Scanner>();
+        var state = options.DataDirectory is null
+            ? ScanState.InMemory()
+            : ScanState.Load(Path.Combine(options.DataDirectory, ScanState.FileName), logger);
+
+        _scanClient = new HttpClient { BaseAddress = new Uri(CollectorUrl), Timeout = TimeSpan.FromMinutes(5) };
+        // A key set in the environment gates imports too; the scanner presents it like any client.
+        if (Collector.Configuration["CopilotScope:Ingest:ApiKey"] is { Length: > 0 } key)
+            _scanClient.DefaultRequestHeaders.Add("x-api-key", key);
+
+        Scanner = new Scanner(sources, state, _scanClient, options.Scan, logger: logger);
+        Scanner.Start();
+    }
+
+    /// <summary>Stops the scanner first, so no import is cut off half-way through the collector's
+    /// shutdown; then the dashboard, so nothing reads a collector that is going away; and the
+    /// collector last, so its final flush writes everything that arrived.</summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
         _stopRequested.TrySetResult();
+
+        if (Scanner is not null) await Scanner.StopAsync();
+        _scanClient?.Dispose();
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         try { await Dashboard.StopAsync(timeout.Token); }

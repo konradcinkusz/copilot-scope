@@ -115,6 +115,7 @@ src/CopilotScope.Collector/      OTLP ingest, session aggregation, quality engin
   Import/                        assistants' own history files: Claude Code transcripts
 src/CopilotScope.Dashboard/      Blazor Server UI
 src/CopilotScope.Local/          the native `copilotscope` binary: both apps in one process (ADR-004)
+  Scanning/                      local chat history → /api/import, once quiet; never written to
 src/CopilotScope.AppHost/        Aspire orchestration
 src/CopilotScope.{AgentForge,JudgeAgent}/   opt-in agent services
 tools/CopilotScope.Seeder/       demo data into a running collector

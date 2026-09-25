@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using CopilotScope.Local;
+using CopilotScope.Local.Scanning;
 using Xunit;
 
 namespace CopilotScope.Tests;
@@ -40,8 +41,16 @@ public sealed class LocalCommandLineTests
     [InlineData("stop")]
     [InlineData("open")]
     [InlineData("url")]
+    [InlineData("scan")]
     public void EveryCommandIsRecognised(string command) =>
         Assert.Equal(command, CommandLine.Parse([command]).Options!.Command);
+
+    [Fact]
+    public void LocalHistoryIsReadUnlessTurnedOff()
+    {
+        Assert.False(CommandLine.Parse([]).Options!.NoScan);
+        Assert.True(CommandLine.Parse(["--no-scan"]).Options!.NoScan);
+    }
 
     [Fact]
     public void HelpAndVersionAnswerWhateverElseIsOnTheLine()
@@ -263,6 +272,52 @@ public sealed class LocalHostTests : IAsyncLifetime
             Assert.Equal(HttpStatusCode.OK, (await http.GetAsync($"{host.CollectorUrl}/api/health")).StatusCode);
         }
         finally { TempDirectory.Delete(empty); }
+    }
+
+    [Fact]
+    public async Task LocalHistoryIsImportedAndTheScanStateKeptWithTheData()
+    {
+        var data = Path.Combine(_home, "data");
+        var projects = Directory.CreateDirectory(Path.Combine(_home, "claude", "projects", "-home-dev-acme")).FullName;
+        var transcript = Path.Combine(projects, "11111111-2222-3333-4444-555555555555.jsonl");
+        File.Copy(LogImportTests.FixturePath(), transcript);
+        File.SetLastWriteTimeUtc(transcript, DateTime.UtcNow.AddHours(-1)); // quiet, so read at once
+
+        var options = Options(data) with { ScanSources = [new ClaudeCodeSource([Path.GetDirectoryName(projects)!])] };
+        await using (var host = await LocalHost.StartAsync(options))
+        {
+            using var http = new HttpClient();
+            var found = false;
+            for (var i = 0; i < 100 && !found; i++)
+            {
+                found = (await http.GetAsync($"{host.CollectorUrl}/api/sessions/11111111-2222-3333-4444-555555555555"))
+                    .StatusCode == HttpStatusCode.OK;
+                if (!found) await Task.Delay(100);
+            }
+            Assert.True(found, "the transcript was not imported by the background scan");
+
+            // `copilotscope scan` asks the running instance, with its token.
+            Assert.Equal(HttpStatusCode.NotFound, (await http.PostAsync($"{host.CollectorUrl}/_copilotscope/scan", null)).StatusCode);
+            var scan = new HttpRequestMessage(HttpMethod.Post, $"{host.CollectorUrl}/_copilotscope/scan");
+            scan.Headers.Add("X-CopilotScope-Token", Token);
+            using var response = await http.SendAsync(scan);
+            var report = await response.Content.ReadFromJsonAsync<ScanReport>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var source = Assert.Single(report!.Sources);
+            Assert.Equal((1, 1), (source.Found, source.Unchanged));
+        }
+
+        Assert.True(File.Exists(Path.Combine(data, ScanState.FileName)));
+    }
+
+    [Fact]
+    public async Task ScanningCanBeOff()
+    {
+        await using var host = await LocalHost.StartAsync(Options(null));
+        using var http = new HttpClient();
+        var scan = new HttpRequestMessage(HttpMethod.Post, $"{host.CollectorUrl}/_copilotscope/scan");
+        scan.Headers.Add("X-CopilotScope-Token", Token);
+        Assert.Equal(HttpStatusCode.Conflict, (await http.SendAsync(scan)).StatusCode);
+        Assert.Null(host.Scanner);
     }
 
     [Fact]
