@@ -9,6 +9,16 @@ release asset.
 
 ## [Unreleased]
 
+### Fixed
+- **A shutdown that arrives twice no longer loses the session being written.** The shutdown
+  flush added with file storage ran once per call, and a host can be stopped twice at once:
+  `WebApplicationFactory` stops it while the application's own `RunAsync` sees the stop, stops
+  it again, and then disposes the container. The second call found nothing left to flush,
+  returned immediately, and the store was disposed under the write the first call was still
+  making. `PersistenceWriter.StopAsync` is now idempotent — every caller waits on the one final
+  flush — and `FileStorageCollectorTests.SessionsOutliveTheCollectorProcess`, which had become
+  flaky on `master`, is deterministic again.
+
 ### Changed
 - **The collector and the dashboard are built, not just run.** Everything their `Program.cs`
   did inline now lives in `CollectorApp.BuildAsync` and `DashboardApp.Build`, and each

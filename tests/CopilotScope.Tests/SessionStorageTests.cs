@@ -624,6 +624,65 @@ public sealed class PersistenceWriterTests : IDisposable
         Assert.NotNull(await reopened.GetAsync("conv-last-second", CancellationToken.None));
     }
 
+    /// <summary>A store whose writes wait to be released, so a test can hold one mid-flight.</summary>
+    private sealed class HeldRepository : ISessionRepository
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Writes;
+        public Task WriteStarted => _started.Task;
+        public void Release() => _release.TrySetResult();
+
+        public async Task UpsertAsync(PersistedSession session, double qualityScore, string qualityGrade,
+            CancellationToken ct, string sessionKind = "UserChat")
+        {
+            _started.TrySetResult();
+            await _release.Task;
+            Interlocked.Increment(ref Writes);
+        }
+
+        public string Kind => "held";
+        public string Description => "held";
+        public Task EnsureSchemaAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task<List<PersistedSession>> LoadAllAsync(int limit, CancellationToken ct) => Task.FromResult(new List<PersistedSession>());
+        public Task<List<PersistedSession>> QueryAsync(DateTimeOffset? since, DateTimeOffset? until, int limit, int offset,
+            CancellationToken ct, bool includeInternal = false, CohortFilter? cohort = null) => Task.FromResult(new List<PersistedSession>());
+        public Task<PersistedSession?> GetAsync(string id, CancellationToken ct) => Task.FromResult<PersistedSession?>(null);
+        public Task<int> CountAsync(DateTimeOffset? since, DateTimeOffset? until, CancellationToken ct,
+            bool includeInternal = false, CohortFilter? cohort = null) => Task.FromResult(0);
+        public Task<List<double>> ScoresAsync(DateTimeOffset? since, int limit, CancellationToken ct) => Task.FromResult(new List<double>());
+        public Task<List<string>> IdsOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct) => Task.FromResult(new List<string>());
+        public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> DeleteAsync(string id, CancellationToken ct) => Task.FromResult(0);
+        public Task<int> DeleteByPrefixAsync(string prefix, CancellationToken ct) => Task.FromResult(0);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Fact]
+    public async Task TwoStopsAtOnceShareOneFinalFlush()
+    {
+        // WebApplicationFactory stops a host while the application's own RunAsync stops it again
+        // and then disposes the container. The second stop must not return — letting the store be
+        // disposed — while the first is still writing.
+        var store = new SessionStore();
+        var held = new HeldRepository();
+        var writer = new PersistenceWriter(held, store, new QualityEngine(), new HistoryOptions(),
+            NullLogger<PersistenceWriter>.Instance);
+        await writer.StartAsync(CancellationToken.None);
+        Ingest(store, "conv-two-stops");
+        writer.MarkDirty(["conv-two-stops"]);
+
+        var first = writer.StopAsync(CancellationToken.None);
+        var second = writer.StopAsync(CancellationToken.None);
+        await held.WriteStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
+        Assert.False(second.IsCompleted, "the second stop returned while the final flush was still writing");
+
+        held.Release();
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, held.Writes);
+    }
+
     [Fact]
     public async Task StartupRehydratesMemoryFromTheFiles()
     {
