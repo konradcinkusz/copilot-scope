@@ -98,6 +98,9 @@ jobs:
       - name: Smoke test the extracted archive
         run: scripts/smoke-native.sh artifacts/native/copilotscope-linux-x64.tar.gz
 
+      - name: Install it the way a user would
+        run: scripts/test-install.sh artifacts/native/copilotscope-linux-x64.tar.gz
+
       - name: Keep the archive
         uses: actions/upload-artifact@v7
         with:
@@ -220,7 +223,7 @@ jobs:
           set -euo pipefail
           for file in install.sh scripts/tools-entrypoint.sh scripts/setup.sh \
                       scripts/Enable-ClaudeCodeOtel.sh scripts/package-native.sh \
-                      scripts/smoke-native.sh; do
+                      scripts/smoke-native.sh scripts/test-install.sh; do
             sh -n "$file" 2>/dev/null || bash -n "$file"
             echo "ok $file"
           done
@@ -237,7 +240,7 @@ jobs:
           shellcheck -S warning -e SC1090,SC1091 \
             install.sh scripts/copilotscope scripts/tools-entrypoint.sh \
             scripts/setup.sh scripts/Enable-ClaudeCodeOtel.sh \
-            scripts/package-native.sh scripts/smoke-native.sh
+            scripts/package-native.sh scripts/smoke-native.sh scripts/test-install.sh
 
       - name: PowerShell syntax
         shell: pwsh

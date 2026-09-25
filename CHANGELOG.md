@@ -9,6 +9,28 @@ release asset.
 
 ## [Unreleased]
 
+### Changed
+- **The installers install the native binary — step six of
+  [ADR-004](docs/architecture/ADR-004-native-distribution.md).** `install.sh` and
+  `install.ps1` no longer need Docker for one developer on one machine:
+  - They pick the release archive for this platform and check it against the release's
+    `SHA256SUMS`, refusing it on any mismatch, and refusing a release that has none.
+  - They install it into `~/.copilotscope/app`, swapped in whole, so an interrupted install
+    leaves the previous version. A running copy is stopped first.
+  - They put `copilotscope` on the PATH, then run `copilotscope setup` — on the terminal even
+    under `curl | sh`, and writing nothing where there is no one to ask.
+  - They recognise Rosetta and refuse musl, where there is no build.
+  - They say so when the Docker stack already holds port 4318.
+  - Until a release carries native builds, they fall back to the Docker stack when Docker is
+    installed.
+
+  `--docker` (`-Docker`) installs the Docker Compose stack exactly as before, for a team or a
+  shared server; `--bind`, `--api-key` and `--tag` without it are refused instead of ignored.
+  `scripts/test-install.sh` runs the real installer against each platform's archive served
+  as a release, on every pull request that touches it. It checks the binary on the PATH, an
+  update in place, `--yes` connecting Claude Code, and a tampered download being refused with
+  the installed copy untouched.
+
 ### Added
 - **`copilotscope setup`, `connect`, `disconnect` and `doctor` in the native binary — step five
   of [ADR-004](docs/architecture/ADR-004-native-distribution.md).** Pointing an assistant at
