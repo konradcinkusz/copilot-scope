@@ -34,38 +34,34 @@ curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/
 irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
 ```
 
-That starts the stack and offers to point the assistants it finds on your machine
-at it. **There is nothing to declare**: no key to generate, no environment
-variable to export, no JSON to hand-edit. The collector binds to `127.0.0.1` and
-Postgres publishes no port at all, so on one machine a credential would buy
-nothing and cost a step in every client.
-
-Two commands is the whole setup:
+That installs one self-contained program, `copilotscope`, for Windows, macOS or Linux on x64
+or arm64. The installer checks the download against the release's `SHA256SUMS` before writing
+anything, then offers to point the assistants it finds at it. Then:
 
 ```bash
-copilotscope up                    # dashboard on http://localhost:5200
-copilotscope connect claude-code   # or: vscode · copilot-cli · cowork · all
+copilotscope    # telemetry on localhost:4318, the dashboard on localhost:5200; Ctrl+C stops it
 ```
 
-`connect` writes the settings file the assistant itself reads — `~/.claude/settings.json`
-for Claude Code, VS Code's user settings for Copilot Chat — so the configuration
-survives new terminals, new projects and reboots. If nothing shows up,
-`copilotscope doctor` walks the whole path and says which link is broken.
+**There is nothing to declare**: no Docker, no .NET, no key, no environment variable to
+export, no JSON to hand-edit ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
+It binds to `127.0.0.1` and keeps sessions in `~/.copilotscope/data`. It also reads the Claude
+Code history already on your disk, which is scored even with no telemetry configured and kept
+current as new sessions finish.
 
-Already use Claude Code? Your history is on disk already, and scoring it needs no
-telemetry setup at all:
+`copilotscope setup` finds Claude Code, VS Code and Copilot CLI and shows the exact change to
+each one's own settings: `~/.claude/settings.json` for Claude Code, VS Code's user settings for
+Copilot Chat. It writes the change only on a yes, and the configuration then survives new
+terminals, new projects and reboots. `connect <assistant>` and `disconnect` do one at a time.
+If nothing shows up, `copilotscope doctor` checks each link and says which one is broken — most
+often a `claude` session started before its settings changed.
 
-```bash
-copilotscope import
-```
+**For a team or a shared server**, `--docker` installs the Docker Compose stack instead:
+Postgres, the GHCR images and the `copilotscope` control script, as before. See
+[Quick start with Docker](#quick-start-with-docker--for-a-team-or-a-shared-server). Native
+builds ship from the next release on. Until one exists, the installer falls back to the Docker
+stack if Docker is installed.
 
-No clone, no .NET, no login — the images are public on GHCR.
-
-**Or skip Docker entirely** ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
-Releases from the next tag on carry a self-contained `copilotscope` for Windows, macOS and
-Linux, x64 and arm64: the collector and the dashboard in one process, sessions kept in
-`~/.copilotscope/data`, nothing else to install. It also reads the Claude Code history already
-on your disk, with no import step, and keeps reading it as new sessions finish.
+<details><summary>Or download it yourself</summary>
 
 ```bash
 curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/latest/download/copilotscope-linux-x64.tar.gz
@@ -74,18 +70,15 @@ tar -xzf copilotscope-linux-x64.tar.gz      # osx-arm64, osx-x64, linux-arm64 th
 ./copilotscope-linux-x64/copilotscope setup  # offers to send each assistant's telemetry there
 ```
 
-`setup` finds Claude Code, VS Code and Copilot CLI, shows the exact change to each one's own
-settings, and writes it only on a yes; `connect <assistant>` and `disconnect` do one at a time,
-with the same keys as the Docker path's control script. `copilotscope doctor` checks every link
-from those settings to the dashboard, and names the one that is broken — most often a `claude`
-session started before its settings changed. None of it needs python, node or Docker.
-
 On Windows, download `copilotscope-win-x64.zip` (or `-win-arm64`), extract it and run
-`copilotscope.exe`. Keep the extracted folder together — the binary serves the dashboard
-from the `wwwroot` beside it. Each release lists a `SHA256SUMS` file to check the download
-against. The binaries are not signed yet: a download made with `curl` or `Invoke-WebRequest`
-runs as is, but one made in a browser meets macOS Gatekeeper (`xattr -d
-com.apple.quarantine copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
+`copilotscope.exe`. Keep the extracted folder together, because the binary serves the dashboard
+from the `wwwroot` beside it. Check the download against the release's `SHA256SUMS` file. The
+binaries are not signed yet:
+- a download made with `curl` or `Invoke-WebRequest` runs as is;
+- a download made in a browser meets macOS Gatekeeper (`xattr -d com.apple.quarantine
+  copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
+
+</details>
 
 Step-by-step from
 here: **[docs/tutorials/](docs/tutorials/)** (English and Polish). Reference for
@@ -316,25 +309,34 @@ it.
 | `src/CopilotScope.AgentForge` | Opt-in agent grounded on consented session transcripts (Azure AI Foundry + Microsoft Agent Framework) — experimental, see [docs/AGENTFORGE.md](docs/AGENTFORGE.md) | Azure.AI.*, Microsoft.Agents.AI |
 | `src/CopilotScope.JudgeAgent` | Opt-in session quality judge — G-Eval, SPUR, RAGAS, deep workflow-friction scoring, task-completion detection. Runs against Azure AI Foundry **or** a local OpenAI-compatible endpoint (Ollama/vLLM/LM Studio), see [docs/JUDGE_AGENT.md](docs/JUDGE_AGENT.md) | Azure.AI.*, Microsoft.Agents.AI |
 
-## Quick start — no clone, just pull
+## Quick start with Docker — for a team or a shared server
 
 Each GitHub release publishes five images to GHCR — collector, dashboard, tools,
 agentforge and judgeagent (see `.github/workflows/build-containers.yml`). Users
 don't need the repository at all.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh -s -- --docker
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1))) -Docker
 ```
 
-The installer checks Docker, drops the compose file and a `copilotscope` control
-script into `~/.copilotscope`, starts the stack, waits for the collector to
-answer, and offers to configure each assistant it finds. Options go after
-`| sh -s --`, e.g. `--yes` to skip the questions or `--capture` to include prompt
-text. `copilotscope uninstall` reverses all of it.
+With `--docker`, the installer:
+- checks Docker;
+- drops the compose file and a `copilotscope` control script into `~/.copilotscope`;
+- starts the stack and waits for the collector to answer;
+- offers to configure each assistant it finds.
+
+Options go after `| sh -s --`, e.g. `--yes` to skip the questions or `--capture` to include
+prompt text. `copilotscope uninstall` reverses all of it. Two commands are then the whole setup:
+
+```bash
+copilotscope up                    # dashboard on http://localhost:5200
+copilotscope connect claude-code   # or: vscode · copilot-cli · cowork · all
+copilotscope import                # the Claude Code history already on disk
+```
 
 Prefer to drive compose yourself? The same posture, without the control script:
 

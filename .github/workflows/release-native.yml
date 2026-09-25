@@ -37,6 +37,9 @@ on:
       - .github/workflows/release-native.yml
       - scripts/package-native.sh
       - scripts/smoke-native.sh
+      - scripts/test-install.sh
+      - install.sh
+      - install.ps1
       - src/CopilotScope.Local/**
   workflow_dispatch:
     inputs:
@@ -121,6 +124,11 @@ jobs:
 
       - name: Smoke test the extracted archive
         run: scripts/smoke-native.sh artifacts/native/copilotscope-${{ matrix.rid }}.*
+
+      # The installer a user runs, against this archive served as a release: install.sh on
+      # macOS and Linux, install.ps1 on Windows.
+      - name: Install it the way a user would
+        run: scripts/test-install.sh artifacts/native/copilotscope-${{ matrix.rid }}.*
 
       - name: Keep the archive
         uses: actions/upload-artifact@v7
