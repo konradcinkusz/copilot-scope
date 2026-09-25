@@ -1019,7 +1019,7 @@ public static class CollectorApp
             foreach (var persisted in req.Sessions)
             {
                 var session = persisted.ToSession();
-                store.Put(session);
+                store.Put(session, trim: repo is not null);
                 if (repo is not null)
                 {
                     var report = quality.Evaluate(session);
@@ -1086,7 +1086,7 @@ public static class CollectorApp
                 // Replace rather than merge: re-importing the same file must be idempotent, and the
                 // file is the whole truth about that session. Merging would double every token on the
                 // second run.
-                store.Put(session);
+                store.Put(session, trim: repo is not null);
                 if (repo is not null)
                 {
                     var report = quality.Evaluate(session);

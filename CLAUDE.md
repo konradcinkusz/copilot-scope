@@ -84,9 +84,9 @@ the collector.
 `src/CopilotScope.Collector/Domain/SelfObservation.cs`. Reliability is the error-free rate
 over `ChatCalls * 2 + ToolCalls`, so a counted read of a score would raise the score being
 read, and injected calls would move the tool-to-chat ratio that repair-loop detection is
-measured against. Any new self-observation surface has to be excluded at ingest, at both
-paths — `execute_tool` spans in `SessionStore` and `tool_result` log events in
-`ClaudeCode`.
+measured against. Any new self-observation surface has to be excluded at every ingest
+path — `execute_tool` spans in `SessionStore`, `tool_result` log events in `ClaudeCode`, and
+the `tool_result` blocks of an imported transcript in `ClaudeCodeTranscript`.
 
 ## Dependency budget
 

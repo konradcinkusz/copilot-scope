@@ -316,8 +316,9 @@ public sealed class LogImportTests
         var options = ImportCommand.Parse([]);
 
         Assert.NotNull(options);
-        Assert.Contains(Path.Combine(".claude", "projects"), options!.Root, StringComparison.Ordinal);
-        Assert.False(options.IncludeContent, "content import must be opt-in");
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR")))
+            Assert.Contains(options!.Roots, r => r.EndsWith(Path.Combine(".claude", "projects"), StringComparison.Ordinal));
+        Assert.False(options!.IncludeContent, "content import must be opt-in");
         Assert.Null(options.Error);
     }
 
