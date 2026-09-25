@@ -77,10 +77,28 @@ internal static class TempDirectory
         return path;
     }
 
+    /// <summary>
+    /// Retried for a moment. A collector built by <c>WebApplicationFactory</c> is disposed twice
+    /// at once — by the factory, and by the application's own <c>RunAsync</c> on its thread —
+    /// and the second disposal can still be writing the file store's index when the first has
+    /// returned to the test. That is the test harness racing itself, not the store losing
+    /// anything; a cleanup that failed the test over it would make every file-storage test flaky.
+    /// </summary>
     public static void Delete(string path)
     {
-        try { Directory.Delete(path, recursive: true); }
-        catch (DirectoryNotFoundException) { }
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (DirectoryNotFoundException) { return; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 20)
+            {
+                Thread.Sleep(50);
+            }
+        }
     }
 }
 
