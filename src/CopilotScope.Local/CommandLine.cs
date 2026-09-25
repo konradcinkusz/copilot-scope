@@ -16,6 +16,9 @@ internal sealed record LocalOptions
     public bool Memory { get; init; }
     public string? WebRoot { get; init; }
     public bool NoBrowser { get; init; }
+
+    /// <summary>Read no assistant's local history; telemetry only.</summary>
+    public bool NoScan { get; init; }
     public bool Verbose { get; init; }
 }
 
@@ -26,7 +29,7 @@ internal sealed record LocalOptions
 /// </summary>
 internal static class CommandLine
 {
-    public static readonly string[] Commands = ["start", "status", "stop", "open", "url", "version", "help"];
+    public static readonly string[] Commands = ["start", "status", "stop", "open", "url", "scan", "version", "help"];
 
     public const string Usage = """
         copilotscope — session quality scores for AI coding assistants, on this machine.
@@ -39,6 +42,7 @@ internal static class CommandLine
           stop       Stop a running CopilotScope.
           open       Open the dashboard in the browser.
           url        Print the dashboard's address.
+          scan       Read local chat history now, and say what was found.
           version    Print the version.
           help       Show this text.
 
@@ -49,7 +53,12 @@ internal static class CommandLine
           --memory                 Keep nothing on disk: history ends when the process does.
           --webroot <directory>    The dashboard's static files. Default: wwwroot beside the binary.
           --no-browser             Do not open the dashboard.
+          --no-scan                Do not read local chat history; collect telemetry only.
           --verbose                Log what ASP.NET Core logs, too.
+
+        While it runs, CopilotScope reads the chat history your assistants keep on this machine —
+        Claude Code's transcripts — and scores each session once it has been quiet for ten
+        minutes. It only ever reads those files, and keeps no prompt or response text.
 
         Everything binds to this machine only (127.0.0.1). Nothing leaves it: there is no
         account, no update check and no telemetry of CopilotScope's own. For a shared or team
@@ -107,6 +116,9 @@ internal static class CommandLine
                         break;
                     case "--no-browser":
                         options = options with { NoBrowser = true };
+                        break;
+                    case "--no-scan":
+                        options = options with { NoScan = true };
                         break;
                     case "--verbose":
                         options = options with { Verbose = true };

@@ -28,10 +28,18 @@ public static class ClaudeCodeFiles
         return [Path.Combine(home, ".claude", "projects"), Path.Combine(home, ".config", "claude", "projects")];
     }
 
-    /// <summary>Every transcript under the root. Claude Code nests one directory per project.</summary>
+    /// <summary>Every transcript under the root. Claude Code nests one directory per project.
+    /// A directory that cannot be read is passed over rather than ending the walk.</summary>
     public static IEnumerable<string> Discover(string root) =>
         Directory.Exists(root)
-            ? Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories)
+            ? Directory.EnumerateFiles(root, "*.jsonl", new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                // What SearchOption.AllDirectories does. The options type's own default skips
+                // hidden entries, and on Unix every name that starts with a dot is hidden.
+                AttributesToSkip = 0
+            })
             : [];
 
     /// <summary>
