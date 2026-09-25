@@ -12,7 +12,8 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
 
 ## [1.1.0] — 2026-09-25
 
-The first release since 1.0.7, and most of what CopilotScope now is. The headlines:
+The first release since 1.0.7 with an entry here, and most of what CopilotScope now is. It
+also covers `V1.0.8`, which was tagged without one. The headlines:
 
 - **One program per platform.** `copilotscope` installs with one line on Windows, macOS and
   Linux, x64 and arm64 alike. It needs no Docker, .NET or database, keeps sessions as files,
@@ -813,6 +814,9 @@ The sections below are grouped by when the changes landed, newest first.
   `master`) and pointed at GitHub Discussions, which is not enabled.
 - Removed the stale "GHCR packages start private" note — both packages are public.
 
+## [1.0.8] — 2026-08-09
+Tagged `V1.0.8` without an entry here. Its changes (#18–#48) are listed under 1.1.0.
+
 ## [1.0.7] — 2026-07-20
 - GitHub Pages deployment workflow (#15)
 - Maturity progression timeline on the sessions view (#16)
@@ -849,6 +853,7 @@ The sections below are grouped by when the changes landed, newest first.
 
 [Unreleased]: https://github.com/konradcinkusz/copilot-scope/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.7...v1.1.0
+[1.0.8]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.7...V1.0.8
 [1.0.7]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.4...v1.0.5
