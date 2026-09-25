@@ -7,6 +7,14 @@ works council.
 Read this one before running anything. The moment a second person's telemetry
 reaches the same collector, the system changes category.
 
+It is also a different install. The native `copilotscope` binary of tutorial 1 binds to its
+own machine only. A shared deployment is the Docker Compose stack with Postgres, which the
+same installer puts in place with `--docker`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh -s -- --docker
+```
+
 ## What changes, and why it is not optional
 
 A collector holding one developer's sessions is a personal tool. A collector

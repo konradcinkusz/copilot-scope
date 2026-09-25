@@ -19,7 +19,7 @@ worse than no translation, because the reader trusts it.
 ## In order
 
 1. **[First run](01-first-run.md)** — from an empty machine to a scored session.
-   Docker is the only prerequisite.
+   Nothing to install first.
 2. **[Connect your assistant](02-connect-your-assistant.md)** — real telemetry
    from Claude Code, VS Code, Copilot CLI or Cowork.
 3. **[Reading a session](03-reading-a-session.md)** — what the numbers mean and
@@ -33,7 +33,8 @@ worse than no translation, because the reader trusts it.
 copilotscope doctor
 ```
 
-It checks Docker, the containers, the collector, whether the deployment is
-exposed without a key, what each assistant's settings file actually says,
-whether an exported variable is overriding that file, and how many transcripts
-are sitting on disk unimported.
+It checks that CopilotScope is running and its dashboard files are in place, what
+each assistant's settings file actually says and where it points, whether an
+exported variable is overriding that file, and the history on disk. On the Docker
+stack, the control script's `doctor` checks Docker, the containers, and whether the
+deployment is exposed without a key.

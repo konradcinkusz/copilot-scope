@@ -1,7 +1,7 @@
 # 2. Podłącz swojego asystenta
 
-**Sytuacja:** stos działa i pokazuje dane demo. **Wynik:** Twoje własne sesje,
-oceniane w trakcie pracy.
+**Sytuacja:** CopilotScope działa. **Wynik:** Twoje własne sesje, oceniane w trakcie pracy, z
+opóźnieniami i decyzjami o zmianach, których transkrypt na dysku nie zapisuje.
 
 Jedna komenda na asystenta. Każda zapisuje plik ustawień, który ten asystent
 faktycznie czyta, więc konfiguracja przeżywa nowe terminale, nowe projekty i
@@ -14,6 +14,9 @@ copilotscope connect copilot-cli     # rc powłoki lub zakres User na Windows
 copilotscope connect cowork          # wypisuje, co wpisać w aplikacji
 copilotscope connect all             # Claude Code i VS Code razem
 ```
+
+`copilotscope setup` robi to samo dla każdego asystenta, którego znajdzie na maszynie, pokazując
+każdą zmianę i pytając, zanim ją wprowadzi.
 
 Dwie flagi działają wszędzie:
 

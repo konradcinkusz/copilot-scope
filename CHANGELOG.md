@@ -10,6 +10,14 @@ release asset.
 ## [Unreleased]
 
 ### Changed
+- **The documentation starts from the native binary — the last step of
+  [ADR-004](docs/architecture/ADR-004-native-distribution.md).** The first-run tutorial, in English
+  and Polish, now goes from an empty machine to scored history with nothing installed first. It
+  covers install, start, the Claude Code history read by itself, `setup` and `doctor`.
+  - The connect and team tutorials say where each path starts. `docs/TUTORIAL.md` §0 and §0.5
+    lead with the binary and its automatic scan, and both manual editions follow.
+  - The Docker stack stays documented in full, for teams and shared servers, behind `--docker`.
+  - `copilotscope` says "Claude Code sends telemetry here", not "send", when one assistant does.
 - **The installers install the native binary — step six of
   [ADR-004](docs/architecture/ADR-004-native-distribution.md).** `install.sh` and
   `install.ps1` no longer need Docker for one developer on one machine:

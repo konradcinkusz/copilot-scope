@@ -19,7 +19,7 @@ się rozjeżdża, jest gorsze niż brak tłumaczenia, bo czytelnik mu ufa.
 ## Po kolei
 
 1. **[Pierwsze uruchomienie](01-first-run.pl.md)** — od pustej maszyny do
-   ocenionej sesji. Jedynym wymaganiem jest Docker.
+   ocenionej sesji. Niczego nie trzeba instalować wcześniej.
 2. **[Podłącz swojego asystenta](02-connect-your-assistant.pl.md)** — prawdziwa
    telemetria z Claude Code, VS Code, Copilot CLI albo Cowork.
 3. **[Jak czytać sesję](03-reading-a-session.pl.md)** — co znaczą liczby i na
@@ -33,6 +33,8 @@ się rozjeżdża, jest gorsze niż brak tłumaczenia, bo czytelnik mu ufa.
 copilotscope doctor
 ```
 
-Sprawdza Dockera, kontenery, kolektor, czy wdrożenie jest wystawione bez klucza,
-co faktycznie mówi plik ustawień każdego asystenta, czy wyeksportowana zmienna
-nie nadpisuje tego pliku i ile transkryptów leży na dysku niezaimportowanych.
+Sprawdza, czy CopilotScope działa i czy pliki dashboardu są na miejscu, co
+faktycznie mówi plik ustawień każdego asystenta i dokąd wskazuje, czy
+wyeksportowana zmienna nie nadpisuje tego pliku, oraz historię na dysku. Na stosie
+Docker `doctor` ze skryptu sterującego sprawdza Dockera, kontenery i to, czy
+wdrożenie jest wystawione bez klucza.

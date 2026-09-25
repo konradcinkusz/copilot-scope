@@ -202,7 +202,12 @@ namespace CopilotScope.Local
 
                 var connected = found.Where(s => s.Connection == Connection.Connected).Select(s => Assistants.ShortName(s.Name)).ToList();
                 var waiting = found.Where(s => s.Connection != Connection.Connected).Select(s => Assistants.ShortName(s.Name)).ToList();
-                var sending = connected.Count > 0 ? $"{string.Join(", ", connected)} send telemetry here" : "";
+                var sending = connected.Count switch
+                {
+                    0 => "",
+                    1 => $"{connected[0]} sends telemetry here",
+                    _ => $"{string.Join(", ", connected)} send telemetry here"
+                };
                 if (waiting.Count == 0) return sending;
                 return (sending.Length > 0 ? sending + "; " : "") +
                        $"{string.Join(", ", waiting)} could too: `copilotscope setup` (it asks first)";

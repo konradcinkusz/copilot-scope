@@ -22,20 +22,31 @@ curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/
 irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
 ```
 
-The installer checks Docker, drops the compose file and a `copilotscope` control
-script into `~/.copilotscope`, starts the stack, waits for the collector to
-answer, and offers to configure each assistant it finds on the machine. Then:
+The installer puts one self-contained program, `copilotscope`, on the machine
+([ADR-004](architecture/ADR-004-native-distribution.md)):
+- the release archive for this platform, checked against the release's `SHA256SUMS`;
+- installed into `~/.copilotscope/app` and linked onto the PATH;
+- followed by an offer to point each assistant it finds at it, showing every change first.
+
+Then:
 
 ```bash
-copilotscope connect claude-code     # or: vscode · copilot-cli · cowork · all
+copilotscope                         # collector on :4318, dashboard on :5200; Ctrl+C stops both
+copilotscope setup                   # or: connect claude-code · vscode · copilot-cli · cowork · all
 copilotscope doctor                  # check the whole path end to end
 ```
 
-**There is nothing to declare.** No key to generate, no `.env` to fill in, no
-environment variable to export. The collector binds to `127.0.0.1` and Postgres
-publishes no port at all, so on one machine a credential would buy nothing and
-cost a step in every client. Section 8 covers what changes when the deployment
-stops being local.
+It keeps sessions in `~/.copilotscope/data`, and reads the Claude Code history already on disk
+by itself (§0.5).
+
+**There is nothing to declare.** No key to generate, no `.env` to fill in, no environment
+variable to export. Everything binds to `127.0.0.1`, so on one machine a credential would buy
+nothing and cost a step in every client.
+
+**For a team or a shared server**, `--docker` (`-Docker` in PowerShell) installs the Docker
+Compose stack instead: Postgres, the GHCR images, and a `copilotscope` control script with the
+same `connect`, `disconnect` and `doctor`, plus `up`, `import`, `demo` and `probe` (below).
+Section 8 covers what changes when the deployment stops being local.
 
 ### What `connect` actually writes
 
@@ -59,7 +70,7 @@ keep a `.copilotscope.bak` copy; a settings file with comments in it (VS Code
 allows them, strict JSON does not) is reported and left alone rather than
 rewritten by a regex.
 
-### Everything else the control script does
+### Everything else the Docker stack's control script does
 
 | Command | |
 |---|---|
@@ -83,7 +94,13 @@ none of them needs a .NET SDK or a clone of this repository.
 
 If you use **Claude Code**, you already have a complete record of every session on disk —
 `~/.claude/projects/<project>/<sessionId>.jsonl` — whether or not you have ever set an OTel
-environment variable. The importer reads those files and scores them.
+environment variable.
+
+**The native `copilotscope` binary reads it by itself.** It reads the history as it starts and
+then once a minute. Each session is imported once it has been quiet for ten minutes, so live
+telemetry, if any, wins the race. A file is read again only when it changes.
+`copilotscope scan` does it now and says what it found, and `--no-scan` turns it off. The rest of
+this section is the Docker stack's importer, which is the same parser run by hand.
 
 ```bash
 copilotscope import --dry-run     # see what it found
@@ -127,18 +144,28 @@ If you want the full signal set — latency, acceptance, feedback — set up OTe
 paths coexist: import your history today, turn on telemetry for tomorrow.
 
 > **Other assistants.** Only Claude Code transcripts are supported today, and only because the
-> format is pinned by a fixture in `tests/transcripts/`. Codex CLI writes comparable rollout
-> logs and is the obvious next format, but this project has already been burned once by
-> claiming support for an assistant it had no captured payloads for (issue #93) — so a parser
-> written from documentation alone is not something to ship. `tools/CopilotScope.FixtureCapture`
-> is the path to changing that.
+> format is pinned by a fixture in `tests/transcripts/`. VS Code Copilot Chat and Copilot CLI
+> keep history on disk too, and Codex CLI writes comparable rollout logs. But this project has
+> already been burned once by claiming support for an assistant it had no captured payloads for
+> (issue #93), so a parser written from documentation alone is not something to ship.
+> `copilotscope scan --report` shows what each assistant keeps on your machine without showing
+> its content, and `copilotscope capture-fixture vscode` (or `copilot-cli`) writes a redacted
+> sample to share. That is the path to a reader.
 
 ## 1. Start CopilotScope
 
 Any of these exposes the same two things: an OTLP ingest endpoint on **:4318**
 and the dashboard UI on **:5200**. None of them asks you for a credential.
 
-**A. Published images (what the installer uses)** — Docker only:
+**A. The native binary (what the installer puts in place)** — nothing else needed:
+
+```bash
+copilotscope                     # both on 127.0.0.1; sessions in ~/.copilotscope/data
+# from a clone: scripts/package-native.sh linux-x64, then run it from the archive —
+# a plain `dotnet run` of src/CopilotScope.Local has no dashboard files beside it
+```
+
+**B. Published images (the installer's `--docker`)** — Docker only:
 
 ```bash
 copilotscope up
@@ -146,13 +173,13 @@ copilotscope up
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
-**B. From a clone, building the images** — Docker only:
+**C. From a clone, building the images** — Docker only:
 
 ```bash
 docker compose up -d --build
 ```
 
-**C. .NET Aspire (for developing CopilotScope itself)** — .NET 10 SDK + Docker:
+**D. .NET Aspire (for developing CopilotScope itself)** — .NET 10 SDK + Docker:
 
 ```bash
 dotnet run --project src/CopilotScope.AppHost
