@@ -45,6 +45,34 @@ release asset.
   than being cut off mid-write.
 
 ### Fixed
+- **Imported Claude Code history is counted the way live telemetry is.** The transcript
+  importer had drifted from the rules the OTel path follows, in ways that only ever made a
+  session look busier, newer or better than it was — and the native binary is about to run it
+  continuously (ADR-004):
+  - **CopilotScope's own MCP reads were scored.** Both OTel ingest paths drop them
+    (`SelfObservation`); the importer counted them as tool calls, so reading a score raised it.
+    They stay on the timeline and leave the counters, as they do live.
+  - **One response written across several lines was counted once per line** whenever those
+    lines repeated its `usage`. Calls are now counted once per message id, at the most
+    complete figure any of its lines reported.
+  - **A subagent's transcript replaced the session that ran it.** It carries its parent's
+    session id, and files were imported one at a time, so whichever was sent last won. Files
+    are now grouped by the session id inside them and read together in timestamp order; a
+    subagent's calls count toward the turn that launched it, and its prompts — the parent
+    agent's instructions — no longer count as the developer's turns.
+  - **A line with no timestamp was stamped "now"**, dragging a months-old session into every
+    "last 7 days" view. It is placed at the previous line's time and never moves the session.
+  - **The turn list had no cap on import**, unlike live telemetry's 200; now it has the same
+    one, with every prompt still counted.
+  - **Only `~/.claude/projects` was read.** `~/.config/claude/projects` is read too, and
+    `$CLAUDE_CONFIG_DIR/projects` when that is set.
+- **Live telemetry now marks an imported session as live.** Only a merge used to, so the next
+  import of the same transcript replaced the session — and with it the latency and edit
+  decisions the telemetry had added. The import endpoint already refuses to overwrite a live
+  session; now it sees one.
+- **Importing a long history no longer keeps all of it in memory** when storage is durable:
+  the memory cap is applied as sessions arrive, since the store still serves every one of them.
+  In memory-only mode nothing is evicted, because there it would be deleted.
 - **A manual research-PDF run no longer becomes the "latest" release.** It published a PDF-only
   release that GitHub then treated as the newest — `manual-run-9` is — which would have made
   every `releases/latest/download/…` link for the native binaries 404. Manual runs are now

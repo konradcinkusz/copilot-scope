@@ -77,12 +77,30 @@ public sealed class SessionStore
         return added;
     }
 
-    /// <summary>Inserts or replaces a session unconditionally (used by admin seeding — unlike
-    /// <see cref="Rehydrate"/>'s add-if-absent semantics, a reseed must overwrite stale data).</summary>
-    public void Put(CopilotSession session)
+    /// <summary>Inserts or replaces a session unconditionally (used by admin seeding and log
+    /// import — unlike <see cref="Rehydrate"/>'s add-if-absent semantics, a reseed must overwrite
+    /// stale data).</summary>
+    /// <param name="trim">Apply the memory cap afterwards. Only when the session is also in
+    /// durable storage: there, eviction is not deletion and the read path still finds it, whereas
+    /// in memory-only mode it would throw an imported year of history away as it arrived. Without
+    /// it, importing a long history kept every session in memory, far past the cap.</param>
+    public void Put(CopilotSession session, bool trim = false)
     {
         _sessions[session.Id] = session;
         _evicted.TryRemove(session.Id, out _); // present in memory again — nothing to rehydrate
+        if (trim) TrimIfNeeded();
+    }
+
+    /// <summary>
+    /// Live telemetry reached a session that was imported from a transcript: from now on it is a
+    /// live session. The origin decides whether a later import may replace it, and an import
+    /// replaces, it does not merge — so while the session still said "imported", re-importing its
+    /// transcript overwrote the latency and edit decisions telemetry had added since. Must be
+    /// called inside <see cref="CopilotSession.Apply"/>.
+    /// </summary>
+    private static void MarkLive(CopilotSession s)
+    {
+        if (s.Origin == SessionOrigin.LogImport) s.Origin = SessionOrigin.Otel;
     }
 
     /// <summary>Removes every session whose id matches the predicate. Returns the count removed.</summary>
@@ -162,6 +180,7 @@ public sealed class SessionStore
 
         session.Apply(s =>
         {
+            MarkLive(s);
             if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(span.Resource, span.Name, span.Attributes);
             if (span.Attr(Sem.AgentName) is { } agent) s.AgentName = agent;
             if (span.Attr(Sem.GitRepository) is { } repo) s.Repository = repo;
@@ -279,6 +298,7 @@ public sealed class SessionStore
 
         session.Apply(s =>
         {
+            MarkLive(s);
             if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(point.Resource, point.MetricName, point.Attributes);
             if (ClaudeCode.TryApplyMetric(s, point)) return;
 
@@ -345,6 +365,7 @@ public sealed class SessionStore
         var name = ClaudeCode.Describe(log) ?? log.EventName ?? log.Body ?? "log";
         session.Apply(s =>
         {
+            MarkLive(s);
             if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(log.Resource, log.EventName, log.Attributes);
             if (ClaudeCode.TryApplyLog(s, log)) return;
 
