@@ -54,7 +54,13 @@ public static class Extensions
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
-        builder.ConfigureOpenTelemetry();
+        // Self-telemetry is on unless a host switches it off, and the native copilotscope host
+        // does (ADR-004). Its collector is the endpoint OTEL_EXPORTER_OTLP_ENDPOINT points at in
+        // a developer's shell, so exporting would send the collector's own spans into itself,
+        // forever; and two applications in one process would each install a tracer provider
+        // listening to both.
+        if (builder.Configuration.GetValue("CopilotScope:SelfTelemetry:Enabled", true))
+            builder.ConfigureOpenTelemetry();
         builder.AddDefaultHealthChecks();
 
         builder.Services.AddServiceDiscovery();

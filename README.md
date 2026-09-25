@@ -361,6 +361,12 @@ dotnet run --project src/CopilotScope.Dashboard      # UI on :5200, finds the co
 # under ~/.copilotscope/data (see "Where the data lives")
 CopilotScope__Storage__Mode=files dotnet run --project src/CopilotScope.Collector
 
+# …or both in one process, as the native `copilotscope` binary runs them (ADR-004).
+# Package it for your platform and run it from the archive:
+scripts/package-native.sh linux-x64        # or osx-arm64, win-x64, …
+tar -xzf artifacts/native/copilotscope-linux-x64.tar.gz -C /tmp
+/tmp/copilotscope-linux-x64/copilotscope   # Ctrl+C stops it; `copilotscope help` for the rest
+
 # Or the full orchestrated stack (Postgres + pgAdmin via Aspire, needs Docker):
 dotnet run --project src/CopilotScope.AppHost
 ```
