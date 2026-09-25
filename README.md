@@ -71,7 +71,14 @@ on your disk, with no import step, and keeps reading it as new sessions finish.
 curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/latest/download/copilotscope-linux-x64.tar.gz
 tar -xzf copilotscope-linux-x64.tar.gz      # osx-arm64, osx-x64, linux-arm64 the same way
 ./copilotscope-linux-x64/copilotscope        # opens the dashboard; Ctrl+C stops it
+./copilotscope-linux-x64/copilotscope setup  # offers to send each assistant's telemetry there
 ```
+
+`setup` finds Claude Code, VS Code and Copilot CLI, shows the exact change to each one's own
+settings, and writes it only on a yes; `connect <assistant>` and `disconnect` do one at a time,
+with the same keys as the Docker path's control script. `copilotscope doctor` checks every link
+from those settings to the dashboard, and names the one that is broken — most often a `claude`
+session started before its settings changed. None of it needs python, node or Docker.
 
 On Windows, download `copilotscope-win-x64.zip` (or `-win-arm64`), extract it and run
 `copilotscope.exe`. Keep the extracted folder together — the binary serves the dashboard

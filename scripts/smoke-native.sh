@@ -10,6 +10,7 @@
 #   - sessions land in files and survive a stop and a start;
 #   - a second start finds the first instead of failing on the port;
 #   - Claude Code history already on disk is imported without being asked, and `scan` reports it;
+#   - connect writes Claude Code's settings, doctor sees it, disconnect takes it out again;
 #   - OTEL_EXPORTER_OTLP_ENDPOINT pointing at the collector itself does not make it ingest its
 #     own telemetry.
 set -euo pipefail
@@ -110,6 +111,16 @@ echo "ok local history imported"
 scanned="$("$bin" scan 2>&1)" || fail "scan failed: $scanned"
 echo "$scanned" | grep -q "Claude Code: 1 session(s)" || fail "scan did not report the transcript: $scanned"
 echo "ok scan: $scanned"
+
+# connect, doctor and disconnect against Claude Code's settings in the throwaway config dir.
+"$bin" connect claude-code >/dev/null || fail "connect claude-code failed"
+grep -q "\"OTEL_EXPORTER_OTLP_ENDPOINT\": \"http://localhost:$otlp\"" "$CLAUDE_CONFIG_DIR/settings.json" \
+  || fail "connect did not point Claude Code at this instance: $(cat "$CLAUDE_CONFIG_DIR/settings.json")"
+"$bin" doctor >"$tmp/doctor.log" 2>&1 || true   # its verdict depends on the machine; it must see the connection
+grep -q "Claude Code sends telemetry here" "$tmp/doctor.log" || fail "doctor did not see the connection: $(cat "$tmp/doctor.log")"
+"$bin" disconnect claude-code >/dev/null || fail "disconnect failed"
+if grep -q OTEL_ "$CLAUDE_CONFIG_DIR/settings.json"; then fail "disconnect left telemetry keys behind"; fi
+echo "ok connect, doctor, disconnect"
 
 "$bin" status || fail "status says it is not running"
 second="$("$bin" start --otlp-port "$otlp" --dashboard-port "$dash" --no-browser 2>&1)" \

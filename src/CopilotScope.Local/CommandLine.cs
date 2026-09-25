@@ -19,6 +19,24 @@ internal sealed record LocalOptions
 
     /// <summary>Read no assistant's local history; telemetry only.</summary>
     public bool NoScan { get; init; }
+
+    /// <summary>connect and disconnect: which assistant, by its canonical name.</summary>
+    public string? Target { get; init; }
+
+    /// <summary>connect and setup: also export prompt, response and tool text.</summary>
+    public bool Capture { get; init; }
+
+    /// <summary>connect and setup: Claude Code's beta spans, the only source of time-to-first-token.</summary>
+    public bool Traces { get; init; }
+
+    /// <summary>connect and setup: show the change, make none.</summary>
+    public bool Print { get; init; }
+
+    /// <summary>connect, setup and doctor: telemetry goes here instead of this machine's instance.</summary>
+    public string? Endpoint { get; init; }
+
+    /// <summary>setup: connect everything found without asking.</summary>
+    public bool Yes { get; init; }
     public bool Verbose { get; init; }
 }
 
@@ -29,7 +47,8 @@ internal sealed record LocalOptions
 /// </summary>
 internal static class CommandLine
 {
-    public static readonly string[] Commands = ["start", "status", "stop", "open", "url", "scan", "version", "help"];
+    public static readonly string[] Commands =
+        ["start", "status", "stop", "open", "url", "scan", "connect", "disconnect", "setup", "doctor", "version", "help"];
 
     public const string Usage = """
         copilotscope — session quality scores for AI coding assistants, on this machine.
@@ -43,6 +62,10 @@ internal static class CommandLine
           open       Open the dashboard in the browser.
           url        Print the dashboard's address.
           scan       Read local chat history now, and say what was found.
+          setup      Find the assistants on this machine and offer to connect each one.
+          connect    Send an assistant's telemetry here: claude-code, vscode, copilot-cli, cowork, all.
+          disconnect Take out exactly what connect wrote: one assistant, or all (the default).
+          doctor     Check every link from each assistant's settings to the dashboard.
           version    Print the version.
           help       Show this text.
 
@@ -55,6 +78,13 @@ internal static class CommandLine
           --no-browser             Do not open the dashboard.
           --no-scan                Do not read local chat history; collect telemetry only.
           --verbose                Log what ASP.NET Core logs, too.
+
+        Options for connect and setup:
+          --capture                Also export prompt, response and tool text. Sensitive; off by default.
+          --traces                 Claude Code: beta spans, the only source of time-to-first-token.
+          --endpoint <url>         Send telemetry there instead of to this machine's CopilotScope.
+          --print                  Show what would change, and change nothing.
+          --yes                    setup: connect everything it finds without asking.
 
         While it runs, CopilotScope reads the chat history your assistants keep on this machine —
         Claude Code's transcripts — and scores each session once it has been quiet for ten
@@ -123,10 +153,32 @@ internal static class CommandLine
                     case "--verbose":
                         options = options with { Verbose = true };
                         break;
+                    case "--capture" or "--capture-content":
+                        options = options with { Capture = true };
+                        break;
+                    case "--traces":
+                        options = options with { Traces = true };
+                        break;
+                    case "--print" or "--dry-run":
+                        options = options with { Print = true };
+                        break;
+                    case "--yes" or "-y":
+                        options = options with { Yes = true };
+                        break;
+                    case "--endpoint":
+                        options = options with { Endpoint = Endpoint(Value(ref i)) };
+                        break;
                     default:
                         if (arg.StartsWith('-')) return (null, $"Unknown option '{arg}'. Run 'copilotscope help'.");
-                        if (!Commands.Contains(arg)) return (null, $"Unknown command '{arg}'. Run 'copilotscope help'.");
+                        if (command is "connect" or "disconnect" && options.Target is null)
+                        {
+                            if (Connecting.Connector.Normalize(arg) is not { } target)
+                                return (null, $"Unknown assistant '{arg}': claude-code, vscode, copilot-cli, cowork or all.");
+                            options = options with { Target = target };
+                            break;
+                        }
                         if (command is not null) return (null, $"Unexpected argument '{arg}'. Run 'copilotscope help'.");
+                        if (!Commands.Contains(arg)) return (null, $"Unknown command '{arg}'. Run 'copilotscope help'.");
                         command = arg;
                         break;
                 }
@@ -141,10 +193,21 @@ internal static class CommandLine
             return (null, "--memory and --data contradict each other: one keeps nothing, the other says where to keep it.");
         if (options.OtlpPort == options.DashboardPort)
             return (null, "The telemetry port and the dashboard port must differ.");
+        if (!help && command == "connect" && options.Target is null)
+            return (null, "connect needs an assistant: claude-code, vscode, copilot-cli, cowork or all.");
+        if ((options.Capture || options.Traces || options.Print) && command is not ("connect" or "setup") && !help)
+            return (null, "--capture, --traces and --print apply to connect and setup.");
+        if (options.Yes && command != "setup" && !help)
+            return (null, "--yes applies to setup.");
 
         // --help and --version answer whatever else is on the line, as every CLI's do.
         return (options with { Command = help ? "help" : version ? "version" : command ?? "start" }, null);
     }
+
+    private static string Endpoint(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? value.TrimEnd('/')
+            : throw new FormatException($"--endpoint must be an http:// or https:// address, not '{value}'.");
 
     private static int Port(string name, string value) =>
         int.TryParse(value, out var port) && port is > 0 and < 65536
