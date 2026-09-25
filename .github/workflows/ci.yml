@@ -76,6 +76,35 @@ jobs:
           dotnet test tests/CopilotScope.Tests --configuration Release
           --filter "FullyQualifiedName~SessionRepositoryContractTests"
 
+  # The native `copilotscope` binary (ADR-004), packaged exactly as a release packages it and
+  # smoke-tested from the extracted archive — not from the publish folder, where a missing
+  # file can hide. `dotnet build` covers none of it: the single-file publish, the dashboard's
+  # static files beside it, the self-telemetry switch, a restart keeping its history. The
+  # archive is kept for a week, so a pull request's binary can be downloaded and tried.
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Package linux-x64
+        run: scripts/package-native.sh linux-x64 0.0.0-ci.${{ github.run_number }}
+
+      - name: Smoke test the extracted archive
+        run: scripts/smoke-native.sh artifacts/native/copilotscope-linux-x64.tar.gz
+
+      - name: Keep the archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: copilotscope-linux-x64
+          path: artifacts/native/copilotscope-linux-x64.tar.gz
+          retention-days: 7
+
   # Mirrors the pre-publish gate in build-containers.yml, without the push. Kept as
   # its own job so a Dockerfile problem is reported separately from a test failure.
   containers:
@@ -190,7 +219,8 @@ jobs:
         run: |
           set -euo pipefail
           for file in install.sh scripts/tools-entrypoint.sh scripts/setup.sh \
-                      scripts/Enable-ClaudeCodeOtel.sh; do
+                      scripts/Enable-ClaudeCodeOtel.sh scripts/package-native.sh \
+                      scripts/smoke-native.sh; do
             sh -n "$file" 2>/dev/null || bash -n "$file"
             echo "ok $file"
           done
@@ -206,7 +236,8 @@ jobs:
           # SC1090/SC1091 only: sourced paths resolve at runtime, not here.
           shellcheck -S warning -e SC1090,SC1091 \
             install.sh scripts/copilotscope scripts/tools-entrypoint.sh \
-            scripts/setup.sh scripts/Enable-ClaudeCodeOtel.sh
+            scripts/setup.sh scripts/Enable-ClaudeCodeOtel.sh \
+            scripts/package-native.sh scripts/smoke-native.sh
 
       - name: PowerShell syntax
         shell: pwsh

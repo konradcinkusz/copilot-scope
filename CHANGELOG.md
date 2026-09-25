@@ -9,6 +9,32 @@ release asset.
 
 ## [Unreleased]
 
+### Added
+- **`copilotscope`, the native binary — step three of
+  [ADR-004](docs/architecture/ADR-004-native-distribution.md).** One self-contained executable
+  that runs the collector and the dashboard in one process on this machine: no Docker, no
+  Postgres, no .NET install. `copilotscope` starts both — telemetry on `localhost:4318`, the
+  dashboard on `localhost:5200` — keeps sessions in `~/.copilotscope/data` (the file store), and
+  opens the browser; `status`, `stop`, `open`, `url` and `version` do what they say. It binds to
+  loopback only, answers only to loopback host names (DNS rebinding cannot reach the
+  transcripts), loads no hosting-startup assemblies from the environment, and never exports its
+  own telemetry — the collector a developer's shell points `OTEL_EXPORTER_OTLP_ENDPOINT` at would
+  otherwise ingest itself, forever. A second `copilotscope` finds the first and opens it instead
+  of failing on the port; a Docker stack already on `:4318` is named rather than fought with; the
+  dashboard moves to the next free port if `5200` is taken, the telemetry port never does. Stop
+  and start are orderly — the dashboard first, then the collector with its final flush — and
+  `copilotscope stop` proves it is talking to its own instance with a per-run token, not a
+  process id.
+  - `scripts/package-native.sh <rid>` builds the release archive — the single-file binary, the
+    dashboard's `wwwroot` from the dashboard's own publish, the licence, and nothing else — and
+    `scripts/smoke-native.sh` tests it the way a user meets it. The new `native` CI job runs
+    both on every pull request and keeps the linux-x64 archive for a week.
+  - ServiceDefaults' self-telemetry is now switchable (`CopilotScope:SelfTelemetry:Enabled`,
+    on by default, so every other deployment is unchanged).
+
+  Not yet in this step: a release workflow that publishes the archives, the installers, and
+  scanning of existing chat history — each follows as its own change.
+
 ### Fixed
 - **A shutdown that arrives twice no longer loses the session being written.** The shutdown
   flush added with file storage ran once per call, and a host can be stopped twice at once:

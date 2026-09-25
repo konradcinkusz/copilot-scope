@@ -16,11 +16,13 @@ npm run check:diagrams             # diagrams agree with their standalone source
 node scripts/check-doc-parity.mjs origin/master   # bilingual documents stayed paired
 ```
 
-CI runs all four on every pull request, plus four jobs nothing else covers: every
+CI runs all four on every pull request, plus five jobs nothing else covers: every
 container image is built and smoke-started, `scripts/copilotscope` is shellchecked at
 `-S warning` while every `.ps1` is parsed by `pwsh`, the published compose files are
-rendered with no environment at all, and the session-store contract suite runs against a
-real Postgres (`COPILOTSCOPE_TEST_PG`; without it the suite covers the file store only).
+rendered with no environment at all, the session-store contract suite runs against a
+real Postgres (`COPILOTSCOPE_TEST_PG`; without it the suite covers the file store only),
+and the native `copilotscope` binary is packaged (`scripts/package-native.sh`) and
+smoke-tested from the extracted archive (`scripts/smoke-native.sh`).
 Run at least `dotnet build` and `dotnet test` before pushing, and
 `shellcheck -S warning -e SC1090,SC1091 scripts/copilotscope` if you touched the control
 script.
@@ -47,6 +49,13 @@ against both — add the case there, not beside one store.
 different major than the target framework builds fine and then exits at startup with
 "framework not found". That shipped a dead release once (#55). The container job in CI
 exists because `dotnet build` does not cover it.
+
+**The native binary's dashboard files come from the dashboard's own publish.** Only that
+publish produces `_framework/blazor.web.js`; `src/CopilotScope.Local` is a plain SDK project
+that copies nothing, and `scripts/package-native.sh` puts the dashboard's `wwwroot` beside
+the binary. A dashboard without that script renders once and then never responds while every
+health check stays green — it shipped once in a container image (see `Dockerfile.dashboard`),
+which is why the native smoke test fetches the script from the extracted archive.
 
 **Scoring is a pure function over a session snapshot.** `QualityEngine` and
 `SegmentAnalyzer` take a session and return a report — no I/O, no mutation, no clock
@@ -87,6 +96,7 @@ Deliberately near zero, and worth defending: it is what lets the whole product b
 |---|---|
 | `CopilotScope.Collector` | Npgsql only — OTLP protobuf is decoded in-repo |
 | `CopilotScope.Dashboard` | nothing; Blazor Server with zero JS dependencies |
+| `CopilotScope.Local` | nothing beyond project references to the Collector and the Dashboard; its command line is parsed by hand |
 | `tools/*` | nothing beyond a project reference to the Collector |
 | `CopilotScope.AgentForge`, `CopilotScope.JudgeAgent` | Azure.AI.*, Microsoft.Agents.AI — opt-in services, behind a Compose profile |
 
@@ -103,6 +113,7 @@ src/CopilotScope.Collector/      OTLP ingest, session aggregation, quality engin
   Api/                           DTOs, query service, Prometheus exporter
   Persistence/                   session stores: Postgres, or one JSON file per session
 src/CopilotScope.Dashboard/      Blazor Server UI
+src/CopilotScope.Local/          the native `copilotscope` binary: both apps in one process (ADR-004)
 src/CopilotScope.AppHost/        Aspire orchestration
 src/CopilotScope.{AgentForge,JudgeAgent}/   opt-in agent services
 tools/CopilotScope.Seeder/       demo data into a running collector

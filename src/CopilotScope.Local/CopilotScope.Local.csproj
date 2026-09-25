@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The native `copilotscope` binary (ADR-004): the collector and the dashboard in one
+       process, for one developer on one machine. Plain Microsoft.NET.Sdk rather than .Web, so
+       no static-web-asset pipeline runs here: the only wwwroot this program serves is the one
+       packaging copies from the dashboard's own publish (scripts/package-native.sh). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>CopilotScope.Local</RootNamespace>
+    <AssemblyName>copilotscope</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Publishing for a runtime identifier makes the binary a user downloads: self-contained,
+       one file, no .NET on the machine. No trimming and no native AOT: Blazor Server and the
+       minimal APIs both depend on reflection. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <!-- The collector and the dashboard are executables of their own, framework-dependent, and
+         the SDK refuses a self-contained executable that references one (NETSDK1150), because
+         their launchers could not run from here. None is ever launched: this process loads their
+         assemblies and builds them as applications (CollectorApp, DashboardApp). -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Nothing else, by design (CLAUDE.md, dependency budget). The command line is parsed by
+         hand for the same reason. -->
+    <ProjectReference Include="..\CopilotScope.Collector\CopilotScope.Collector.csproj" />
+    <ProjectReference Include="..\CopilotScope.Dashboard\CopilotScope.Dashboard.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CopilotScope.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- What the Web SDK would have imported implicitly. -->
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <!-- Both referenced applications carry an appsettings.json and a wwwroot of their own, which
+       land at the same relative paths in this publish: NETSDK1152, and a half-populated
+       wwwroot without the dashboard's _framework/ — the exact failure that once shipped a
+       dashboard that renders and then never responds. Neither is wanted here. Each
+       application compiles its appsettings.json in (ServiceDefaults' AddEmbeddedDefaults),
+       and packaging copies the dashboard's complete wwwroot from its own publish. -->
+  <!-- The SDK also copies each referenced executable's launcher, runtimeconfig and deps file
+       beside this one, so it could be started on its own. It never is (see
+       ValidateExecutableReferencesMatchSelfContained), so those go too, with the referenced
+       projects' pdbs: the release archive holds the binary, its wwwroot, and nothing else. -->
+  <Target Name="DropReferencedAppContentFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="!$([System.String]::Copy('%(FullPath)').StartsWith('$(MSBuildProjectDirectory)')) AND ($([System.String]::Copy('%(RelativePath)').StartsWith('appsettings')) OR $([System.String]::Copy('%(RelativePath)').StartsWith('wwwroot')))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="'%(RelativePath)' == 'CopilotScope.Collector' OR '%(RelativePath)' == 'CopilotScope.Dashboard' OR '%(RelativePath)' == 'CopilotScope.Collector.exe' OR '%(RelativePath)' == 'CopilotScope.Dashboard.exe'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="'%(Filename)%(Extension)' == 'CopilotScope.Collector.runtimeconfig.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Dashboard.runtimeconfig.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Collector.deps.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Dashboard.deps.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
+</Project>
