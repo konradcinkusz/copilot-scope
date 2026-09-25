@@ -32,10 +32,23 @@ release asset.
   - ServiceDefaults' self-telemetry is now switchable (`CopilotScope:SelfTelemetry:Enabled`,
     on by default, so every other deployment is unchanged).
 
-  Not yet in this step: a release workflow that publishes the archives, the installers, and
-  scanning of existing chat history — each follows as its own change.
+  Not yet in this step: the installers, and scanning of existing chat history — each follows
+  as its own change.
+- **Native binaries on every release** (`.github/workflows/release-native.yml`). A
+  `v<major>.<minor>.<patch>` tag builds `copilotscope` for linux-x64, linux-arm64, osx-arm64,
+  osx-x64, win-x64 and win-arm64, each packaged and smoke-tested on its own kind of runner, and
+  attaches the six archives and a `SHA256SUMS` file to that tag's release, marking it latest.
+  Archive names carry no version, so `releases/latest/download/copilotscope-<platform>.…` always
+  resolves to the newest. A pull request touching the native binary runs the same matrix and
+  attaches nothing, so a Windows, macOS or ARM break shows up before a tag does. `copilotscope`
+  also stops in order when its terminal closes (SIGHUP; on Windows, the console window), rather
+  than being cut off mid-write.
 
 ### Fixed
+- **A manual research-PDF run no longer becomes the "latest" release.** It published a PDF-only
+  release that GitHub then treated as the newest — `manual-run-9` is — which would have made
+  every `releases/latest/download/…` link for the native binaries 404. Manual runs are now
+  marked as pre-releases and never latest.
 - **A shutdown that arrives twice no longer loses the session being written.** The shutdown
   flush added with file storage ran once per call, and a host can be stopped twice at once:
   `WebApplicationFactory` stops it while the application's own `RunAsync` sees the stop, stops

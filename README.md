@@ -59,7 +59,27 @@ telemetry setup at all:
 copilotscope import
 ```
 
-No clone, no .NET, no login — the images are public on GHCR. Step-by-step from
+No clone, no .NET, no login — the images are public on GHCR.
+
+**Or skip Docker entirely** ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
+Releases from the next tag on carry a self-contained `copilotscope` for Windows, macOS and
+Linux, x64 and arm64: the collector and the dashboard in one process, sessions kept in
+`~/.copilotscope/data`, nothing else to install.
+
+```bash
+curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/latest/download/copilotscope-linux-x64.tar.gz
+tar -xzf copilotscope-linux-x64.tar.gz      # osx-arm64, osx-x64, linux-arm64 the same way
+./copilotscope-linux-x64/copilotscope        # opens the dashboard; Ctrl+C stops it
+```
+
+On Windows, download `copilotscope-win-x64.zip` (or `-win-arm64`), extract it and run
+`copilotscope.exe`. Keep the extracted folder together — the binary serves the dashboard
+from the `wwwroot` beside it. Each release lists a `SHA256SUMS` file to check the download
+against. The binaries are not signed yet: a download made with `curl` or `Invoke-WebRequest`
+runs as is, but one made in a browser meets macOS Gatekeeper (`xattr -d
+com.apple.quarantine copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
+
+Step-by-step from
 here: **[docs/tutorials/](docs/tutorials/)** (English and Polish). Reference for
 every assistant: **[docs/TUTORIAL.md](docs/TUTORIAL.md)**. The whole system in
 one document: **[the manual](docs/papers/)**, built to PDF in both languages.
