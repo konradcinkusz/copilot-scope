@@ -74,6 +74,10 @@
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
           Condition="'%(Filename)%(Extension)' == 'CopilotScope.Collector.runtimeconfig.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Dashboard.runtimeconfig.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Collector.deps.json' OR '%(Filename)%(Extension)' == 'CopilotScope.Dashboard.deps.json'" />
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+      <!-- The Windows runtime pack's IIS in-process shim. This binary is its own web server
+           and is never hosted by IIS. -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="'%(Filename)%(Extension)' == 'aspnetcorev2_inprocess.dll'" />
     </ItemGroup>
   </Target>
 
