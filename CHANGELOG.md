@@ -3,11 +3,50 @@
 Notable changes per release. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases publish five images to GHCR — `ghcr.io/konradcinkusz/copilotscope-collector`,
-`-dashboard`, `-tools`, `-agentforge` and `-judgeagent` — plus the research paper PDF as a
-release asset.
+Each release attaches the native `copilotscope` archives for six platforms (Windows, macOS
+and Linux, each on x64 and arm64) with a `SHA256SUMS` file, and the research paper PDF. It
+also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collector`,
+`-dashboard`, `-tools`, `-agentforge` and `-judgeagent`.
 
 ## [Unreleased]
+
+## [1.1.0] — 2026-09-25
+
+The first release since 1.0.7, and most of what CopilotScope now is. The headlines:
+
+- **One program per platform.** `copilotscope` installs with one line on Windows, macOS and
+  Linux, x64 and arm64 alike. It needs no Docker, .NET or database, keeps sessions as files,
+  and reads Claude Code's history by itself. The Docker Compose stack stays, for teams and
+  shared servers ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
+- **Team controls that are enforced, not documented:** privacy mode with a k-anonymity floor,
+  scoped keys, dashboard sign-in, and team-lead views by window and cohort.
+- **More to score and to watch:** per-mode scoring profiles, Prometheus metrics, alerts and a
+  weekly digest, a read-only MCP server, and pull-request outcomes shown beside the score.
+- **Container images are checked before they ship.** CI builds and smoke-starts every image,
+  and fetches the dashboard's `blazor.web.js`. A published dashboard image had rendered a UI
+  nobody could click.
+
+### Upgrading from 1.0.x
+
+- **`GET /api/sessions` returns a page object**, `{sessions, total, limit, offset, durable}`,
+  not a bare array. A client that reads the array needs a one-line change.
+- **With an ingest key set, all of `/api` needs a key**, reads and `DELETE` included. Only
+  `/api/health` stays open. A single legacy key still grants every scope.
+- **Some scores move.** Autonomous-agent sessions are scored with their own weights, in which
+  latency and acceptance no longer count; interactive sessions keep the published weights.
+  Edits Claude Code accepted on its own, under `acceptEdits` or `bypassPermissions`, no
+  longer count as a developer's acceptance. A session scored under 1.0.x can therefore score
+  differently now.
+- **Frustration analysis is now workflow-friction signals, and is off** unless
+  `CopilotScope:WorkflowFriction:Enabled` is set. The seeder's `frustrated` persona is now
+  `repair-loop`, which changes seeded session ids.
+- **Cursor is no longer listed as supported.** It is labelled unverified; four assistants are
+  supported.
+- **Building from source needs the .NET 10 SDK.** Every project targets `net10.0`.
+- **`install.sh` and `install.ps1` install the native binary.** Pass `--docker` (`-Docker`)
+  for the Compose stack, as before.
+
+The sections below are grouped by when the changes landed, newest first.
 
 ### Changed
 - **The documentation starts from the native binary — the last step of
@@ -772,9 +811,6 @@ release asset.
   root while the README (and the Pages site) referenced `docs/architecture.svg`.
 - `CONTRIBUTING.md` referred to a `main` branch that does not exist (default is
   `master`) and pointed at GitHub Discussions, which is not enabled.
-- Documented that the **9.0 SDK** is required: on the 8.0 SDK the AppHost fails with
-  `NETSDK1147: the following workloads must be installed: aspire`. Everything still
-  targets `net8.0`.
 - Removed the stale "GHCR packages start private" note — both packages are public.
 
 ## [1.0.7] — 2026-07-20
@@ -811,12 +847,13 @@ release asset.
   aggregation, the composite quality engine, TFRA turn analysis, Postgres
   persistence, and the Blazor dashboard, orchestrated with .NET Aspire.
 
-[Unreleased]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.7...HEAD
-[1.0.7]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.6...v1.0.7
-[1.0.6]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.5...v1.0.6
-[1.0.5]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.4...v1.0.5
-[1.0.4]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.3...v1.0.4
-[1.0.3]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.2...v1.0.3
-[1.0.2]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/konradcinkusz/copilotscope/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/konradcinkusz/copilotscope/releases/tag/v1.0.0
+[Unreleased]: https://github.com/konradcinkusz/copilot-scope/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.7...v1.1.0
+[1.0.7]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.5...v1.0.6
+[1.0.5]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/konradcinkusz/copilot-scope/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/konradcinkusz/copilot-scope/releases/tag/v1.0.0
