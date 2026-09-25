@@ -24,15 +24,44 @@ dash="${SMOKE_DASHBOARD_PORT:-35200}"
 
 tmp="$(mktemp -d)"
 pid=""
+reported=""
+
+# A command that fails outside a check ends the script through set -e, and says nothing: a curl
+# that cannot connect exits 7 without a word, and the process's own output — the one place the
+# cause is written — is deleted with $tmp. So remember where it happened, and on any unreported
+# failure say so and show the process output before cleaning up.
+failed_at=""
+set -E
+trap 'failed_at="line $LINENO: $BASH_COMMAND"' ERR
+
+process_output() {
+  if [ -n "$pid" ]; then
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "── copilotscope (pid $pid) is still running"
+    elif wait "$pid" 2>/dev/null; then
+      echo "── copilotscope (pid $pid) exited with status 0"
+    else
+      echo "── copilotscope (pid $pid) exited with status $?"
+    fi
+  fi
+  if [ -f "$tmp/run.log" ]; then echo "── process output"; cat "$tmp/run.log"; fi
+}
+
 cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ -z "$reported" ]; then
+    echo "::error title=Native smoke test failed::exit status $status${failed_at:+ at $failed_at}"
+    process_output
+  fi
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
 
 fail() {
+  reported=1
   echo "::error title=Native smoke test failed::$*"
-  if [ -f "$tmp/run.log" ]; then echo "── process output"; cat "$tmp/run.log"; fi
+  process_output
   exit 1
 }
 
@@ -72,12 +101,16 @@ touch -t 202601010000 "$CLAUDE_CONFIG_DIR/projects/-home-dev-acme-api/$transcrip
 start() {
   "$bin" start --otlp-port "$otlp" --dashboard-port "$dash" --no-browser >>"$tmp/run.log" 2>&1 &
   pid=$!
+  # Started the way a person sees it: `status` answers once both applications are listening and
+  # the instance has recorded itself, which is when the banner prints. The collector alone
+  # answers earlier, while the dashboard is still starting, and would still be stopped again if
+  # the dashboard failed.
   for _ in $(seq 1 60); do
-    if curl -fsS "http://127.0.0.1:$otlp/api/health" >/dev/null 2>&1; then return 0; fi
+    if "$bin" status >/dev/null 2>&1; then return 0; fi
     kill -0 "$pid" 2>/dev/null || fail "copilotscope exited during start-up"
     sleep 1
   done
-  fail "the collector did not answer on :$otlp within 60 s"
+  fail "copilotscope did not report itself running within 60 s"
 }
 
 expect_status() { # path port expected-code
@@ -91,7 +124,7 @@ span='{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value"
 
 # ── first run
 start
-health="$(curl -fsS "http://127.0.0.1:$otlp/api/health")"
+health="$(curl -fsS "http://127.0.0.1:$otlp/api/health")" || fail "the collector stopped answering right after start-up"
 echo "$health" | grep -q '"storage":"files"' || fail "expected file storage, health says: $health"
 expect_status / "$dash" 200
 expect_status /_framework/blazor.web.js "$dash" 200

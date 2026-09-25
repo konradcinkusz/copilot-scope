@@ -175,6 +175,15 @@ release asset.
   making. `PersistenceWriter.StopAsync` is now idempotent — every caller waits on the one final
   flush — and `FileStorageCollectorTests.SessionsOutliveTheCollectorProcess`, which had become
   flaky on `master`, is deterministic again.
+- **`copilotscope` no longer watches its own data directory.** Both applications reloaded their
+  settings on change. That put a recursive file watcher on `~/.copilotscope`, sessions and all,
+  once for each application. On Linux each watcher holds one of the user's inotify instances.
+  There are 128 by default, shared with every editor and .NET tool the user runs, and at that
+  limit `copilotscope` could not start. Settings are now read once, at start.
+- **A failed native smoke test says why.** Where a command failed outside a check, the script
+  used to exit without a word: an unguarded `curl` exited 7 and printed nothing. Any failure
+  now names the line and prints the process's own output. The test also waits for the instance
+  to report itself running, rather than for the collector alone.
 
 ### Changed
 - **The collector and the dashboard are built, not just run.** Everything their `Program.cs`

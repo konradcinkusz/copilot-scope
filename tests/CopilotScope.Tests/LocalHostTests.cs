@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using CopilotScope.Local;
 using CopilotScope.Local.Scanning;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace CopilotScope.Tests;
@@ -298,6 +299,20 @@ public sealed class LocalHostTests : IAsyncLifetime
         stop.Headers.Add("X-CopilotScope-Token", Token);
         Assert.Equal(HttpStatusCode.Accepted, (await http.SendAsync(stop)).StatusCode);
         await host.Stopped.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task NeitherApplicationWatchesTheHomeDirectory()
+    {
+        // The content root is ~/.copilotscope, where the sessions are written. A settings file
+        // reloaded on change would put a recursive watcher on it for each application.
+        await using var host = await LocalHost.StartAsync(Options(null));
+        foreach (var configuration in new[] { host.Collector.Configuration, host.Dashboard.Configuration })
+        {
+            var files = ((IConfigurationRoot)configuration).Providers.OfType<FileConfigurationProvider>().ToList();
+            Assert.NotEmpty(files);
+            Assert.All(files, file => Assert.False(file.Source.ReloadOnChange, $"{file} reloads on change"));
+        }
     }
 
     [Fact]
