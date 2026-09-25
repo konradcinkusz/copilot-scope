@@ -4,11 +4,17 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using CopilotScope.Collector.Import;
 using CopilotScope.Local;
+using CopilotScope.Local.Connecting;
 using CopilotScope.Local.Scanning;
 
 // The native `copilotscope` binary (ADR-004): one command that runs the collector and the
 // dashboard on this machine, with history kept in ~/.copilotscope/data.
+
+// A Windows console defaults to a legacy code page, which has no ✓, → or —.
+if (OperatingSystem.IsWindows() && !Console.IsOutputRedirected) Console.OutputEncoding = System.Text.Encoding.UTF8;
+
 var (options, error) = CommandLine.Parse(args);
 if (options is null)
 {
@@ -27,6 +33,10 @@ try
         "open" => await Commands.OpenAsync(),
         "url" => await Commands.UrlAsync(),
         "scan" => await Commands.ScanAsync(),
+        "connect" => await Commands.ConnectAsync(options),
+        "disconnect" => Commands.Disconnect(options),
+        "setup" => await Commands.SetupAsync(options),
+        "doctor" => await Commands.DoctorAsync(options),
         _ => await Commands.StartAsync(options)
     };
 }
@@ -145,6 +155,7 @@ namespace CopilotScope.Local
                           Telemetry   {instance.CollectorUrl}   (point your assistant's OTLP/HTTP exporter here)
                           Sessions    {(dataDirectory is null ? "in memory only — gone when this stops" : dataDirectory)}
                           History     {DescribeScanning(sources)}
+                          Assistants  {DescribeAssistants(instance.CollectorUrl)}
 
                         Press Ctrl+C to stop.
                         """);
@@ -171,6 +182,78 @@ namespace CopilotScope.Local
                     ? $"{source.DisplayName}, read from {string.Join(" and ", found)} (never changed)"
                     : $"none from {source.DisplayName} yet — read from {string.Join(" or ", source.Roots)} once it appears"));
         }
+
+        /// <summary>Which assistants already send telemetry here, and which could: said at every
+        /// start, so nobody wonders why a session they just had is not on the dashboard.</summary>
+        private static string DescribeAssistants(string endpoint)
+        {
+            try
+            {
+                var machine = Machine.Current();
+                var found = new[]
+                {
+                    Assistants.ClaudeCodeStatus(machine, endpoint),
+                    Assistants.VsCodeStatus(machine, endpoint),
+                    Assistants.CopilotCliStatus(machine, endpoint, UserEnvironment())
+                }.Where(s => s.Connection != Connection.NotInstalled).ToList();
+                if (found.Count == 0) return "none found; the history on disk is read either way";
+
+                var connected = found.Where(s => s.Connection == Connection.Connected).Select(s => Assistants.ShortName(s.Name)).ToList();
+                var waiting = found.Where(s => s.Connection != Connection.Connected).Select(s => Assistants.ShortName(s.Name)).ToList();
+                var sending = connected.Count > 0 ? $"{string.Join(", ", connected)} send telemetry here" : "";
+                if (waiting.Count == 0) return sending;
+                return (sending.Length > 0 ? sending + "; " : "") +
+                       $"{string.Join(", ", waiting)} could too: `copilotscope setup` (it asks first)";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return "could not be checked: `copilotscope doctor` says why";
+            }
+        }
+
+        public static async Task<int> ConnectAsync(LocalOptions options) =>
+            new Connector(Machine.Current(), new Say(Console.Out), UserEnvironment())
+                .Connect(options.Target!, await ConnectSettingsAsync(options), options.Print);
+
+        public static int Disconnect(LocalOptions options) =>
+            new Connector(Machine.Current(), new Say(Console.Out), UserEnvironment()).Disconnect(options.Target ?? "all");
+
+        public static async Task<int> SetupAsync(LocalOptions options)
+        {
+            // A yes is typed or given up front; with no terminal to ask in, nothing is written.
+            Func<string, bool>? ask = Console.IsInputRedirected ? null : question =>
+            {
+                Console.Write(question);
+                var answer = Console.ReadLine()?.Trim();
+                return answer is not null && (answer.Length == 0 || answer.StartsWith('y') || answer.StartsWith('Y'));
+            };
+            return new Connector(Machine.Current(), new Say(Console.Out), UserEnvironment())
+                .Setup(await ConnectSettingsAsync(options), options.Yes, ask, options.Print);
+        }
+
+        public static async Task<int> DoctorAsync(LocalOptions options)
+        {
+            var running = await RunningAsync(LocalPaths.Resolve());
+            using var http = running is null ? null : Client(running, TimeSpan.FromSeconds(10));
+            var endpoint = options.Endpoint ?? running?.CollectorUrl ?? $"http://localhost:{options.OtlpPort}";
+            return await new Doctor(Machine.Current(), new Say(Console.Out), UserEnvironment())
+                .RunAsync(running, http, endpoint, options.OtlpPort, WebRoot.Resolve(options.WebRoot),
+                    ClaudeCodeFiles.DefaultRoots());
+        }
+
+        /// <summary>Where connecting points assistants: an explicit endpoint, the one the control
+        /// script honours, the running instance, or where this machine's instance would listen.</summary>
+        private static async Task<ConnectSettings> ConnectSettingsAsync(LocalOptions options)
+        {
+            var endpoint = options.Endpoint
+                ?? (Environment.GetEnvironmentVariable("COPILOTSCOPE_ENDPOINT") is { Length: > 0 } configured
+                    ? configured.TrimEnd('/')
+                    : (await RunningAsync(LocalPaths.Resolve()))?.CollectorUrl ?? $"http://localhost:{options.OtlpPort}");
+            var key = Environment.GetEnvironmentVariable("COPILOTSCOPE_API_KEY") is { Length: > 0 } k ? k : null;
+            return new ConnectSettings(endpoint, key, options.Capture, options.Traces);
+        }
+
+        private static IUserEnvironment? UserEnvironment() => OperatingSystem.IsWindows() ? new WindowsUserEnvironment() : null;
 
         public static async Task<int> ScanAsync()
         {

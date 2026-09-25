@@ -42,8 +42,50 @@ public sealed class LocalCommandLineTests
     [InlineData("open")]
     [InlineData("url")]
     [InlineData("scan")]
+    [InlineData("setup")]
+    [InlineData("doctor")]
+    [InlineData("disconnect")]
     public void EveryCommandIsRecognised(string command) =>
         Assert.Equal(command, CommandLine.Parse([command]).Options!.Command);
+
+    [Theory]
+    [InlineData(new[] { "connect", "claude" }, "claude-code")]
+    [InlineData(new[] { "connect", "code", "--print" }, "vscode")]
+    [InlineData(new[] { "connect", "--capture", "cli" }, "copilot-cli")]
+    [InlineData(new[] { "disconnect", "all" }, "all")]
+    public void AnAssistantIsNamedByAnyOfItsSpellings(string[] args, string target)
+    {
+        var (options, error) = CommandLine.Parse(args);
+        Assert.Null(error);
+        Assert.Equal(target, options!.Target);
+    }
+
+    [Fact]
+    public void ConnectAndSetupTakeTheirOptions()
+    {
+        var (connect, _) = CommandLine.Parse(["connect", "claude-code", "--capture", "--traces", "--print",
+            "--endpoint", "http://collector.internal:4318/"]);
+        Assert.True(connect!.Capture && connect.Traces && connect.Print);
+        Assert.Equal("http://collector.internal:4318", connect.Endpoint);
+
+        Assert.True(CommandLine.Parse(["setup", "--yes"]).Options!.Yes);
+        Assert.Null(CommandLine.Parse(["disconnect"]).Options!.Target); // all, when run
+        Assert.Equal("doctor", CommandLine.Parse(["doctor"]).Options!.Command);
+    }
+
+    [Theory]
+    [InlineData(new[] { "connect" }, "needs an assistant")]
+    [InlineData(new[] { "connect", "cursor" }, "Unknown assistant")]
+    [InlineData(new[] { "connect", "vscode", "claude-code" }, "Unexpected argument")]
+    [InlineData(new[] { "connect", "vscode", "--endpoint", "localhost:4318" }, "http:// or https://")]
+    [InlineData(new[] { "start", "--capture" }, "apply to connect and setup")]
+    [InlineData(new[] { "connect", "vscode", "--yes" }, "applies to setup")]
+    public void ConnectMistakesAreRefusedWithAReason(string[] args, string reason)
+    {
+        var (options, error) = CommandLine.Parse(args);
+        Assert.Null(options);
+        Assert.Contains(reason, error);
+    }
 
     [Fact]
     public void LocalHistoryIsReadUnlessTurnedOff()

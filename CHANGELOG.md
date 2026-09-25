@@ -10,6 +10,30 @@ release asset.
 ## [Unreleased]
 
 ### Added
+- **`copilotscope setup`, `connect`, `disconnect` and `doctor` in the native binary — step five
+  of [ADR-004](docs/architecture/ADR-004-native-distribution.md).** Pointing an assistant at
+  CopilotScope no longer needs the control script, or the python or node it merged settings
+  with. `setup` finds Claude Code, VS Code and Copilot CLI, shows the exact change to each one's
+  own settings, and writes it only on a yes — typed, or given up front with `--yes`; with no
+  terminal to ask in, it writes nothing. `connect <assistant>` and `disconnect` do one at a time
+  (`--capture`, `--traces`, `--endpoint` and `--print` as before), and every start names the
+  assistants that send telemetry and the ones that could.
+  - **The same keys as the control script, held to it by a test** that reads
+    `scripts/copilotscope` and `scripts/copilotscope.ps1`: disconnecting with either removes
+    what the other wrote, and Copilot CLI's shell-profile block keeps the script's markers.
+  - **Settings files are handled as someone else's.** Strict JSON only — a file with comments
+    or trailing commas is left alone and the change printed, since rewriting it would drop
+    them; a backup beside it before it changes; written atomically, through a symbolic link
+    rather than over it (dotfile managers link these files into place), with its line endings
+    and permissions kept; and not touched at all when nothing would change. Disconnecting takes
+    out exactly the keys connecting put in, and a profile block with the blank line before it.
+  - **Copilot CLI**: a block in the shell's profile on macOS and Linux — in fish syntax for
+    fish — and user environment variables on Windows.
+  - **`doctor`** checks the running instance, its storage and the dashboard's files; each
+    assistant's settings, and whether they point here; an `OTEL_EXPORTER_OTLP_ENDPOINT` in the
+    shell that overrides them; and the history on disk. It also catches the mistake everyone
+    makes once: Claude Code connected, used since, and none of its telemetry arrived — a session
+    that read its settings before they changed.
 - **`copilotscope` reads your Claude Code history by itself — step four of
   [ADR-004](docs/architecture/ADR-004-native-distribution.md).** Transcripts Claude Code already
   keeps on disk (`~/.claude/projects`, `~/.config/claude/projects`, or `$CLAUDE_CONFIG_DIR`) are
