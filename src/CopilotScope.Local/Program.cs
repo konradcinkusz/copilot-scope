@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using CopilotScope.Collector.Import;
 using CopilotScope.Local;
+using CopilotScope.Local.Capturing;
 using CopilotScope.Local.Connecting;
 using CopilotScope.Local.Scanning;
 
@@ -32,7 +33,8 @@ try
         "stop" => await Commands.StopAsync(),
         "open" => await Commands.OpenAsync(),
         "url" => await Commands.UrlAsync(),
-        "scan" => await Commands.ScanAsync(),
+        "scan" => options.Report ? new HistoryReport(Machine.Current(), new Say(Console.Out)).Run() : await Commands.ScanAsync(),
+        "capture-fixture" => Commands.CaptureFixture(options),
         "connect" => await Commands.ConnectAsync(options),
         "disconnect" => Commands.Disconnect(options),
         "setup" => await Commands.SetupAsync(options),
@@ -209,6 +211,13 @@ namespace CopilotScope.Local
             {
                 return "could not be checked: `copilotscope doctor` says why";
             }
+        }
+
+        public static int CaptureFixture(LocalOptions options)
+        {
+            var machine = Machine.Current();
+            return new FixtureCapture(machine, new Say(Console.Out), Identity.Current(machine.Home))
+                .Run(options.Target!, Path.GetFullPath(options.Out), options.Limit, DateTimeOffset.UtcNow);
         }
 
         public static async Task<int> ConnectAsync(LocalOptions options) =>

@@ -39,17 +39,23 @@ internal sealed record Machine(
     /// </summary>
     public string? VsCodeSettings()
     {
-        var root = Os switch
-        {
-            Os.Windows => AppData ?? Path.Combine(Home, "AppData", "Roaming"),
-            Os.MacOS => Path.Combine(Home, "Library", "Application Support"),
-            _ => XdgConfigHome ?? Path.Combine(Home, ".config")
-        };
-        var candidates = new[] { "Code", "Code - Insiders", "VSCodium" }
-            .Select(editor => Path.Combine(root, editor, "User", "settings.json")).ToList();
+        var candidates = VsCodeEditors.Select(editor => Path.Combine(VsCodeRoot, editor, "User", "settings.json")).ToList();
         return candidates.FirstOrDefault(File.Exists)
                ?? candidates.FirstOrDefault(candidate => Directory.Exists(Path.GetDirectoryName(candidate)));
     }
+
+    /// <summary>The User folder of every VS Code installed: its settings, and its chat history.</summary>
+    public IReadOnlyList<string> VsCodeUserDirectories() =>
+        VsCodeEditors.Select(editor => Path.Combine(VsCodeRoot, editor, "User")).Where(Directory.Exists).ToList();
+
+    private static readonly string[] VsCodeEditors = ["Code", "Code - Insiders", "VSCodium"];
+
+    private string VsCodeRoot => Os switch
+    {
+        Os.Windows => AppData ?? Path.Combine(Home, "AppData", "Roaming"),
+        Os.MacOS => Path.Combine(Home, "Library", "Application Support"),
+        _ => XdgConfigHome ?? Path.Combine(Home, ".config")
+    };
 
     /// <summary>The start-up file of the user's shell, where Copilot CLI's variables go on macOS
     /// and Linux (it reads nothing else), and whether it speaks fish rather than POSIX sh.</summary>

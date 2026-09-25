@@ -37,6 +37,15 @@ internal sealed record LocalOptions
 
     /// <summary>setup: connect everything found without asking.</summary>
     public bool Yes { get; init; }
+
+    /// <summary>scan: describe the history on disk instead of importing it.</summary>
+    public bool Report { get; init; }
+
+    /// <summary>capture-fixture: where the redacted files go.</summary>
+    public string Out { get; init; } = "copilotscope-capture";
+
+    /// <summary>capture-fixture: how many of the newest sessions or files to take.</summary>
+    public int Limit { get; init; } = 3;
     public bool Verbose { get; init; }
 }
 
@@ -48,7 +57,8 @@ internal sealed record LocalOptions
 internal static class CommandLine
 {
     public static readonly string[] Commands =
-        ["start", "status", "stop", "open", "url", "scan", "connect", "disconnect", "setup", "doctor", "version", "help"];
+        ["start", "status", "stop", "open", "url", "scan", "connect", "disconnect", "setup", "doctor", "capture-fixture",
+            "version", "help"];
 
     public const string Usage = """
         copilotscope — session quality scores for AI coding assistants, on this machine.
@@ -61,11 +71,15 @@ internal static class CommandLine
           stop       Stop a running CopilotScope.
           open       Open the dashboard in the browser.
           url        Print the dashboard's address.
-          scan       Read local chat history now, and say what was found.
+          scan       Read local chat history now, and say what was found. --report: describe
+                     every assistant's history on disk instead, by its shape, not its content.
           setup      Find the assistants on this machine and offer to connect each one.
           connect    Send an assistant's telemetry here: claude-code, vscode, copilot-cli, cowork, all.
           disconnect Take out exactly what connect wrote: one assistant, or all (the default).
           doctor     Check every link from each assistant's settings to the dashboard.
+          capture-fixture <claude-code|vscode|copilot-cli>
+                     Write a redacted sample of that assistant's history to ./copilotscope-capture
+                     (--out <dir>, --limit <n>), for a reader to be built from. It sends nothing.
           version    Print the version.
           help       Show this text.
 
@@ -168,8 +182,29 @@ internal static class CommandLine
                     case "--endpoint":
                         options = options with { Endpoint = Endpoint(Value(ref i)) };
                         break;
+                    case "--report":
+                        options = options with { Report = true };
+                        break;
+                    case "--out":
+                        options = options with { Out = Value(ref i) };
+                        break;
+                    case "--limit":
+                        options = options with
+                        {
+                            Limit = int.TryParse(Value(ref i), out var limit) && limit is > 0 and <= 100
+                                ? limit
+                                : throw new FormatException("--limit must be a number from 1 to 100.")
+                        };
+                        break;
                     default:
                         if (arg.StartsWith('-')) return (null, $"Unknown option '{arg}'. Run 'copilotscope help'.");
+                        if (command == "capture-fixture" && options.Target is null)
+                        {
+                            if (Capturing.LocalHistory.Normalize(arg) is not { } source)
+                                return (null, $"Unknown assistant '{arg}': claude-code, vscode or copilot-cli.");
+                            options = options with { Target = source };
+                            break;
+                        }
                         if (command is "connect" or "disconnect" && options.Target is null)
                         {
                             if (Connecting.Connector.Normalize(arg) is not { } target)
@@ -199,6 +234,10 @@ internal static class CommandLine
             return (null, "--capture, --traces and --print apply to connect and setup.");
         if (options.Yes && command != "setup" && !help)
             return (null, "--yes applies to setup.");
+        if (options.Report && command != "scan" && !help)
+            return (null, "--report applies to scan.");
+        if (!help && command == "capture-fixture" && options.Target is null)
+            return (null, "capture-fixture needs an assistant: claude-code, vscode or copilot-cli.");
 
         // --help and --version answer whatever else is on the line, as every CLI's do.
         return (options with { Command = help ? "help" : version ? "version" : command ?? "start" }, null);

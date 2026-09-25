@@ -80,11 +80,23 @@ public sealed class LocalCommandLineTests
     [InlineData(new[] { "connect", "vscode", "--endpoint", "localhost:4318" }, "http:// or https://")]
     [InlineData(new[] { "start", "--capture" }, "apply to connect and setup")]
     [InlineData(new[] { "connect", "vscode", "--yes" }, "applies to setup")]
+    [InlineData(new[] { "capture-fixture" }, "needs an assistant")]
+    [InlineData(new[] { "capture-fixture", "cowork" }, "Unknown assistant")]
+    [InlineData(new[] { "capture-fixture", "vscode", "--limit", "0" }, "from 1 to 100")]
+    [InlineData(new[] { "status", "--report" }, "applies to scan")]
     public void ConnectMistakesAreRefusedWithAReason(string[] args, string reason)
     {
         var (options, error) = CommandLine.Parse(args);
         Assert.Null(options);
         Assert.Contains(reason, error);
+    }
+
+    [Fact]
+    public void CaptureAndReportTakeTheirOptions()
+    {
+        var (capture, _) = CommandLine.Parse(["capture-fixture", "code", "--out", "/tmp/x", "--limit", "5"]);
+        Assert.Equal(("vscode", "/tmp/x", 5), (capture!.Target, capture.Out, capture.Limit));
+        Assert.True(CommandLine.Parse(["scan", "--report"]).Options!.Report);
     }
 
     [Fact]

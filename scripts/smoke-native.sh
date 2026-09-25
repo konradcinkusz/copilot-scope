@@ -11,6 +11,7 @@
 #   - a second start finds the first instead of failing on the port;
 #   - Claude Code history already on disk is imported without being asked, and `scan` reports it;
 #   - connect writes Claude Code's settings, doctor sees it, disconnect takes it out again;
+#   - scan --report counts that history, and capture-fixture writes it redacted;
 #   - OTEL_EXPORTER_OTLP_ENDPOINT pointing at the collector itself does not make it ingest its
 #     own telemetry.
 set -euo pipefail
@@ -121,6 +122,14 @@ grep -q "Claude Code sends telemetry here" "$tmp/doctor.log" || fail "doctor did
 "$bin" disconnect claude-code >/dev/null || fail "disconnect failed"
 if grep -q OTEL_ "$CLAUDE_CONFIG_DIR/settings.json"; then fail "disconnect left telemetry keys behind"; fi
 echo "ok connect, doctor, disconnect"
+
+report="$("$bin" scan --report 2>&1)" || fail "scan --report failed: $report"
+echo "$report" | grep -q "1 file(s)" || fail "scan --report did not count the transcript: $report"
+"$bin" capture-fixture claude-code --out "$tmp/capture" >/dev/null || fail "capture-fixture failed"
+captured="$(find "$tmp/capture/claude-code" -name 'transcript-1.jsonl' | head -n 1)"
+[ -n "$captured" ] || fail "capture-fixture wrote no transcript"
+if grep -q "acme-api" "$captured"; then fail "the capture kept a path from the transcript"; fi
+echo "ok scan --report, capture-fixture"
 
 "$bin" status || fail "status says it is not running"
 second="$("$bin" start --otlp-port "$otlp" --dashboard-port "$dash" --no-browser 2>&1)" \
