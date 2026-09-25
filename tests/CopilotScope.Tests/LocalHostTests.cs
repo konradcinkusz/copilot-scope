@@ -5,7 +5,11 @@ using System.Text;
 using System.Text.Json;
 using CopilotScope.Local;
 using CopilotScope.Local.Scanning;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace CopilotScope.Tests;
@@ -312,6 +316,23 @@ public sealed class LocalHostTests : IAsyncLifetime
             var files = ((IConfigurationRoot)configuration).Providers.OfType<FileConfigurationProvider>().ToList();
             Assert.NotEmpty(files);
             Assert.All(files, file => Assert.False(file.Source.ReloadOnChange, $"{file} reloads on change"));
+        }
+    }
+
+    [Fact]
+    public async Task DataProtectionKeysAreKeptInMemory()
+    {
+        // Left to the default, they would be written to ~/.aspnet, outside ~/.copilotscope, and
+        // stay there after CopilotScope was removed.
+        await using var host = await LocalHost.StartAsync(Options(null));
+        foreach (var app in new[] { host.Collector, host.Dashboard })
+        {
+            var keys = app.Services.GetRequiredService<IOptions<KeyManagementOptions>>().Value;
+            var repository = Assert.IsType<InMemoryKeyRepository>(keys.XmlRepository);
+
+            var protector = app.Services.GetRequiredService<IDataProtectionProvider>().CreateProtector("test");
+            Assert.Equal("secret", protector.Unprotect(protector.Protect("secret")));
+            Assert.NotEmpty(repository.GetAllElements());
         }
     }
 

@@ -1,9 +1,13 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
 using CopilotScope.Collector;
 using CopilotScope.Dashboard;
 using CopilotScope.Local.Scanning;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 
@@ -250,6 +254,13 @@ internal sealed class LocalHost : IAsyncDisposable
         // the default lifetime each would react to the signal on its own, in no particular order.
         builder.Services.AddSingleton<IHostLifetime, NoSignalLifetime>();
 
+        // The keys that protect antiforgery tokens and Blazor circuits live in memory. By default
+        // ASP.NET Core writes them to ~/.aspnet/DataProtection-Keys, outside ~/.copilotscope, so
+        // deleting that folder left them behind. Nothing they protect outlives this process
+        // anyway: a circuit ends with it, and a page left open across a restart has to reload.
+        builder.Services.AddDataProtection();
+        builder.Services.Configure<KeyManagementOptions>(keys => keys.XmlRepository = new InMemoryKeyRepository());
+
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole(console =>
         {
@@ -260,6 +271,9 @@ internal sealed class LocalHost : IAsyncDisposable
         builder.Logging.AddFilter("Microsoft", quiet);
         builder.Logging.AddFilter("System", quiet);
         builder.Logging.AddFilter("Polly", quiet);
+        // With no key encryptor configured, data protection warns on every start that its keys may
+        // be stored unencrypted. Here they are only ever held in memory.
+        builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", verbose ? LogLevel.Information : LogLevel.Error);
         // The applications' own start-up banners, logged under the bare application name, describe
         // a deployment this is not (containers, the Aspire AppHost); the host prints its own. The
         // longer rule keeps every class inside each application at Information: the most specific
@@ -291,4 +305,20 @@ internal sealed class NoSignalLifetime : IHostLifetime
 {
     public Task WaitForStartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>Data-protection keys that live and die with the process.</summary>
+internal sealed class InMemoryKeyRepository : IXmlRepository
+{
+    private readonly List<XElement> _elements = [];
+
+    public IReadOnlyCollection<XElement> GetAllElements()
+    {
+        lock (_elements) return _elements.Select(element => new XElement(element)).ToList();
+    }
+
+    public void StoreElement(XElement element, string friendlyName)
+    {
+        lock (_elements) _elements.Add(new XElement(element));
+    }
 }
