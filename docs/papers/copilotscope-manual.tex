@@ -720,10 +720,10 @@ refuse the combination outright rather than warning about it.
 \section{Tutorial}
 % ============================================================================
 
-Everything below is runnable. The only prerequisite is Docker; a .NET SDK is
-needed exclusively for the contributor path in Section~9.9.
+Everything below is runnable. Nothing needs to be installed first; a .NET SDK
+is needed exclusively for the contributor path in Section~9.9.
 
-\subsection{Five minutes: from an empty machine to a scored session}
+\subsection{Two minutes: from an empty machine to a scored session}
 
 \subsubsection*{Step 1 --- install}
 
@@ -739,35 +739,40 @@ irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/\
 master/install.ps1 | iex
 \end{shell}
 
-The installer checks Docker, writes the compose file and a \code{copilotscope}
-control script into \code{~/.copilotscope}, starts the stack, waits for the
-collector to answer, and offers to configure each assistant it finds. Pass
-\code{--yes} after \code{| sh -s --} to accept every offer without being asked.
+The installer puts one self-contained program, \code{copilotscope}, on the
+machine (ADR-004). It downloads the release archive for this platform and checks
+it against the release's \code{SHA256SUMS}, refusing it on any mismatch. It then
+installs it into \code{~/.copilotscope/app}, links it onto the PATH, and offers
+to point each assistant it finds at it, showing every change before making it.
+Pass \code{--yes} after \code{| sh -s --} to accept every offer without being
+asked.
 
 Nothing else is required. There is no key to generate and no \code{.env} to
 fill in.
 
-\subsubsection*{Step 2 --- prove the pipeline works before blaming a client}
+\subsubsection*{Step 2 --- start it}
 
 \begin{shell}
-copilotscope probe
+copilotscope          # collector on :4318, dashboard on :5200; Ctrl+C stops both
 \end{shell}
 
-This sends one simulated session over real OTLP/HTTP protobuf and then checks
-that the collector can serve it back. If it passes, ingest, decoding, scoring
-and persistence all work, and anything still missing is client configuration.
-Doing this first saves an hour of debugging the wrong half of the system.
+Sessions are kept in \code{~/.copilotscope/data}, and the dashboard opens in the
+browser. The Claude Code history already on disk is read as the program starts,
+with no import step, and scored and badged \emph{imported}. A session still being
+written waits until it has been quiet for ten minutes, so live telemetry is never
+counted twice. \code{copilotscope doctor} checks every link from each
+assistant's settings to the dashboard.
 
-\subsubsection*{Step 3 --- look at something}
+\subsubsection*{Step 3 --- the Docker stack, for a team}
 
-\begin{shell}
-copilotscope demo          # fabricated sessions, badged demo
-copilotscope open          # http://localhost:5200
-\end{shell}
-
-Seeded sessions are clearly marked, so a screenshot of them is never mistaken
-for evidence about a real assistant. \code{copilotscope demo demo} loads the
-larger multi-day dataset instead of the quick one.
+For a shared deployment, \code{--docker} installs the Docker Compose stack
+instead: Postgres, the GHCR images and the \code{copilotscope} control script.
+There, \code{copilotscope probe} sends one simulated session over real
+OTLP/HTTP protobuf and checks that the collector serves it back. That proves
+ingest, decoding, scoring and persistence before any client is blamed.
+\code{copilotscope demo} loads fabricated sessions for a first look; they are
+clearly badged, so a screenshot of them is never mistaken for evidence about a
+real assistant.
 
 \subsection{Connecting each assistant}
 
@@ -946,10 +951,11 @@ docker compose --profile agents up -d --build
 copilotscope doctor
 \end{shell}
 
-It checks Docker and the containers, the collector's health document, whether
-the deployment is exposed without a key, what each assistant's settings file
-actually says, whether an exported \codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} is
-overriding that file, and how many transcripts are sitting on disk unimported.
+It checks the running instance and its dashboard files, what each assistant's
+settings file actually says and where it points, whether an exported
+\codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} is overriding that file, and the history
+on disk. On the Docker stack, the control script's \code{doctor} also checks
+Docker, the containers, and whether the deployment is exposed without a key.
 
 The classic causes, in the order they actually occur:
 
@@ -1054,7 +1060,10 @@ given in Section~7.4.
 \textbf{Path} & \textbf{What is there} \\
 \midrule
 \endhead
-\codepath{install.sh}, \code{install.ps1} & The one-command installer \\
+\codepath{install.sh}, \code{install.ps1} & The one-command installer: the
+native binary, or the Docker stack with \code{--docker} \\
+\codepath{src/CopilotScope.Local} & The native \code{copilotscope}: both apps in
+one process, the history scanner, connect, setup, doctor \\
 \codepath{scripts/copilotscope} & The control script: up, connect, import, demo,
 probe, doctor \\
 \codepath{docker-compose.ghcr.yml} & The canonical pull-and-run stack \\

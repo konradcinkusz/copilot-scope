@@ -1,9 +1,9 @@
 # 1. First run
 
-**Situation:** an empty machine with Docker on it. **Result:** a running stack
-and a scored session you can click through.
+**Situation:** an empty machine. **Result:** CopilotScope running, and your own sessions
+scored on screen.
 
-Time: about five minutes, most of it spent pulling images.
+Time: about two minutes. There is nothing to install first: no Docker, no .NET, no runtime.
 
 ## Install
 
@@ -17,73 +17,73 @@ Windows, in PowerShell:
 irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
 ```
 
-The installer checks Docker, writes the compose file and a `copilotscope`
-control script into `~/.copilotscope`, starts the stack, waits for the collector
-to answer, and offers to configure any assistant it finds.
+The installer does four things:
+- downloads one self-contained program, `copilotscope`, for your system;
+- checks it against the release's `SHA256SUMS`, refusing a download that does not match;
+- installs it into `~/.copilotscope/app` and puts it on your PATH;
+- offers to point the assistants it finds at it, showing each change before making it.
 
-**There is nothing to declare.** No key to generate, no environment variable to
-export, no JSON to hand-edit. Every port binds to `127.0.0.1` and Postgres
-publishes no port at all, so on one machine a credential would protect nothing
-while costing a configuration step in every client.
+Say no to all of them if you like: tutorial 2 does it one at a time.
 
-Prefer to drive Compose yourself? This does the same thing:
+**There is nothing to declare.** No key to generate, no environment variable to export, no
+JSON to hand-edit. Everything binds to `127.0.0.1`, so on one machine a credential would
+protect nothing.
 
-```bash
-curl -O https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/docker-compose.ghcr.yml
-docker compose -f docker-compose.ghcr.yml up -d
-```
-
-## Prove the pipeline before blaming a client
-
-Do this before configuring anything. It saves an hour of debugging the wrong
-half of the system.
+## Start it
 
 ```bash
-copilotscope probe
+copilotscope
 ```
 
-This sends one simulated session over real OTLP/HTTP protobuf, then checks that
-the collector serves it back. If it passes, ingest, decoding, scoring and
-persistence all work — so anything still missing afterwards is client
-configuration, not the stack.
+```text
+CopilotScope 1.1.0 is running.
+  Dashboard   http://localhost:5200
+  Telemetry   http://localhost:4318   (point your assistant's OTLP/HTTP exporter here)
+  Sessions    /home/you/.copilotscope/data
+  History     Claude Code, read from /home/you/.claude/projects (never changed)
+  Assistants  Claude Code sends telemetry here; VS Code could too: `copilotscope setup` (it asks first)
+```
 
-## Put something on the screen
+The dashboard opens in your browser. Ctrl+C stops everything; the sessions stay in
+`~/.copilotscope/data` for the next start.
+
+## Already use Claude Code? It is already there
+
+Claude Code records every session to disk whether or not telemetry is configured.
+CopilotScope reads that history as it starts, with no import step, and within a few seconds
+the dashboard lists your past sessions, scored.
+
+A session that is still being written waits until it has been quiet for ten minutes. That
+way live telemetry, if the assistant sends any, is not counted twice.
 
 ```bash
-copilotscope demo     # a dozen fabricated sessions
-copilotscope open     # http://localhost:5200
+copilotscope scan       # read it now, and say what was found
 ```
 
-Seeded sessions are badged `demo`, so a screenshot of them is never mistaken for
-evidence about a real assistant. `copilotscope demo demo` loads the larger
-multi-day dataset instead.
+Imported sessions are badged `imported` and carry lower confidence, honestly. A transcript
+records tokens, models, tools and real timings, but not time-to-first-token, edit decisions
+or thumbs feedback: those are OpenTelemetry events, not anything written to the file. Prompt
+text is never imported.
 
-This is what the page looks like once it has something to show — the session
-list on the left, and the one you picked scored on the right:
+This is what the page looks like once it has something to show — the session list on the
+left, and the one you picked scored on the right:
 
-![The Sessions page with the seeded demo dataset loaded](../img/dashboard-sessions.png)
+![The Sessions page](../img/dashboard-sessions.png)
 
-The score is the headline; `View: Basic` keeps it to that. Tutorial 3 takes the
-same page apart panel by panel.
+The score is the headline; `View: Basic` keeps it to that. Tutorial 3 takes the same page
+apart panel by panel.
 
-## Already use Claude Code? Skip ahead
-
-Claude Code records every session to disk whether or not telemetry is
-configured. Scoring that history needs no client setup at all:
+## Check the whole path
 
 ```bash
-copilotscope import --dry-run     # see what it found, send nothing
-copilotscope import
+copilotscope doctor
 ```
 
-Re-running is safe: sessions keep Claude Code's own identifier, so a second run
-replaces rather than duplicates. Prompt text stays out unless you pass
-`--include-content`.
-
-Imported sessions are badged `imported` and carry lower confidence, honestly:
-a transcript records tokens, models, tools and real timings, but not
-time-to-first-token, edit decisions or thumbs feedback, because those are
-OpenTelemetry events rather than anything written to the file.
+It checks:
+- that CopilotScope is running and its dashboard files are in place;
+- what each assistant's settings actually say, and where they point;
+- whether a variable exported in your shell overrides them;
+- how much history is on disk.
 
 ## What you have now
 
@@ -91,12 +91,14 @@ OpenTelemetry events rather than anything written to the file.
 |---|---|
 | Dashboard | <http://localhost:5200> |
 | OTLP ingest | <http://localhost:4318> |
-| Stop it | `copilotscope down` |
-| Remove it | `copilotscope uninstall` (add `--purge` to drop the database too) |
+| Sessions | `~/.copilotscope/data` — delete it to start over |
+| Stop it | Ctrl+C, or `copilotscope stop` from another terminal |
+| Remove it | `copilotscope disconnect`, then delete `~/.copilotscope` and take `copilotscope` off your PATH |
+
+For a team, a shared server, or Grafana alongside, the Docker Compose stack is still there:
+see [tutorial 4](04-team-deployment.md).
 
 ## Next
 
-[Connect a real assistant](02-connect-your-assistant.md), so the sessions are
-yours instead of fabricated.
-
-<!-- probe -->
+[Connect a real assistant](02-connect-your-assistant.md), so new sessions arrive as you
+work, with the latency and edit decisions a transcript cannot record.

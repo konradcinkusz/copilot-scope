@@ -741,10 +741,10 @@ komendy odmawiają takiego połączenia wprost, zamiast o nim ostrzegać.
 \section{Samouczek}
 % ============================================================================
 
-Wszystko poniżej da się uruchomić. Jedynym wymaganiem jest Docker; SDK .NET jest
-potrzebne wyłącznie na ścieżce dla kontrybutora w punkcie~9.9.
+Wszystko poniżej da się uruchomić. Niczego nie trzeba instalować wcześniej; SDK
+.NET jest potrzebne wyłącznie na ścieżce dla kontrybutora w punkcie~9.9.
 
-\subsection{Pięć minut: od pustej maszyny do ocenionej sesji}
+\subsection{Dwie minuty: od pustej maszyny do ocenionej sesji}
 
 \subsubsection*{Krok 1 --- instalacja}
 
@@ -760,37 +760,41 @@ irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/\
 master/install.ps1 | iex
 \end{shell}
 
-Instalator sprawdza Dockera, zapisuje plik compose oraz skrypt sterujący
-\code{copilotscope} do katalogu \code{~/.copilotscope}, uruchamia stos, czeka aż
-kolektor odpowie i proponuje skonfigurowanie każdego znalezionego asystenta.
-Dodaj \code{--yes} po \code{| sh -s --}, żeby przyjąć wszystkie propozycje bez
-pytań.
+Instalator umieszcza na maszynie jeden samodzielny program, \code{copilotscope}
+(ADR-004). Pobiera archiwum wydania dla tej platformy i sprawdza je z plikiem
+\code{SHA256SUMS} wydania, odrzucając je przy każdej niezgodności. Potem instaluje
+je w \code{~/.copilotscope/app}, dołącza do ścieżki PATH i proponuje skierowanie
+do niego każdego znalezionego asystenta, pokazując każdą zmianę, zanim ją
+wprowadzi. Dodaj \code{--yes} po \code{| sh -s --}, żeby przyjąć wszystkie
+propozycje bez pytań.
 
 Nic więcej nie jest wymagane. Nie ma klucza do wygenerowania ani pliku
 \code{.env} do wypełnienia.
 
-\subsubsection*{Krok 2 --- udowodnij, że potok działa, zanim obwinisz klienta}
+\subsubsection*{Krok 2 --- uruchomienie}
 
 \begin{shell}
-copilotscope probe
+copilotscope          # kolektor na :4318, dashboard na :5200; Ctrl+C zatrzymuje oba
 \end{shell}
 
-To wysyła jedną symulowaną sesję prawdziwym OTLP/HTTP protobuf, a potem
-sprawdza, czy kolektor potrafi ją oddać. Jeśli przejdzie, działają
-przyjmowanie, dekodowanie, ocena i trwałość, a wszystko, czego nadal brakuje,
-jest konfiguracją klienta. Zrobienie tego najpierw oszczędza godzinę
-debugowania niewłaściwej połowy systemu.
+Sesje są przechowywane w \code{~/.copilotscope/data}, a dashboard otwiera się w
+przeglądarce. Historia Claude Code, która już jest na dysku, jest czytana przy
+starcie programu, bez kroku importu, a następnie oceniana i oznaczana jako
+\emph{imported}. Sesja wciąż zapisywana czeka, aż będzie cicha przez dziesięć
+minut, żeby telemetria na żywo nigdy nie została policzona dwa razy.
+\code{copilotscope doctor} sprawdza każde ogniwo od ustawień każdego asystenta
+po dashboard.
 
-\subsubsection*{Krok 3 --- zobacz cokolwiek}
+\subsubsection*{Krok 3 --- stos Docker, dla zespołu}
 
-\begin{shell}
-copilotscope demo          # sesje fabrykowane, oznaczone jako demo
-copilotscope open          # http://localhost:5200
-\end{shell}
-
-Sesje zasiane są wyraźnie oznaczone, więc zrzut ekranu z nich nigdy nie zostanie
-wzięty za dowód na temat prawdziwego asystenta. \code{copilotscope demo demo}
-ładuje większy, wielodniowy zestaw zamiast szybkiego.
+Dla wdrożenia współdzielonego \code{--docker} instaluje zamiast tego stos Docker
+Compose: Postgresa, obrazy z GHCR i skrypt sterujący \code{copilotscope}. Tam
+\code{copilotscope probe} wysyła jedną symulowaną sesję prawdziwym OTLP/HTTP
+protobuf i sprawdza, czy kolektor potrafi ją oddać. To dowodzi, że działają
+przyjmowanie, dekodowanie, ocena i trwałość, zanim obwini się klienta.
+\code{copilotscope demo} ładuje sesje fabrykowane na pierwszy rzut oka; są
+wyraźnie oznaczone, więc zrzut ekranu z nich nigdy nie zostanie wzięty za dowód
+na temat prawdziwego asystenta.
 
 \subsection{Podłączanie każdego asystenta}
 
@@ -972,10 +976,11 @@ docker compose --profile agents up -d --build
 copilotscope doctor
 \end{shell}
 
-Sprawdza Dockera i kontenery, dokument zdrowia kolektora, czy wdrożenie jest
-wystawione bez klucza, co faktycznie mówi plik ustawień każdego asystenta, czy
-wyeksportowana zmienna \codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} nie nadpisuje tego
-pliku, oraz ile transkryptów leży na dysku niezaimportowanych.
+Sprawdza działającą instancję i pliki jej dashboardu, co faktycznie mówi plik
+ustawień każdego asystenta i dokąd wskazuje, czy wyeksportowana zmienna
+\codewrap{OTEL_EXPORTER_OTLP_ENDPOINT} nie nadpisuje tego pliku, oraz historię na
+dysku. Na stosie Docker \code{doctor} ze skryptu sterującego sprawdza też
+Dockera, kontenery i to, czy wdrożenie jest wystawione bez klucza.
 
 Klasyczne przyczyny, w kolejności rzeczywistego występowania:
 
@@ -1082,7 +1087,10 @@ podanego w punkcie~7.4.
 \textbf{Ścieżka} & \textbf{Co tam jest} \\
 \midrule
 \endhead
-\codepath{install.sh}, \codepath{install.ps1} & Instalator jednokomendowy \\
+\codepath{install.sh}, \codepath{install.ps1} & Instalator jednokomendowy:
+natywny program albo stos Docker z \code{--docker} \\
+\codepath{src/CopilotScope.Local} & Natywny \code{copilotscope}: obie aplikacje w
+jednym procesie, skaner historii, connect, setup, doctor \\
 \codepath{scripts/copilotscope} & Skrypt sterujący: up, connect, import, demo,
 probe, doctor \\
 \codepath{docker-compose.ghcr.yml} & Kanoniczny stos „pobierz i uruchom'' \\

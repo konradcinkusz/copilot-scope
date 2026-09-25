@@ -1,7 +1,7 @@
 # 2. Connect your assistant
 
-**Situation:** the stack runs and shows demo data. **Result:** your own sessions,
-scored as you work.
+**Situation:** CopilotScope runs. **Result:** your own sessions, scored as you work, with
+the latency and edit decisions a transcript on disk cannot record.
 
 One command per assistant. Each writes the settings file that assistant actually
 reads, so the configuration survives new terminals, new projects and reboots.
@@ -13,6 +13,9 @@ copilotscope connect copilot-cli     # shell rc, or Windows User scope
 copilotscope connect cowork          # prints what to type into the app
 copilotscope connect all             # Claude Code and VS Code together
 ```
+
+`copilotscope setup` does the same for every assistant it finds on the machine, showing each
+change and asking before it makes it.
 
 Two flags apply everywhere:
 

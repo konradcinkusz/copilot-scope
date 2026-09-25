@@ -7,6 +7,14 @@ bezpieczeństwa i przed radą pracowniczą.
 Przeczytaj to, zanim cokolwiek uruchomisz. W chwili, gdy telemetria drugiej
 osoby trafia do tego samego kolektora, system zmienia kategorię.
 
+To także inna instalacja. Natywny program `copilotscope` z samouczka 1 wiąże się wyłącznie ze
+swoją maszyną. Wdrożenie współdzielone to stos Docker Compose z Postgresem, który ten sam
+instalator stawia z opcją `--docker`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh -s -- --docker
+```
+
 ## Co się zmienia i dlaczego nie jest to opcjonalne
 
 Kolektor trzymający sesje jednego programisty to narzędzie osobiste. Kolektor
