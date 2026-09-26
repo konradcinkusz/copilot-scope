@@ -144,6 +144,7 @@ public sealed class ReviewPackTests
         {
             s.Branch = "konrad/fix-login";
             s.AgentName = "Konrad";
+            s.AddAgentName("Konrad-subagent");
             s.SubjectId = "host-of-konrad";
             s.AddTranscript(s.LastSeen, "gpt-5", "SECRET-PROMPT-TEXT", "SECRET-RESPONSE-TEXT", 0);
             return s;
@@ -161,7 +162,7 @@ public sealed class ReviewPackTests
 
         // The keys, not just the values: a subject count is a k-anonymity input, not a report figure.
         var forbidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "subjectId", "subjects", "branch", "agent", "agentName", "author", "rater", "user", "developer", "email", "host", "transcript" };
+            { "subjectId", "subjects", "branch", "agent", "agentName", "agentNames", "author", "rater", "user", "developer", "email", "host", "transcript" };
         using var doc = JsonDocument.Parse(json);
         var keys = new List<string>();
         Walk(doc.RootElement, keys);

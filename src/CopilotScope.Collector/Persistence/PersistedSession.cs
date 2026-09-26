@@ -42,7 +42,10 @@ public sealed record PersistedSession(
     string? SubjectId = null,
     /// <summary>Where the data came from. Defaulted to OTLP, which is what every snapshot
     /// written before log import existed actually was.</summary>
-    string Origin = SessionOrigin.Otel)
+    string Origin = SessionOrigin.Otel,
+    /// <summary>Every agent that took part, in first-seen order. Defaulted: a snapshot written
+    /// before the list existed loads with none, and keeps its single <c>AgentName</c>.</summary>
+    List<string>? AgentNames = null)
 {
     public static PersistedSession From(CopilotSession s) => s.Snapshot(x => new PersistedSession(
         x.Id, x.VsCodeSessionId, x.AgentName, x.Repository, x.Branch,
@@ -70,7 +73,8 @@ public sealed record PersistedSession(
         x.EmitterKind,
         x.EditsAutoAccepted,
         x.SubjectId,
-        x.Origin));
+        x.Origin,
+        new List<string>(x.AgentNames)));
 
     public CopilotSession ToSession()
     {
@@ -104,6 +108,9 @@ public sealed record PersistedSession(
             LinesAdded = LinesAdded,
             LinesRemoved = LinesRemoved
         };
+        // Through AddAgentName rather than copied, so a snapshot that did not come from this
+        // collector (seed, import, a hand-edited file) is held to the same bounds as ingest.
+        foreach (var name in AgentNames ?? []) s.AddAgentName(name);
         s.TtftMs.AddRange(TtftMs);
         s.ChatDurationMs.AddRange(ChatDurationMs);
         s.SurvivalScores.AddRange(SurvivalScores);

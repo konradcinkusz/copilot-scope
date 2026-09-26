@@ -167,6 +167,8 @@ public sealed class SessionRepositoryContractTests
         session.ErrorTypes["tool_error"] = 1;
         session.AddEvent(new SessionEvent(T0.AddMinutes(1), "chat", "chat claude-sonnet-5"));
         session.TurnList.Add(new TurnStat { TraceId = "t0", Index = 0, Start = T0, End = T0.AddSeconds(4), ChatCalls = 2 });
+        session.AddAgentName("copilot");
+        session.AddAgentName("explore");
         var snapshot = PersistedSession.From(session);
 
         await t.Store.PutAsync(snapshot);
@@ -174,6 +176,7 @@ public sealed class SessionRepositoryContractTests
         var stored = await t.Store.GetAsync("rt", None);
         Assert.NotNull(stored);
         Assert.Equal(StoredSessions.Json(snapshot), StoredSessions.Json(stored));
+        Assert.Equal(["copilot", "explore"], stored!.AgentNames!);
         Assert.Null(await t.Store.GetAsync("missing", None));
     }
 

@@ -23,6 +23,7 @@ public static class SessionFactory
             EmitterKind = persona.Showcase ? EmitterKind.VSCode : (EmitterKind)rng.Next(1, 6), // VSCode..Cowork — never Unknown
             FirstSeen = start,
         };
+        session.AddAgentName(session.AgentName);
 
         var turnCount = rng.Next(persona.MinTurns, persona.MaxTurns + 1);
         var isInternal = persona.InternalPromptPrefix is not null;

@@ -48,7 +48,9 @@ public sealed class ToolCatalog(ICollectorReader collector)
                     ["days"] = Prop("integer", "How many days back to look. Default 7."),
                     ["limit"] = Prop("integer", "Maximum sessions to return. Default 20."),
                     ["repository"] = Prop("string", "Only sessions on this repository."),
-                    ["emitter"] = Prop("string", "Only this assistant, e.g. ClaudeCode, VsCode, CopilotCli, Cowork."),
+                    ["emitter"] = Prop("string",
+                        "Only this assistant: VSCode, CLI (Copilot CLI), ClaudeCode or Cowork. Any other value " +
+                        "is ignored, so the result covers every assistant."),
                     ["model"] = Prop("string", "Only sessions that used this model."),
                     ["grade"] = Prop("string", "Only sessions in this grade band.")
                 }

@@ -21,6 +21,25 @@ public sealed class CopilotSession
     public string? VsCodeSessionId { get; set; }
     public EmitterKind EmitterKind { get; set; } = EmitterKind.Unknown;
     public string? AgentName { get; set; }
+
+    /// <summary>
+    /// Every agent that took part in this session, in the order the collector first saw each
+    /// name. Copilot CLI emits one <c>invoke_agent</c> span per agent and subagent, each naming
+    /// itself in <c>gen_ai.agent.name</c>, so a multi-agent workflow reports several — where
+    /// <see cref="AgentName"/> keeps only one, and keeps its own meaning: it is not derived from
+    /// this list.
+    ///
+    /// Bounded because the names come from the emitter: distinct under ordinal comparison, blank
+    /// names ignored, each cut to <see cref="MaxAgentNameChars"/> characters and the list to
+    /// <see cref="MaxAgentNames"/>, so an emitter that minted a name per call cannot grow a
+    /// session without limit. Changed only through <see cref="AddAgentName"/>, which is what
+    /// holds those bounds.
+    /// </summary>
+    public IReadOnlyList<string> AgentNames => _agentNames;
+    private readonly List<string> _agentNames = new();
+    public const int MaxAgentNames = 32;
+    public const int MaxAgentNameChars = 200;
+
     public string? Repository { get; set; }
     public string? Branch { get; set; }
 
@@ -122,6 +141,28 @@ public sealed class CopilotSession
     }
 
     /// <summary>
+    /// Records an agent as having taken part in this session (see <see cref="AgentNames"/>).
+    /// Blank names, repeats and anything past the cap are ignored. Must be called while holding
+    /// the session lock (i.e. inside Apply), or on a session nothing else can see yet.
+    /// </summary>
+    public void AddAgentName(string? name)
+    {
+        if (name is null || _agentNames.Count >= MaxAgentNames) return;
+        if (name.Length > MaxAgentNameChars)
+        {
+            // Never cut between the halves of a surrogate pair: a lone surrogate is not valid
+            // UTF-16, and Postgres refuses it in a jsonb value — the whole snapshot would fail
+            // to write.
+            var cut = char.IsHighSurrogate(name[MaxAgentNameChars - 1]) ? MaxAgentNameChars - 1 : MaxAgentNameChars;
+            name = name[..cut];
+        }
+        if (string.IsNullOrWhiteSpace(name)) return;
+        foreach (var known in _agentNames)
+            if (string.Equals(known, name, StringComparison.Ordinal)) return;
+        _agentNames.Add(name);
+    }
+
+    /// <summary>
     /// Folds another session's aggregates into this one. Used when signals that
     /// arrived without a conversation identity (CLI metrics/logs land in an
     /// "unattributed" bucket) are later claimed by a real conversation session.
@@ -134,6 +175,9 @@ public sealed class CopilotSession
 
         Apply(s =>
         {
+            // Union of both agent lists in first-seen order: the session that started earlier
+            // saw its agents earlier, so its names lead. Decided before FirstSeen is widened.
+            s.UnionAgentNames(o.AgentNames ?? [], otherFirst: o.FirstSeen < s.FirstSeen);
             if (o.FirstSeen < s.FirstSeen) s.FirstSeen = o.FirstSeen;
             if (o.LastSeen > s.LastSeen) s.LastSeen = o.LastSeen;
             s.AgentName ??= o.AgentName;
@@ -192,6 +236,20 @@ public sealed class CopilotSession
                 s.TurnList.Add(turn);
             }
         });
+    }
+
+    /// <summary>Must be called while holding the session lock (i.e. inside Apply).</summary>
+    private void UnionAgentNames(IEnumerable<string> other, bool otherFirst)
+    {
+        if (!otherFirst)
+        {
+            foreach (var name in other) AddAgentName(name);
+            return;
+        }
+        var mine = _agentNames.ToList();
+        _agentNames.Clear();
+        foreach (var name in other) AddAgentName(name);
+        foreach (var name in mine) AddAgentName(name);
     }
 
     public void Apply(Action<CopilotSession> mutation)
