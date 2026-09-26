@@ -22,9 +22,21 @@
 #   - a manual run: with `tag`, rebuild and re-attach that release's archives; without, build
 #     and test only.
 #
-# The binaries are not signed yet (ADR-004, decision 7): the installers download with curl and
-# Invoke-WebRequest, which set no quarantine attribute or Mark-of-the-Web. Signing and
-# notarization steps belong here once certificates exist.
+# Every file attached to a release carries SLSA build provenance (ADR-004, decision 7):
+# `actions/attest` signs, through Sigstore, a statement that a workflow of this repository
+# built that exact file from that exact commit, and stores it with the repository; `gh
+# attestation verify <file> --repo <owner>/<repo>` checks it, and `--signer-workflow` pins
+# it to this workflow. The release job here attests the six archives, the two installers and
+# SHA256SUMS; build-research-pdf.yml attests the PDFs and build-containers.yml the images.
+# SHA256SUMS comes from the same release, so it can only say that a download arrived intact —
+# the attestation says where it came from. The two installer scripts ship as release assets
+# as well, listed in SHA256SUMS and attested like the archives: `install.sh --version <tag>`
+# (`-Version` on Windows) from that release's assets installs the release the script was
+# tested with, rather than whatever master holds that day.
+#
+# The binaries are not signed yet: the installers download with curl and Invoke-WebRequest,
+# which set no quarantine attribute or Mark-of-the-Web. Signing and notarization steps belong
+# here once certificates exist.
 name: release native
 
 on:
@@ -144,7 +156,25 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Build provenance: id-token mints the short-lived Sigstore signing certificate and
+      # attestations stores the signed statement. artifact-metadata is what actions/attest
+      # asks for; it only matters for registry storage records, which GitHub keeps for
+      # organization-owned repositories only.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
+      # The installers of this release, from this tag: they ship beside the archives so a
+      # release can be installed with the script it was tested with.
+      - name: Checkout the installers
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          sparse-checkout: |
+            install.sh
+            install.ps1
+          sparse-checkout-cone-mode: false
+
       - name: Collect the archives
         uses: actions/download-artifact@v8
         with:
@@ -161,8 +191,21 @@ jobs:
             echo "::error title=Incomplete release::expected 6 archives, found $count. Nothing was attached."
             exit 1
           fi
-          sha256sum copilotscope-* > SHA256SUMS
+          cp ../install.sh ../install.ps1 .
+          sha256sum copilotscope-* install.sh install.ps1 > SHA256SUMS
           cat SHA256SUMS
+
+      # SLSA build provenance for every file that is about to be attached: a signed statement,
+      # kept with the repository, that this workflow run built this exact file from this exact
+      # commit. A reader checks it with `gh attestation verify <file> --repo <owner>/<repo>`.
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/copilotscope-*
+            dist/install.sh
+            dist/install.ps1
+            dist/SHA256SUMS
 
       # The container and research-PDF workflows run on the same tag, and whichever gets there
       # first creates the release; the others attach to it. `create` losing that race is fine —
@@ -176,7 +219,7 @@ jobs:
           set -euo pipefail
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
-              --notes "Native binaries: pick the archive for your platform, check it against SHA256SUMS, extract it and run \`copilotscope\`. See the README for the install script and CHANGELOG.md for what changed." \
+              --notes "Native binaries: pick the archive for your platform, check it against SHA256SUMS — or \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\` for build provenance — extract it and run \`copilotscope\`. install.sh and install.ps1 are the installers this release was tested with: \`sh install.sh --version $TAG\` (\`-Version\` on Windows) installs this release rather than the newest. See the README and CHANGELOG.md for what changed." \
               || gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber dist/*
