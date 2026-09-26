@@ -75,6 +75,14 @@
    download meets Gatekeeper or SmartScreen, and the README says how to proceed. Signing and
    notarization steps sit in the release workflow and switch on when certificates exist.
 
+   *Amended 2026-09-26.* Until then, "build provenance" was a sentence and not a step: the
+   native release workflow produced `SHA256SUMS` only, and the container and research-PDF
+   workflows nothing verifiable at all. All three now run `actions/attest` — on every archive,
+   installer script, the checksum file, the PDFs and the container images — and the README says
+   how to check the result with `gh attestation verify`. The installers ship as release assets,
+   so a release can be installed with the script it was tested with (`--version <tag>`) rather
+   than the one on `master` that day.
+
 ## Consequences
 
 - ADR-001's first decision now reads, for teams and shared deployments: Docker Compose and

@@ -78,6 +78,33 @@ binaries are not signed yet:
 - a download made in a browser meets macOS Gatekeeper (`xattr -d com.apple.quarantine
   copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
 
+Releases after v1.2.0 also carry **build provenance**: a signed statement, stored with the
+repository, that a workflow of this repository built that exact file from that exact commit —
+something `SHA256SUMS`, which comes from the same release, cannot say. With the GitHub CLI
+(`--signer-workflow konradcinkusz/copilot-scope/.github/workflows/release-native.yml` narrows
+it to the release workflow itself):
+
+```bash
+gh attestation verify copilotscope-linux-x64.tar.gz --repo konradcinkusz/copilot-scope
+gh attestation verify oci://ghcr.io/konradcinkusz/copilotscope-collector:<version> --repo konradcinkusz/copilot-scope
+```
+
+Those releases attach `install.sh` and `install.ps1` as well, listed in `SHA256SUMS` and attested
+like the archives. The one-line install above runs whatever the path it names holds; this runs
+the installer a release was tested with, verified, and installs that release:
+
+```bash
+curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/download/<tag>/install.sh
+gh attestation verify install.sh --repo konradcinkusz/copilot-scope
+sh install.sh --version <tag>
+```
+
+```powershell
+Invoke-WebRequest https://github.com/konradcinkusz/copilot-scope/releases/download/<tag>/install.ps1 -OutFile install.ps1
+gh attestation verify install.ps1 --repo konradcinkusz/copilot-scope
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version <tag>
+```
+
 </details>
 
 Step-by-step from

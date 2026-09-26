@@ -38,6 +38,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Build provenance for the pushed image (ADR-004, decision 7): id-token signs it and
+      # attestations stores it, with the repository and on GHCR beside the image.
+      # artifact-metadata is what actions/attest asks for; it only matters for registry
+      # storage records, which GitHub keeps for organization-owned repositories only.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -170,6 +177,7 @@ jobs:
           echo "${{ matrix.image }} entrypoint runs."
 
       - name: Build and push
+        id: push
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -178,3 +186,13 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
+
+      # A signed statement that this workflow run built the image with this digest from this
+      # commit, stored with the repository and pushed to GHCR beside the image. Checked with
+      # `gh attestation verify oci://ghcr.io/<owner>/<image>:<tag> --repo <owner>/<repo>`.
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
