@@ -241,6 +241,19 @@ public class AgentNamesTests
     }
 
     [Fact]
+    public void TheDashboardReadsTheListTheCollectorWrites()
+    {
+        // The dashboard mirrors the DTO rather than sharing an assembly: the JSON is the contract.
+        var dto = Dto.Summary(With("mirror", T0, "copilot", "explore"), new QualityEngine());
+        var json = JsonSerializer.SerializeToNode(dto, Web)!.AsObject();
+        Assert.Equal(["copilot", "explore"],
+            json.Deserialize<CopilotScope.Dashboard.Services.SessionSummaryDto>(Web)!.AgentNames);
+
+        json.Remove("agentNames");
+        Assert.Empty(json.Deserialize<CopilotScope.Dashboard.Services.SessionSummaryDto>(Web)!.AgentNames);
+    }
+
+    [Fact]
     public async Task TheSessionListAndDetailServeEveryAgentName()
     {
         using var collector = new WebApplicationFactory<SessionSummaryDto>();

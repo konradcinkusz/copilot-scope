@@ -368,7 +368,13 @@ public sealed record SessionSummaryDto(
     /// <summary>Edits applied under a permission mode rather than by a human decision.</summary>
     int EditsAutoAccepted = 0,
     /// <summary>Where the data came from: "otel" or "log-import".</summary>
-    string Origin = SessionOrigin.Otel);
+    string Origin = SessionOrigin.Otel,
+    /// <summary>Every agent that took part, in the order the collector first saw each.</summary>
+    IReadOnlyList<string>? AgentNames = null)
+{
+    /// <summary>Always an array: a collector that predates the list sends none.</summary>
+    public IReadOnlyList<string> AgentNames { get; init; } = AgentNames ?? [];
+}
 
 /// <summary>One band on the ordinal scale a rater picks from.</summary>
 public sealed record RubricBandDto(int Level, string Name, double Lower, double Upper, string Anchor);
