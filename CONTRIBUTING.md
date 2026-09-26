@@ -15,6 +15,13 @@ packages, so no `dotnet workload install aspire` is needed, but an older SDK can
 a different major than the TFM starts and then exits with "framework not found", which is what
 shipped a dead release once (#55), so `Dockerfile*` and the TFM are retargeted together.
 
+`scripts/dev-setup.sh` (`.\scripts\dev-setup.ps1` on Windows) sets this up from a clone: unless
+the PATH already has an SDK of the major the code targets, it installs one for your user alone
+(`~/.dotnet`, or `%LOCALAPPDATA%\Microsoft\dotnet`); then it installs the Aspire CLI (`aspire
+run`) as a .NET global tool, checks for Docker, restores the solution, and reports the other
+tools the pull-request checks use. It needs no root and installs no Docker. Re-running it is
+safe; `--persist` (`-Persist`) makes the PATH changes stick.
+
 Only running CopilotScope, rather than developing it? You need none of this — see the
 installer in [README.md](README.md).
 

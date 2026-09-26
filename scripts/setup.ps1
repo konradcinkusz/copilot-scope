@@ -112,7 +112,7 @@ switch ($Mode) {
     }
     'aspire' {
         if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-            Write-Error "dotnet SDK is required for -Mode aspire."; return
+            Write-Error "dotnet SDK is required for -Mode aspire - scripts\dev-setup.ps1 installs it."; return
         }
         $log = Join-Path ([System.IO.Path]::GetTempPath()) "copilotscope-aspire-$PID.log"
         Write-Host "Starting CopilotScope via .NET Aspire (background, log: $log)..."

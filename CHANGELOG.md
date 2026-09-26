@@ -32,6 +32,14 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
     `CopilotScope:Review:MinSessions` (25) over `CopilotScope:Review:WindowDays` (30).
   - Off with `CopilotScope:Review:Enabled=false`; `GET /api/privacy` reports the switch and who
     may have the sessions tier. Every fetch is in the access audit log.
+- **`scripts/dev-setup.sh` and `scripts/dev-setup.ps1` — the developer toolchain in one command.**
+  From a clone, they install the .NET SDK of the major the code targets (read from the
+  TargetFramework, into `~/.dotnet` with Microsoft's dotnet-install, no root) unless one is on the
+  PATH, install the Aspire CLI as a .NET global tool on the AppHost's Aspire major, check for
+  Docker or Podman, restore the solution, and report node and shellcheck for the pull-request
+  checks. Aspire itself still arrives as NuGet packages; no workload. `install.sh` is unchanged
+  and still installs no .NET. CI runs both scripts for real, on Linux and Windows, into an empty
+  directory and then again to hold a re-run to installing nothing.
 
 ### Fixed
 - **`copilotscope` no longer writes outside `~/.copilotscope`, and its first start no longer

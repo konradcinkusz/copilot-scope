@@ -223,7 +223,7 @@ jobs:
           set -euo pipefail
           for file in install.sh scripts/tools-entrypoint.sh scripts/setup.sh \
                       scripts/Enable-ClaudeCodeOtel.sh scripts/package-native.sh \
-                      scripts/smoke-native.sh scripts/test-install.sh; do
+                      scripts/smoke-native.sh scripts/test-install.sh scripts/dev-setup.sh; do
             sh -n "$file" 2>/dev/null || bash -n "$file"
             echo "ok $file"
           done
@@ -240,14 +240,16 @@ jobs:
           shellcheck -S warning -e SC1090,SC1091 \
             install.sh scripts/copilotscope scripts/tools-entrypoint.sh \
             scripts/setup.sh scripts/Enable-ClaudeCodeOtel.sh \
-            scripts/package-native.sh scripts/smoke-native.sh scripts/test-install.sh
+            scripts/package-native.sh scripts/smoke-native.sh scripts/test-install.sh \
+            scripts/dev-setup.sh
 
       - name: PowerShell syntax
         shell: pwsh
         run: |
           $failed = $false
           foreach ($file in @('install.ps1', 'scripts/copilotscope.ps1', 'scripts/setup.ps1',
-                              'scripts/Enable-ClaudeCodeOtel.ps1', 'scripts/Enable-CopilotOtel.ps1')) {
+                              'scripts/Enable-ClaudeCodeOtel.ps1', 'scripts/Enable-CopilotOtel.ps1',
+                              'scripts/dev-setup.ps1')) {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
               (Resolve-Path $file), [ref]$null, [ref]$errors) | Out-Null
@@ -260,6 +262,61 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+
+  # scripts/dev-setup.sh and scripts/dev-setup.ps1 are a contributor's first command, and they
+  # download: the SDK from Microsoft, the Aspire CLI from NuGet. Parsing them says nothing about
+  # either, so each runs for real on its own platform, into an empty directory so that the
+  # install path is taken rather than the SDK the runner already has. Then again, which must
+  # install nothing: a re-run is how a contributor updates, and it has to be safe.
+  dev-setup:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: First run installs the SDK and the Aspire CLI, and restores
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          scripts/dev-setup.sh --dotnet-dir "$RUNNER_TEMP/dotnet" | tee "$RUNNER_TEMP/first.log"
+          grep -q "Installing the .NET" "$RUNNER_TEMP/first.log" \
+            || { echo "::error title=dev-setup::the SDK was not installed into an empty --dotnet-dir"; exit 1; }
+          ~/.dotnet/tools/aspire --version
+
+      - name: Second run installs nothing
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          scripts/dev-setup.sh --dotnet-dir "$RUNNER_TEMP/dotnet" --no-restore | tee "$RUNNER_TEMP/second.log"
+          if grep -q "Installing" "$RUNNER_TEMP/second.log"; then
+            echo "::error title=dev-setup::a second run installed again"; exit 1
+          fi
+
+      - name: First run installs the SDK and the Aspire CLI, and restores
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\scripts\dev-setup.ps1 -DotnetDir "$env:RUNNER_TEMP\dotnet" *>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\first.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Select-String -Path "$env:RUNNER_TEMP\first.log" -Pattern 'Installing the .NET' -Quiet)) {
+            Write-Host "::error title=dev-setup::the SDK was not installed into an empty -DotnetDir"; exit 1
+          }
+          & "$HOME\.dotnet\tools\aspire.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Second run installs nothing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\scripts\dev-setup.ps1 -DotnetDir "$env:RUNNER_TEMP\dotnet" -NoRestore *>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\second.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Select-String -Path "$env:RUNNER_TEMP\second.log" -Pattern 'Installing' -Quiet) {
+            Write-Host "::error title=dev-setup::a second run installed again"; exit 1
+          }
 
   # The documentation has two mechanical invariants that nothing else checks.
   # Both are drift surfaces created on purpose, and the answer to a drift
