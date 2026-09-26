@@ -7,6 +7,7 @@
     <nav class="nav">
         <a href="/">Sessions</a>
         <a href="/overview">Overview</a>
+        <a href="/functions">Functions</a>
         <a href="/docs" class="active">Docs</a>
     </nav>
 </header>
@@ -26,6 +27,7 @@
         <a href="/docs#privacy">Privacy &amp; works councils</a>
         <a href="/docs#teamviews">Team views</a>
         <a href="/docs#overview">Overview page</a>
+        <a href="/docs#functions">Functions</a>
         <a href="/docs#limits">Limitations</a>
     </nav>
 
@@ -581,6 +583,38 @@
             active days, calls per model, and the top sessions by token consumption. <b>Avg quality</b> is
             a plain mean of session scores — check individual confidences before reading much into it; a
             mean of three low-confidence sessions is mostly noise.
+        </p>
+    </section>
+
+    <section id="functions" class="panel doc-section">
+        <h2>Functions: your own assistant, over your own base</h2>
+        <p>
+            CopilotScope provides no model and asks for no API key. A <b>function</b> is a task, the agents it
+            needs, and the <b>review pack</b> the collector counted (<code>/api/review/pack</code>): the
+            composite and its confidence per session, cohort rollups, the before/after comparison, regressions,
+            the patterns that recurred and the sessions they rest on — never a prompt, a response or a tool
+            argument. The assistant you already pay for, Claude Code or GitHub Copilot CLI, reads it and writes
+            the report. <b>The pack counts; the assistant narrates</b>: every claim it makes must cite a pattern
+            id and session ids from the pack, so it can be checked against numbers the assistant did not
+            produce.
+        </p>
+        <p>
+            Three of the four functions are <b>multi-agent</b>. The review panel gives four specialists one slice
+            of the pack each, in parallel — tools and errors, workflow, models and cost, change over time; the
+            proposal and change functions fan out one agent per pattern or per regression. Each ends with an
+            <b>evidence verifier</b> that strikes any finding whose citations do not show it. On Copilot CLI the
+            agents are custom agents run in fleet mode (<code>--fleet</code>); on Claude Code they are subagents
+            (<code>--agents</code>). The same definitions, in both spellings, are in every run's directory.
+        </p>
+        <p>
+            <b>Nothing runs by itself.</b> Pressing <i>Run with…</i> writes the files to
+            <code>~/.copilotscope/runs/&lt;run&gt;</code> and shows each file, its size, the exact command and who
+            receives what the assistant reads; only <i>Run</i> starts it. The assistant runs read-only — no
+            shell, no writes, no web, no MCP servers — in that directory alone. <b>A run is never scored</b>:
+            its session id is registered before it starts, its telemetry is switched off and marked, and it keeps
+            no transcript for the scanner to import. Drafted skills and instructions are saved as files beside
+            the report and installed nowhere. Only the native <code>copilotscope</code> binary starts an assistant;
+            a Compose deployment offers each function as a downloadable kit. See <code>docs/FUNCTIONS.md</code>.
         </p>
     </section>
 

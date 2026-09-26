@@ -1,4 +1,5 @@
 using CopilotScope.Dashboard.Components;
+using CopilotScope.Dashboard.Functions;
 using CopilotScope.Dashboard.Services;
 using CopilotScope.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -158,6 +159,30 @@ public static class DashboardApp
         });
         // The export carries the same aggregates the pages show, so it needs the same sign-in.
         if (authOptions.Enabled) export.RequireAuthorization();
+
+        // Function kits (docs/FUNCTIONS.md): a function's task, agents and review pack as one zip, for an
+        // assistant this process cannot start — VS Code Copilot Chat, or any assistant at all behind a
+        // Compose deployment, which runs none (ADR-005, decision 8). The pack is fetched over the API like
+        // every other read, so the privacy guard, the aggregation floor and the audit log all see it. The
+        // sessions tier carries session ids, so only a viewer who may read transcripts asks for it; the
+        // collector still decides whether the dashboard's key may have it, and the kit says which it got.
+        var kit = app.MapGet("/functions/{id}/kit.zip", async (string id, int? days, HttpContext context,
+            CollectorClient collector, CancellationToken ct) =>
+        {
+            if (FunctionCatalog.Find(id) is not { } function) return Results.NotFound();
+            var window = Math.Clamp(days ?? function.DefaultDays, 1, 365);
+
+            var pack = await collector.GetReviewPackAsync(window, authOptions.CanReadTranscripts(context.User), ct);
+            if (!pack.Ok)
+                return Results.Text($"No review pack to put in the kit: {pack.Problem}", "text/plain; charset=utf-8",
+                    statusCode: StatusCodes.Status409Conflict);
+
+            var folder = FunctionKit.FolderName(function, DateTimeOffset.UtcNow);
+            var files = FunctionWorkspace.Files(new WorkspaceInput(function, folder, window, pack.Tier,
+                pack.Markdown!, pack.Json!));
+            return Results.File(FunctionKit.Zip(folder, files), "application/zip", folder + ".zip");
+        });
+        if (authOptions.Enabled) kit.RequireAuthorization();
 
         var components = app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
         // Deny-by-default once auth is on: every page needs a signed-in user, and /login opts
