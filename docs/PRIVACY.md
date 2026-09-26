@@ -95,6 +95,17 @@ reports whether the pack is served at all (`review.enabled`) and who may have th
 `CopilotScope:Review:Enabled=false` switches both endpoints off for a deployment whose works
 agreement does not mention a review.
 
+### Related: functions on the user's own assistant
+
+The dashboard's Functions page ([FUNCTIONS.md](FUNCTIONS.md)) hands the review pack to the user's own
+Claude Code or Copilot, which sends what it reads to its vendor under the user's subscription — the
+one path on which telemetry-derived data leaves the machine (ADR-005). It fetches the pack over the
+API like any other read, so the floor and the audit log apply, and the sessions tier is refused under
+privacy mode as above. Only the native binary starts an assistant, and only after the person has seen
+every file and the exact command; a Compose deployment starts none and offers a downloadable kit,
+whose sessions tier needs the admin sign-in. A run is never scored: its session id is registered with
+the collector before it starts, and its telemetry is switched off and marked.
+
 ### Related: workflow-friction signals
 
 The one analyzer that reads prompt text is documented separately in

@@ -11,6 +11,33 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
 ## [Unreleased]
 
 ### Added
+- **Functions: run your own assistant over your own base** ([docs/FUNCTIONS.md](docs/FUNCTIONS.md)).
+  A new dashboard page, **Functions**, lists what you can run on the Claude Code or GitHub Copilot
+  subscription you already have — CopilotScope provides no model and asks for no key. Four functions
+  read the review pack: *Review my sessions* (one agent); *Review panel* (four specialists — tools and
+  errors, workflow, models and cost, change over time — in parallel); *Propose instructions and
+  skills* (one author per recurring problem, in parallel); *Explain what changed* (one investigator
+  per regression, in parallel). Every multi-agent function ends with an evidence verifier that strikes
+  findings whose citations the pack does not bear out. On Copilot CLI the agents are custom agents run
+  in fleet mode (`--fleet`); on Claude Code, subagents passed with `--agents`.
+  - Nothing starts by itself. *Run with…* writes the run's files to `~/.copilotscope/runs/<run>` and
+    shows each file, its size, the exact command and who receives what the assistant reads; only *Run*
+    starts it. One run at a time, thirty minutes at most.
+  - The assistant can only read its run directory: Claude Code with `--restricted`, read-only tools,
+    no MCP servers and no transcript; Copilot CLI with only `view`/`glob`/`grep` (and its subagent
+    tools) available and shell, write and URL access denied. Never through a shell.
+  - `report.md` says which parts CopilotScope computed and which the assistant wrote. Drafted
+    `SKILL.md` and instructions files are saved under `proposals/` — never with a session id in them —
+    and installed nowhere.
+  - Only the native binary starts an assistant. A Compose deployment serves each function as a kit
+    (`/functions/<id>/kit.zip`): the task, the pack, the agents for Copilot, Claude Code and VS Code,
+    and a README with the commands.
+- **CopilotScope's own sessions are never scored.** The self-observation rule grows from tool calls to
+  sessions (ADR-005, decision 6): a new `ObserverRegistry` in the collector drops, at ingest, every
+  signal keyed to a session id a function run registered before it started — and every signal whose
+  resource carries `copilotscope.observer`, which runs set in their environment. `POST /api/import`
+  refuses a registered id, which covers the scanner. `GET /api/health` counts what was dropped as
+  `observerSignals`.
 - **The review pack — `GET /api/review/pack` and `GET /api/review/readiness`** ([docs/REVIEW.md](docs/REVIEW.md)),
   the first step of [ADR-005](docs/architecture/ADR-005-session-review.md): the session base,
   counted, as one document for something else to read — the user's own coding assistant, most

@@ -1,7 +1,9 @@
 # ADR-005 — Session review on the user's own assistant: the collector counts, the assistant narrates
 
-- Status: **Proposed**. Step 1, the review pack, is implemented (`docs/REVIEW.md`); the rest
-  is sequenced under *Consequences* and lands one pull request at a time.
+- Status: **Proposed**, amended 2026-09-26 (see *Amendment: functions on the dashboard*). Step 1,
+  the review pack, is implemented (`docs/REVIEW.md`); the observer exclusion and a launcher driven
+  from the dashboard's Functions page are implemented (`docs/FUNCTIONS.md`); the rest is sequenced
+  under *Consequences*.
 - Date: 2026-09-25
 - Amends: [ADR-004](ADR-004-native-distribution.md), decision 6, by adding the one path on which
   telemetry-derived data may leave the machine — and the conditions on it.
@@ -175,6 +177,44 @@ Three phrasings have to change, and two prerequisites have to exist first.
 - A captured Copilot CLI fixture, which would add a second launcher under the same rules.
 - Evidence that a proposed skill changed anything. Until a skill name is persisted per session
   and a before/after with usage observed exists, a proposal is a hypothesis the user tests.
+
+## Amendment: functions on the dashboard (2026-09-26)
+
+The owner asked for the review to be one of several **functions** on a dedicated dashboard page —
+"analyse all my sessions" as a button — each run on the user's own Copilot or Claude subscription,
+and for the functions to use Copilot's multi-agent capabilities. Implemented in
+`docs/FUNCTIONS.md`. What that changes above:
+
+- **Multi-agent is in the first version**, by the owner's decision, in the shape the assessment
+  allowed: three of four functions fan out (four specialists over slices of the pack; one author per
+  pattern; one investigator per regression), and every one ends with the evidence verifier — the job
+  code cannot do. No agent re-counts. On Copilot CLI the fan-out is fleet mode (`--fleet`) over custom
+  agents; on Claude Code, subagents passed with `--agents`.
+- **The surface is the dashboard, the consent is the Run button.** Decision 4's `[y/N]` becomes a
+  two-step page: *Run with…* writes the files and shows each one with its size, the exact command and
+  the vendor that receives what the assistant reads; only *Run* starts it. Nothing is automatic.
+  `copilotscope review` on the command line is not built yet.
+- **The launcher lives in `src/CopilotScope.Local`** as decision 5 says, behind an `IFunctionRunner`
+  contract the dashboard declares and only the native host registers. A Compose deployment registers
+  none and serves each function as a kit (decision 8). Runs are kept in `~/.copilotscope/runs/<id>/`
+  rather than `reviews/`, since a review is one function of several.
+- **Copilot CLI is launched too.** Decision 5 held it back until a fixture existed. That rule is about
+  parsers; the launcher parses no Copilot output format — it reads `-s` plain text — and the flags were
+  checked against Copilot CLI 1.0.88's own help, with the generated arguments accepted by the binary.
+  A run on a signed-in Copilot CLI has not yet been observed.
+- **Two details differ from decision 5.** The child environment keeps the `CLAUDE_CODE_*` variables that
+  carry a login or a provider (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, …): scrubbing all of
+  them would move a `claude setup-token` user off the subscription the run is for. And `--max-turns`
+  (hidden from `--help`) and `--max-budget-usd` are not passed; a thirty-minute wall-clock limit and one
+  run at a time bound the spend instead. A managed settings file that forces telemetry on is shown as
+  a warning on the consent screen rather than refusing the launch, because the registered session id
+  and the marker keep the run out of the scores either way.
+- **Decision 6 is implemented** for OTLP ingest and `/api/import` (`ObserverRegistry`), with the marker
+  attribute `copilotscope.observer`. The scanner is covered through `/api/import`, its only way in.
+- **Decision 7 in part.** `report.md` carries the computed-versus-written header and *certainty*;
+  drafts are saved only as `skills/<name>/SKILL.md` or `instructions/<name>.md`, never with a pack
+  session id, and are installed nowhere. The full output linter (citation checks, vocabulary) remains
+  step (5); the verifier agent is its model-side counterpart, not its replacement.
 
 ## Open decisions for the owner
 
