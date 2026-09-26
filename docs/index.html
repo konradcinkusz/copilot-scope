@@ -372,7 +372,8 @@ footer{
     machine — no SDK, no account, nothing leaves the box.
   </p>
   <div class="hero-actions">
-    <a href="#quickstart" class="btn btn-primary">→ Get Started</a>
+    <a href="https://github.com/konradcinkusz/copilot-scope/releases/latest" class="btn btn-primary">⤓ Download</a>
+    <a href="#quickstart" class="btn btn-secondary">→ Get Started</a>
     <a href="https://github.com/konradcinkusz/copilot-scope" class="btn btn-secondary">View on GitHub</a>
     <a href="https://github.com/konradcinkusz/copilot-scope/releases/latest/download/CopilotScope_Quality_Framework.pdf" class="btn btn-secondary">Research Paper</a>
   </div>
@@ -644,8 +645,8 @@ footer{
 <section class="section" id="quickstart">
   <div class="section-inner">
     <p class="section-label">Quick start</p>
-    <h2>Two commands, nothing to declare</h2>
-    <p>Prerequisite: <strong>Docker</strong>. No key to generate, no environment variable to export, no JSON to hand-edit — the collector binds to <code>127.0.0.1</code> and Postgres publishes no port, so on one machine a credential would buy nothing and cost a step in every client.</p>
+    <h2>One command, nothing to declare</h2>
+    <p>Prerequisite: <strong>none</strong>. One self-contained program for Windows, macOS and Linux (x64 and arm64): no Docker, no .NET, no key to generate, no environment variable to export, no JSON to hand-edit. It binds to <code>127.0.0.1</code>, keeps sessions under <code>~/.copilotscope/data</code>, and scores the Claude Code history already on your disk without any telemetry configured. For a team or a shared server the Docker Compose stack is still there, behind <code>--docker</code>.</p>
 
     <div style="margin-top:28px">
       <div class="qs-tabs">
@@ -656,14 +657,14 @@ footer{
 
       <div id="tab-docker" class="qs-panel active">
         <div class="code-block"><span class="c"># Linux / macOS / WSL / Git Bash</span>
-<span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | <span class="cmd">sh</span>
+<span class="cmd">curl</span> -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.sh | <span class="cmd">sh</span>
 
 <span class="c"># Windows PowerShell</span>
-<span class="cmd">irm</span> https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | <span class="cmd">iex</span>
+<span class="cmd">irm</span> https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.ps1 | <span class="cmd">iex</span>
 
-<span class="c"># Collector  →  http://localhost:4318   (OTLP ingest + REST API)</span>
-<span class="c"># Dashboard  →  http://localhost:5200   (Blazor UI)</span></div>
-        <p class="qs-note">The installer checks Docker, starts the stack, waits for the collector to answer, and offers to configure each assistant it finds. Prefer to drive Compose yourself? <code>curl -O .../docker-compose.ghcr.yml &amp;&amp; docker compose -f docker-compose.ghcr.yml up -d</code> does the same thing with nothing to set. <code>copilotscope uninstall</code> reverses all of it.</p>
+<span class="c"># Then</span>
+<span class="cmd">copilotscope</span>      <span class="c"># collector on localhost:4318, dashboard on localhost:5200; Ctrl+C stops it</span></div>
+        <p class="qs-note">The installer downloads the newest release, checks it against the release's <code>SHA256SUMS</code> and refuses it on any mismatch, installs it under <code>~/.copilotscope</code>, and offers to point each assistant it finds at it — showing every change first. The path names a release on purpose: the installer you run is the one that release shipped and was tested with. Prefer no script at all? <a href="https://github.com/konradcinkusz/copilot-scope/releases/latest">Download the archive</a> for your platform, check the sum yourself, extract it and run <code>copilotscope</code> from the extracted folder. Team or shared server: add <code>--docker</code> (<code>-Docker</code> on Windows) to install the Compose stack instead.</p>
       </div>
 
       <div id="tab-otel" class="qs-panel">
@@ -673,8 +674,8 @@ footer{
 <span class="cmd">copilotscope connect</span> vscode        <span class="c"># VS Code user settings, then reload the window</span>
 <span class="cmd">copilotscope connect</span> copilot-cli   <span class="c"># shell env — the only thing the CLI reads</span>
 
-<span class="c"># Already use Claude Code? Its history is on disk already:</span>
-<span class="cmd">copilotscope import</span>
+<span class="c"># Already use Claude Code? Its history is read on every start; to read it now:</span>
+<span class="cmd">copilotscope scan</span>
 
 <span class="c"># Nothing showing up? This walks the whole path and names the broken link.</span>
 <span class="cmd">copilotscope doctor</span></div>
@@ -702,12 +703,12 @@ footer{
     <div style="margin-top:32px;padding:20px;background:var(--surf);border:1px solid var(--border);border-radius:10px">
       <p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">Try it without a Copilot subscription</p>
       <ol style="padding-left:20px;font-size:13px;color:var(--dim);line-height:2">
-        <li>Install and start the stack — one command, nothing to declare</li>
-        <li>Run <code>copilotscope demo</code> for a dataset, or <code>copilotscope probe</code> for a single session over the real OTLP path. Both run in a container, so neither needs a .NET SDK</li>
-        <li>Open the Dashboard — the sessions appear scored, badged <strong style="color:var(--text)">demo</strong> so a screenshot is never mistaken for evidence</li>
+        <li>Install and start it — one command, nothing to declare</li>
+        <li>Already use Claude Code? Its history on disk is scored on the first start — every session quiet for ten minutes; the rest follow, once a minute, as they finish — badged <strong style="color:var(--text)">imported</strong>. Otherwise, from a clone, <code>dotnet run --project tools/CopilotScope.TelemetryGen -- http://localhost:4318</code> plays one realistic session over the real OTLP path; the Docker stack also has <code>copilotscope demo</code> for a whole fabricated dataset</li>
+        <li>Open the Dashboard — the sessions appear scored. Imported history is badged <strong style="color:var(--text)">imported</strong> (scored from a transcript, with less evidence); a <code>copilotscope demo</code> dataset is badged <strong style="color:var(--text)">demo</strong>, so a screenshot is never mistaken for evidence</li>
         <li>Click one to see turn analysis, score components, and the prompt transcript</li>
       </ol>
-      <p style="font-size:12px;color:var(--dim);margin-top:10px">Already use Claude Code? <code>copilotscope import</code> scores the sessions already on your disk, with no telemetry configuration at all. From a clone with the SDK, the same three tools run as <code>dotnet run --project tools/CopilotScope.TelemetryGen</code> and friends.</p>
+      <p style="font-size:12px;color:var(--dim);margin-top:10px">Already use Claude Code? Its history on disk is read on every start, and <code>copilotscope scan</code> reads it now, with no telemetry configuration at all. From a clone with the SDK, the same three tools run as <code>dotnet run --project tools/CopilotScope.TelemetryGen</code> and friends.</p>
     </div>
   </div>
 </section>
