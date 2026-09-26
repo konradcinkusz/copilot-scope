@@ -908,3 +908,49 @@ html, body {
   border-color: color-mix(in srgb, var(--err) 45%, transparent);
   background: color-mix(in srgb, var(--err) 12%, transparent);
 }
+
+/* ---------------------------------------------------------------- functions */
+
+/* Functions run on the user's own assistant. The consent panel is the one place this page asks
+   for a decision, so it carries the copper rule the rest of the dashboard keeps for notes that
+   change what a reader does next. */
+.fn-lede { font-size: 13px; line-height: 1.6; margin: 8px 0 12px; max-width: 900px; }
+.fn-lede a, .fn-note a { color: var(--copper); }
+.fn-note { margin-top: 10px; }
+.fn-problem { border-left-color: var(--err); color: var(--text); }
+.fn-window { margin-top: 12px; }
+.fn-of { color: var(--dim) !important; font-size: 13px !important; }
+.fn-found { color: var(--ok); }
+.fn-missing { color: var(--dim); }
+
+.fn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+@media (max-width: 640px) { .fn-grid { grid-template-columns: 1fr; } }
+.fn-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fn-title { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.fn-multi { color: var(--copper); border-color: color-mix(in srgb, var(--copper) 55%, transparent); }
+.fn-summary { font-size: 12px; line-height: 1.55; margin: 0; color: var(--text); }
+.fn-produces { font-size: 11px; color: var(--dim); line-height: 1.5; }
+.fn-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.fn-agents li { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+.fn-agents code { color: var(--text); }
+.fn-actions { flex-wrap: wrap; margin-top: auto; padding-top: 6px; }
+.fn-actions a.btn { text-decoration: none; }
+.fn-primary { border-color: var(--copper); color: var(--copper); }
+.fn-primary:disabled, .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.fn-consent { border-left: 3px solid var(--copper); }
+.fn-files code, .fn-where code { overflow-wrap: anywhere; }
+.fn-command, .fn-report {
+  font-family: var(--mono); font-size: 12px; line-height: 1.5;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.fn-report { max-height: 60vh; overflow-y: auto; }
+.fn-where { font-size: 11px; color: var(--dim); margin: 4px 0; }
+.fn-row-actions { text-align: right; white-space: nowrap; }
+.fn-report-row td { background: var(--panel); }
+.fn-state-running   { color: #8fb8e8;      border-color: color-mix(in srgb, #8fb8e8 55%, transparent); }
+.fn-state-succeeded { color: var(--ok);    border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.fn-state-failed    { color: var(--err);   border-color: color-mix(in srgb, var(--err) 55%, transparent); }
+.fn-state-cancelled { color: var(--dim); }
+.fn-when { white-space: nowrap; font-variant-numeric: tabular-nums; }

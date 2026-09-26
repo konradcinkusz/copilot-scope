@@ -53,6 +53,8 @@ public static class CollectorApp
         // is configured. This is additive to the hand-written /api/health below.
         builder.AddServiceDefaults();
 
+        // Registered before the store, which takes it: sessions CopilotScope launches are dropped at ingest.
+        builder.Services.AddSingleton<ObserverRegistry>();
         builder.Services.AddSingleton<SessionStore>();
         builder.Services.AddSingleton<QualityEngine>();
         // Registered with an optional ISessionRepository so the same read path serves the durable
@@ -276,6 +278,7 @@ public static class CollectorApp
         var privacyGuard = app.Services.GetRequiredService<PrivacyGuard>();
         var audit = app.Services.GetRequiredService<AccessAuditLog>();
         var reviewOptions = app.Services.GetRequiredService<ReviewOptions>();
+        var observers = app.Services.GetRequiredService<ObserverRegistry>();
         var collectorVersion = typeof(CollectorApp).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
@@ -1184,6 +1187,15 @@ public static class CollectorApp
                     continue;
                 }
 
+                // A run CopilotScope launched on the user's own assistant (docs/FUNCTIONS.md) is never
+                // scored, whichever way its transcript arrives; the scanner imports through here too.
+                if (observers.IsRegistered(session.Id))
+                {
+                    skipped++;
+                    rejected.Add($"{session.Id}: a session CopilotScope launched itself; never scored.");
+                    continue;
+                }
+
                 // An imported session is reconstructed from a file and carries no latency samples and
                 // no edit decisions; a live one carries both. Overwriting a live session with the
                 // import of the same conversation would therefore *lose* evidence — silently, and in
@@ -1309,6 +1321,9 @@ public static class CollectorApp
             status = "ok",
             sessions = store.All.Count,
             hostlessSignals = store.HostlessSignals,
+            // Signals dropped because a run CopilotScope launched sent them. Non-zero means an
+            // assistant's telemetry reached the collector despite the launcher switching it off.
+            observerSignals = observers.Dropped,
             // "persistence" predates file storage and is kept for the control scripts' doctor, which
             // reads it; "storage" says which kind: memory, postgres or files.
             persistence = storage.Durable,

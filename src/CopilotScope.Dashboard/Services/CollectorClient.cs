@@ -127,6 +127,97 @@ public sealed class CollectorClient(HttpClient http)
         try { return await http.GetFromJsonAsync<PrivacyDto>("/api/privacy", ct); }
         catch { return null; }
     }
+
+    /// <summary>Whether the base has enough new sessions to be worth reviewing (docs/REVIEW.md).
+    /// Null when the collector does not serve it: off, withheld, or unreachable.</summary>
+    public async Task<ReviewReadinessDto?> GetReviewReadinessAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync("/api/review/readiness", ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ReviewReadinessDto>(ct) : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The review pack in both forms a function needs: Markdown to read whole, JSON to look sessions
+    /// up in. Asks for the sessions tier when <paramref name="sessionsTier"/> is set, and falls back to
+    /// the aggregate tier when the collector refuses it — a read-only key, or privacy mode — so a
+    /// function still runs on what this viewer may have. The two forms are fetched separately; when a
+    /// session arrived in between and their fingerprints differ, both are fetched again once.
+    /// </summary>
+    public async Task<ReviewPackFetch> GetReviewPackAsync(int days, bool sessionsTier, CancellationToken ct = default)
+    {
+        var tiers = sessionsTier ? new[] { "sessions", "aggregate" } : ["aggregate"];
+        string? problem = null;
+        foreach (var tier in tiers)
+        {
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                using var json = await http.GetAsync($"/api/review/pack?days={days}&tier={tier}", ct);
+                if (json.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                    && tier == "sessions")
+                    break;
+                if (!json.IsSuccessStatusCode)
+                    return new(null, null, tier, await Reason(json, ct));
+
+                using var markdown = await http.GetAsync($"/api/review/pack?days={days}&tier={tier}&format=markdown", ct);
+                if (!markdown.IsSuccessStatusCode)
+                    return new(null, null, tier, await Reason(markdown, ct));
+
+                var jsonText = await json.Content.ReadAsStringAsync(ct);
+                var markdownText = await markdown.Content.ReadAsStringAsync(ct);
+                if (Fingerprint(jsonText) is { } fingerprint && !markdownText.Contains(fingerprint, StringComparison.Ordinal))
+                {
+                    problem = "The base changed while the pack was being fetched; try again.";
+                    continue;
+                }
+                return new(markdownText, jsonText, tier, null);
+            }
+        }
+        return new(null, null, "aggregate", problem ?? "The collector served no review pack.");
+    }
+
+    private static async Task<string> Reason(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            foreach (var key in new[] { "reason", "error" })
+                if (doc.RootElement.TryGetProperty(key, out var value) && value.GetString() is { Length: > 0 } text)
+                    return text;
+        }
+        catch (System.Text.Json.JsonException) { }
+        return $"The collector answered {(int)response.StatusCode}.";
+    }
+
+    private static string? Fingerprint(string packJson)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(packJson);
+            return doc.RootElement.GetProperty("scope").GetProperty("fingerprint").GetString();
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>Mirrors the collector's ReviewReadinessReport.</summary>
+public sealed record ReviewReadinessDto(
+    bool Ready, int Eligible, int MinSessions, int WindowDays,
+    DateTimeOffset Since, DateTimeOffset Until, DateTimeOffset? CoveredUntil, string Note);
+
+/// <summary>A fetched review pack, or why there is none. <c>Tier</c> is the tier actually served.</summary>
+public sealed record ReviewPackFetch(string? Markdown, string? Json, string Tier, string? Problem)
+{
+    public bool Ok => Markdown is not null && Json is not null;
 }
 
 // --- DTOs mirroring CopilotScope.Collector.Api (deserialized with Web defaults) ---

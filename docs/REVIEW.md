@@ -8,10 +8,8 @@ read it and say what a person should do about it.
 
 This document describes what the pack is, what it deliberately is not, and who may have which
 part of it. It is the first step of a larger design, recorded in
-[ADR-005](architecture/ADR-005-session-review.md); the steps that follow it (a `copilotscope
-review` command that runs the user's assistant over the pack, a skill that teaches the assistant
-what to write, and the exclusion of that run from scoring) are not shipped yet and are
-described there.
+[ADR-005](architecture/ADR-005-session-review.md). The dashboard's Functions page runs the user's
+own assistant over it, and keeps that run out of the scores — see [FUNCTIONS.md](FUNCTIONS.md).
 
 ## The split that makes it honest
 

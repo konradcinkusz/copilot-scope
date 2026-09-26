@@ -89,6 +89,14 @@ measured against. Any new self-observation surface has to be excluded at every i
 path — `execute_tool` spans in `SessionStore`, `tool_result` log events in `ClaudeCode`, and
 the `tool_result` blocks of an imported transcript in `ClaudeCodeTranscript`.
 
+**CopilotScope's own sessions are never scored, either.** A function run (docs/FUNCTIONS.md) is a
+whole session of the user's assistant, launched to read the review pack; scored, it would move the
+numbers the next review reads. `ObserverRegistry` drops it at ingest — by the session id the launcher
+registers *before* starting the process, and by the `copilotscope.observer` resource attribute — and
+`POST /api/import` refuses a registered id. A new ingest path has to consult it, and a new launcher
+has to register its id first and keep setting the marker. It fails the way the tool-call rule does:
+silently, at the next path someone adds.
+
 ## Dependency budget
 
 Deliberately near zero, and worth defending: it is what lets the whole product be audited.
@@ -115,10 +123,12 @@ src/CopilotScope.Collector/      OTLP ingest, session aggregation, quality engin
   Persistence/                   session stores: Postgres, or one JSON file per session
   Import/                        assistants' own history files: Claude Code transcripts
 src/CopilotScope.Dashboard/      Blazor Server UI
+  Functions/                     what a function run is: tasks, agents, files and flags — pure, and tested
 src/CopilotScope.Local/          the native `copilotscope` binary: both apps in one process (ADR-004)
   Scanning/                      local chat history → /api/import, once quiet; never written to
   Connecting/                    connect, setup, doctor: the control script's keys, held to it by a test
   Capturing/                     capture-fixture, scan --report: the shape of history files, never content
+  Functions/                     starts the user's own assistant over the review pack; read-only, never scored
 src/CopilotScope.AppHost/        Aspire orchestration
 src/CopilotScope.{AgentForge,JudgeAgent}/   opt-in agent services
 tools/CopilotScope.Seeder/       demo data into a running collector

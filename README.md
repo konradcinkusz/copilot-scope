@@ -298,8 +298,20 @@ The split is the point: the collector counts, deterministically and with every t
 in the pack; whatever reads it narrates, and cites the pack. The pack carries no prompt or
 response text and names no person; the tier that carries session ids needs Admin scope and is
 refused under privacy mode. See [docs/REVIEW.md](docs/REVIEW.md), and
-[ADR-005](docs/architecture/ADR-005-session-review.md) for the `copilotscope review` command it
-is the first step of.
+[ADR-005](docs/architecture/ADR-005-session-review.md) for the design it is the first step of.
+
+### Functions: your own assistant, over your own base
+
+The dashboard's **Functions** page runs that reading for you, on the assistant you already pay for —
+Claude Code or GitHub Copilot CLI — with no model and no API key of CopilotScope's. Four functions:
+*review my sessions*; a *review panel* of four specialists reading one slice of the pack each, in
+parallel; *propose instructions and skills*, one author per recurring problem; and *explain what
+changed*, one investigator per regression. The multi-agent ones run as Copilot custom agents in fleet
+mode or as Claude Code subagents, and each ends with a verifier that strikes any finding its
+citations do not support. Nothing starts until you have seen every file, its size and the exact
+command; the assistant can only read its run directory; and the run is never scored as one of your
+sessions. The native binary starts the assistant; a Compose deployment offers each function as a
+downloadable kit. See [docs/FUNCTIONS.md](docs/FUNCTIONS.md).
 
 ## Documentation
 

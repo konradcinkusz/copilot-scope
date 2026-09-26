@@ -1,0 +1,375 @@
+@page "/functions"
+@using CopilotScope.Dashboard.Functions
+@using Microsoft.AspNetCore.Components.Authorization
+@implements IDisposable
+@inject CollectorClient Collector
+@inject DashboardAuthOptions Auth
+@inject IServiceProvider Services
+
+<PageTitle>CopilotScope — Functions</PageTitle>
+
+<header class="topbar">
+    <h1 class="brand">Copilot<span>Scope</span></h1>
+    <nav class="nav" aria-label="Main">
+        <a href="/">Sessions</a>
+        <a href="/overview">Overview</a>
+        <a href="/functions" class="active" aria-current="page">Functions</a>
+        <a href="/docs">Docs</a>
+    </nav>
+</header>
+
+<div class="overview-main functions-main">
+
+    <div class="panel">
+        <div class="panel-label">Run on your own assistant</div>
+        <p class="fn-lede">
+            CopilotScope provides no model. A function hands the review pack CopilotScope counted — scores,
+            patterns and the sessions they rest on, never a prompt or a response — to the assistant you
+            already use, <b>Claude Code</b> or <b>GitHub Copilot</b>, which reads it and writes a report on your
+            own subscription. Nothing is sent until you have seen exactly what will be and pressed Run, and
+            the run itself is never scored as one of your sessions.
+            <a href="/docs#functions">How functions work</a>
+        </p>
+
+        <div class="tiles">
+            @if (_readiness is { } r)
+            {
+                <div class="tile" data-tip="@r.Note" tabindex="0">
+                    <b>@r.Eligible<i class="fn-of"> / @r.MinSessions</i></b>
+                    <span>sessions to review, last @r.WindowDays days</span>
+                </div>
+            }
+            else
+            {
+                <div class="tile"><b>—</b><span>the collector serves no review pack</span></div>
+            }
+            @foreach (var a in _assistants)
+            {
+                <div class="tile" title="@(a.Path ?? "not found on the PATH")">
+                    <b class="@(a.Installed ? "fn-found" : "fn-missing")">@(a.Installed ? "found" : "not found")</b>
+                    <span>@a.Name@(a.Version is { } v ? $" · {v}" : "")</span>
+                </div>
+            }
+        </div>
+
+        @if (_readiness is { Ready: false } notReady)
+        {
+            <div class="comparability-note fn-note" role="note">
+                @notReady.Note You can still run a function; it will have less to say.
+            </div>
+        }
+        @if (_runner is null)
+        {
+            <div class="comparability-note fn-note" role="note">
+                <b>This CopilotScope starts no assistant.</b> A shared deployment has no business running a
+                program on anyone's machine, and the native binary started with <code>--memory</code> keeps nothing
+                on disk for a run to be made of. Here each function is a kit: download it, open the folder where
+                your assistant runs, and follow its README. The native <code>copilotscope</code> binary runs
+                functions from this page.
+            </div>
+        }
+        else if (!_canRun)
+        {
+            <div class="comparability-note fn-note" role="note">
+                Running a function starts a program on this machine and hands it per-session evidence, so it needs
+                the admin sign-in. You can download the aggregate kit.
+            </div>
+        }
+        else if (!_assistants.Any(a => a.Installed))
+        {
+            <div class="comparability-note fn-note" role="note">
+                Neither <code>claude</code> nor <code>copilot</code> is on the PATH of the process running CopilotScope.
+                Install one, or download a kit and run it wherever your assistant is.
+            </div>
+        }
+
+        <div class="filter-row fn-window">
+            <span class="filter-label">Window</span>
+            @foreach (var (label, value) in Windows)
+            {
+                <button class="chip @(_days == value ? "active" : "")" @onclick="() => _days = value">@label</button>
+            }
+        </div>
+    </div>
+
+    @if (_problem is { } problem)
+    {
+        <div class="comparability-note fn-problem" role="alert">@problem</div>
+    }
+
+    @if (_preview is { } p && FunctionCatalog.Find(p.FunctionId) is { } pf)
+    {
+        <div class="panel fn-consent" role="dialog" aria-label="Review what will be sent">
+            <div class="panel-label">Before anything is sent — @pf.Title on @FunctionWorkspace.DisplayName(p.Assistant)</div>
+            <p class="fn-lede">
+                These files were written to <code>@p.Directory</code>. When you press Run, CopilotScope starts the
+                command below in that directory. @p.DataUse
+            </p>
+            <table class="delta-table fn-files">
+                <thead><tr><th>File</th><th class="num">Size</th></tr></thead>
+                <tbody>
+                    @foreach (var f in p.Files)
+                    {
+                        <tr><td><code>@f.Path</code></td><td class="num">@Size(f.Bytes)</td></tr>
+                    }
+                    <tr><td><b>Total</b></td><td class="num"><b>@Size(p.Files.Sum(f => f.Bytes))</b></td></tr>
+                </tbody>
+            </table>
+            <div class="panel-label spaced">Command</div>
+            <pre class="fn-command">@p.Command</pre>
+            @foreach (var w in p.Warnings)
+            {
+                <div class="comparability-note fn-note" role="note">@w</div>
+            }
+            <div class="head-actions fn-actions">
+                <button class="btn fn-primary" @onclick="RunAsync" disabled="@_busy">Run</button>
+                <button class="btn" @onclick="Discard" disabled="@_busy">Discard</button>
+            </div>
+        </div>
+    }
+
+    <div class="fn-grid">
+        @foreach (var f in FunctionCatalog.All)
+        {
+            <div class="panel fn-card">
+                <div class="panel-head">
+                    <div class="fn-title">@f.Title</div>
+                    <span class="status-chip @(f.MultiAgent ? "fn-multi" : "")">
+                        @(f.MultiAgent ? $"multi-agent · {f.Agents.Count}" : "one agent")
+                    </span>
+                </div>
+                <p class="fn-summary">@f.Summary</p>
+                @if (f.MultiAgent)
+                {
+                    <ul class="fn-agents">
+                        @foreach (var a in f.Agents)
+                        {
+                            <li title="@a.Role"><code>@a.Name</code> <span>@a.Title</span></li>
+                        }
+                    </ul>
+                }
+                <div class="fn-produces">Writes: @f.Produces</div>
+                <div class="head-actions fn-actions">
+                    @if (_runner is not null && _canRun)
+                    {
+                        @foreach (var a in _assistants.Where(a => a.Installed))
+                        {
+                            <button class="btn fn-primary" disabled="@(_busy || Running)"
+                                    title="@(Running ? "Another function is running." : $"Prepare {f.Title} for {a.Name}")"
+                                    @onclick="() => PrepareAsync(f, a.Assistant)">
+                                Run with @Short(a.Assistant)
+                            </button>
+                        }
+                    }
+                    <a class="btn" href="@($"/functions/{f.Id}/kit.zip?days={_days}")" download
+                       title="The task, the pack and the agents as a zip, for VS Code or any assistant this page cannot start">
+                        Download kit
+                    </a>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_runner is not null)
+    {
+        <div class="panel">
+            <div class="panel-label">Runs</div>
+            @if (_runs.Count == 0)
+            {
+                <div class="empty">No function has run on this machine yet.</div>
+            }
+            else
+            {
+                <table class="delta-table">
+                    <thead><tr><th>Started</th><th>Function</th><th>Assistant</th><th>State</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var run in _runs)
+                        {
+                            <tr>
+                                <td class="fn-when">@run.Created.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>@run.Title</td>
+                                <td>@Short(run.Assistant)</td>
+                                <td>
+                                    <span class="status-chip fn-state-@run.State.ToString().ToLowerInvariant()">@StateLabel(run)</span>
+                                </td>
+                                <td class="fn-row-actions">
+                                    @if (run.State == RunState.Running)
+                                    {
+                                        <button class="btn danger btn-sm" @onclick="() => Cancel(run.Id)">Stop</button>
+                                    }
+                                    else if (run.State is RunState.Succeeded or RunState.Failed)
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => ToggleReport(run.Id)">
+                                            @(_openRun == run.Id ? "Hide" : run.State == RunState.Succeeded ? "Report" : "Details")
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                            @if (_openRun == run.Id)
+                            {
+                                <tr class="fn-report-row">
+                                    <td colspan="5">
+                                        <div class="fn-where">In <code>@run.Directory</code></div>
+                                        @if (run.Error is { } error)
+                                        {
+                                            <div class="comparability-note fn-problem" role="note">@error</div>
+                                        }
+                                        @foreach (var note in run.Notes)
+                                        {
+                                            <div class="fn-where">@note</div>
+                                        }
+                                        @if (run.Outputs.Count > 0)
+                                        {
+                                            <div class="panel-label spaced">Files written</div>
+                                            <ul class="fn-agents">
+                                                @foreach (var output in run.Outputs) { <li><code>@output</code></li> }
+                                            </ul>
+                                        }
+                                        @if (_report is { } report)
+                                        {
+                                            <pre class="fn-report">@report</pre>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] public Task<AuthenticationState>? AuthState { get; set; }
+
+    private static readonly (string Label, int Days)[] Windows = [("30 days", 30), ("90 days", 90), ("1 year", 365)];
+
+    private readonly CancellationTokenSource _cts = new();
+    private IFunctionRunner? _runner;
+    private bool _canRun;
+    private ReviewReadinessDto? _readiness;
+    private IReadOnlyList<AssistantAvailability> _assistants = [];
+    private IReadOnlyList<FunctionRunView> _runs = [];
+    private RunPreview? _preview;
+    private string? _problem;
+    private string? _openRun;
+    private string? _report;
+    private bool _busy;
+    private int _days = 30;
+
+    private bool Running => _runs.Any(r => r.State == RunState.Running);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Registered by the native binary only; a Compose deployment has none, and offers kits.
+        _runner = Services.GetService<IFunctionRunner>();
+        var user = AuthState is null ? null : (await AuthState).User;
+        _canRun = Auth.CanReadTranscripts(user);
+
+        _readiness = await Collector.GetReviewReadinessAsync(_cts.Token);
+        if (_runner is not null)
+        {
+            _assistants = _runner.Assistants();
+            _runs = _runner.Runs();
+            _runner.Changed += OnRunsChanged;
+        }
+    }
+
+    private void OnRunsChanged() => _ = InvokeAsync(() =>
+    {
+        _runs = _runner?.Runs() ?? [];
+        _assistants = _runner?.Assistants() ?? [];
+        if (_openRun is { } open) _report = _runner?.Report(open);
+        StateHasChanged();
+    });
+
+    private async Task PrepareAsync(AssistantFunction function, FunctionAssistant assistant)
+    {
+        if (_runner is null || !_canRun) return;
+        _busy = true;
+        _problem = null;
+        try
+        {
+            // The pack travels over the HTTP API like every other read: the privacy guard, the
+            // aggregation floor and the access audit all see this request.
+            var pack = await Collector.GetReviewPackAsync(_days, sessionsTier: true, _cts.Token);
+            if (!pack.Ok)
+            {
+                _problem = $"No review pack to hand over: {pack.Problem}";
+                return;
+            }
+            if (_preview is { } stale) _runner.Cancel(stale.RunId);
+            _preview = await _runner.PrepareAsync(
+                new FunctionRequest(function, assistant, _days, pack.Tier, pack.Markdown!, pack.Json!), _cts.Token);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException
+                                       or HttpRequestException or TaskCanceledException)
+        {
+            _problem = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task RunAsync()
+    {
+        if (_runner is null || _preview is not { } preview) return Task.CompletedTask;
+        try
+        {
+            _runner.Start(preview.RunId);
+            _openRun = null;
+            _preview = null;
+            _runs = _runner.Runs();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _problem = ex.Message;
+            _preview = null;
+            _runs = _runner.Runs();
+        }
+        return Task.CompletedTask;
+    }
+
+    private void Discard()
+    {
+        if (_preview is { } preview) _runner?.Cancel(preview.RunId);
+        _preview = null;
+    }
+
+    private void Cancel(string runId) => _runner?.Cancel(runId);
+
+    private void ToggleReport(string runId)
+    {
+        _openRun = _openRun == runId ? null : runId;
+        _report = _openRun is null ? null : _runner?.Report(runId);
+    }
+
+    private static string Short(FunctionAssistant assistant) =>
+        assistant == FunctionAssistant.ClaudeCode ? "Claude Code" : "Copilot CLI";
+
+    private static string StateLabel(FunctionRunView run) => run.State switch
+    {
+        RunState.Running => "running",
+        RunState.Succeeded => run.Finished is { } f ? $"done {f.ToLocalTime():HH:mm}" : "done",
+        RunState.Failed => "failed",
+        RunState.Cancelled => "stopped",
+        _ => "prepared"
+    };
+
+    private static string Size(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / (1024.0 * 1024):0.0} MB",
+        >= 1024 => $"{bytes / 1024.0:0.0} KB",
+        _ => $"{bytes} B"
+    };
+
+    public void Dispose()
+    {
+        if (_runner is not null) _runner.Changed -= OnRunsChanged;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

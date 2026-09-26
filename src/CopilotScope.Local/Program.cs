@@ -129,9 +129,10 @@ namespace CopilotScope.Local
             LocalHost host;
             try
             {
+                // --memory keeps nothing on disk, and a function run is files on disk; it runs none.
                 host = await LocalHost.StartAsync(new LocalHostOptions(
                     options.OtlpPort, dashboardPort.Value, paths.Home, dataDirectory, webRoot, token, options.Verbose,
-                    sources), shutdown.Token);
+                    sources, RunsDirectory: options.Memory ? null : paths.Runs), shutdown.Token);
             }
             catch (IOException ex)
             {
