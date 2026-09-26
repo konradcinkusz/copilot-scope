@@ -19,7 +19,12 @@ public sealed class SessionStore
     // forever instead of enriching the conversation they belong to.
     private readonly ConcurrentDictionary<string, string> _resourceToSession = new(StringComparer.Ordinal);
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _removed = new();
+    private readonly ObserverRegistry? _observers;
     private long _hostlessSignals;
+
+    /// <param name="observers">Sessions CopilotScope started itself, dropped before anything
+    /// counts them (see <see cref="ObserverRegistry"/>). Null in tests that have none.</param>
+    public SessionStore(ObserverRegistry? observers = null) => _observers = observers;
 
     /// <summary>
     /// Count of identity-less signals that arrived with neither a host resource attribute
@@ -136,6 +141,11 @@ public sealed class SessionStore
     public HashSet<string> Ingest(OtlpBatch batch, string? sourceId = null)
     {
         var touched = new HashSet<string>(StringComparer.Ordinal);
+
+        // A session CopilotScope launched is not the user's work, and counting it would move the
+        // numbers it was launched to read. It goes before the pre-pass, so none of its trace or
+        // resource mappings survive to pull a later signal of the user's into it.
+        _observers?.Filter(batch);
 
         // Pre-pass: spans carrying gen_ai.conversation.id (typically invoke_agent roots)
         // register their trace so that sibling chat/tool spans in the same trace —
