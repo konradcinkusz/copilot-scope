@@ -63,7 +63,10 @@ mkdirSync(OUT, { recursive: true });
 
 // A puppeteer config is only written when we actually have a browser to point at.
 // --no-sandbox is required because CI containers and this repo's dev containers
-// both run as root, where Chromium's sandbox refuses to start.
+// both run as root, where Chromium's sandbox refuses to start. The launch timeout
+// is puppeteer's 30-second default raised: on a hosted runner the first, cold
+// start of Chromium has taken close to 40 seconds and every later one about one,
+// and the first diagram failed for that alone while the other eleven rendered.
 const browser = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || '';
 const puppeteerConfig = join(OUT, '.puppeteer.json');
 writeFileSync(
@@ -71,13 +74,16 @@ writeFileSync(
   JSON.stringify({
     ...(browser ? { executablePath: browser } : {}),
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    timeout: 120_000,
   }),
 );
 
-let failed = 0;
-for (const file of sources) {
-  const slug = file.replace(/\.mmd$/, '');
-  const result = spawnSync(
+// What puppeteer says when the browser did not come up within that timeout: the
+// runner's problem, not the diagram's.
+const LAUNCH_TIMEOUT = /Timed out after \d+ ms while waiting for the WS endpoint/;
+
+function render(file, slug) {
+  return spawnSync(
     MMDC,
     [
       '-i', join(SRC, file),
@@ -88,6 +94,18 @@ for (const file of sources) {
     ],
     { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' },
   );
+}
+
+let failed = 0;
+for (const file of sources) {
+  const slug = file.replace(/\.mmd$/, '');
+  let result = render(file, slug);
+  // A browser that did not start in time gets one more try before it counts; a
+  // diagram that is wrong fails the same way twice and is reported as before.
+  if (result.status !== 0 && LAUNCH_TIMEOUT.test(result.stderr || '')) {
+    console.error(`  retry ${slug} (the browser did not start in time)`);
+    result = render(file, slug);
+  }
 
   if (result.status === 0 && existsSync(join(OUT, `${slug}.pdf`))) {
     console.log(`  ok    ${slug}.pdf`);
