@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report privately through GitHub's
-[security advisory form](https://github.com/konradcinkusz/copilotscope/security/advisories/new).
+[security advisory form](https://github.com/konradcinkusz/copilot-scope/security/advisories/new).
 Please do not open a public issue for a vulnerability.
 
 Expect an acknowledgement within a week. This is a single-maintainer project — if
