@@ -179,10 +179,13 @@ docker compose -f docker-compose.ghcr.yml up -d
 docker compose up -d --build
 ```
 
-**D. .NET Aspire (for developing CopilotScope itself)** — .NET 10 SDK + Docker:
+**D. .NET Aspire (for developing CopilotScope itself)** — .NET 10 SDK + Docker.
+`scripts/dev-setup.sh` (`scripts\dev-setup.ps1` on Windows) installs the SDK and the
+Aspire CLI if they are missing, and checks for Docker:
 
 ```bash
-dotnet run --project src/CopilotScope.AppHost
+scripts/dev-setup.sh
+dotnet run --project src/CopilotScope.AppHost    # or: aspire run
 ```
 
 The Aspire dashboard opens in your browser. It shows four resources: `postgres`

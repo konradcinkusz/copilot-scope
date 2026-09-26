@@ -10,6 +10,7 @@ If you only want to *run* it, you need none of this: see README.md.
 ## Build and test
 
 ```bash
+scripts/dev-setup.sh               # once: .NET SDK, Aspire CLI, Docker check, restore
 dotnet build                       # whole solution; everything targets net10.0
 dotnet test                        # tests/CopilotScope.Tests — no Docker, no live collector
 npm run check:diagrams             # diagrams agree with their standalone sources

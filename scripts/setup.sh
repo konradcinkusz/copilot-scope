@@ -162,7 +162,7 @@ case "$MODE" in
         ;;
     aspire)
         if ! command -v dotnet >/dev/null 2>&1; then
-            _die "dotnet SDK is required for --mode aspire." || return 1
+            _die "dotnet SDK is required for --mode aspire — scripts/dev-setup.sh installs it." || return 1
         fi
         ASPIRE_LOG="$(mktemp -t copilotscope-aspire.XXXXXX.log)"
         echo "Starting CopilotScope via .NET Aspire (background, log: $ASPIRE_LOG)..."

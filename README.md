@@ -427,7 +427,8 @@ Requirements: .NET 10 SDK. Docker is only needed for the full Aspire/Compose sta
 the collector and dashboard also run as two plain `dotnet run`s with no container
 (without Postgres the collector keeps sessions in memory, or on disk with
 `CopilotScope__Storage__Mode=files`). No workloads: Aspire comes via NuGet. Everything
-targets `net10.0`.
+targets `net10.0`. `scripts/dev-setup.sh` (`scripts\dev-setup.ps1` on Windows) installs the
+SDK and the Aspire CLI and checks for Docker — see [CONTRIBUTING.md](CONTRIBUTING.md#prerequisites).
 
 ```bash
 # No Docker: two processes, collector in-memory —
