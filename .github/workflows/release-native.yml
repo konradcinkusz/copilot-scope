@@ -34,9 +34,21 @@
 # (`-Version` on Windows) from that release's assets installs the release the script was
 # tested with, rather than whatever master holds that day.
 #
-# The binaries are not signed yet: the installers download with curl and Invoke-WebRequest,
-# which set no quarantine attribute or Mark-of-the-Web. Signing and notarization steps belong
-# here once certificates exist.
+# Authenticode signing of the two Windows binaries is a job that runs only when the repository
+# is configured for it — a Microsoft Artifact Signing (formerly Trusted Signing) account,
+# reached through OpenID Connect, no certificate file in any secret:
+#
+#   vars.CODESIGN            azure-artifact-signing        (anything else: the job is skipped)
+#   vars.CODESIGN_ENDPOINT   https://<region>.codesigning.azure.net/
+#   vars.CODESIGN_ACCOUNT    the signing account name
+#   vars.CODESIGN_PROFILE    the certificate profile name
+#   secrets.AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#                            an app registration with a federated credential for this
+#                            repository and the "Artifact Signing Certificate Profile Signer" role
+#
+# Off, the release goes out unsigned, as before: the installers download with curl and
+# Invoke-WebRequest, which set no quarantine attribute or Mark-of-the-Web, and a browser
+# download meets SmartScreen. macOS notarization needs an Apple certificate and is still to do.
 name: release native
 
 on:
@@ -150,9 +162,116 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  release:
+  # Signs copilotscope.exe inside both Windows archives and puts the signed archives in place
+  # of the unsigned ones. The signing action runs on x64 Windows runners only, which is why
+  # this is a job of its own rather than a step in the build matrix, where win-arm64 is built
+  # on an ARM runner. Signing changes the archive, so the x64 one is smoke-tested again before
+  # it replaces the unsigned artifact; the arm64 binary cannot run here and keeps the smoke
+  # test it passed unsigned. Skipped unless vars.CODESIGN says otherwise (see the header).
+  sign-windows:
     needs: [version, build]
-    if: needs.version.outputs.publish == 'true'
+    if: needs.version.outputs.publish == 'true' && vars.CODESIGN == 'azure-artifact-signing'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag || github.ref }}
+
+      - name: Collect the Windows archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: copilotscope-win-*
+          merge-multiple: true
+          path: dist
+
+      - name: Extract
+        shell: pwsh
+        run: |
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            Expand-Archive -Path "dist/copilotscope-$rid.zip" -DestinationPath unpacked -Force
+            if (-not (Test-Path "unpacked/copilotscope-$rid/copilotscope.exe")) {
+              throw "dist/copilotscope-$rid.zip holds no copilotscope.exe"
+            }
+          }
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign copilotscope.exe
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.CODESIGN_ENDPOINT }}
+          signing-account-name: ${{ vars.CODESIGN_ACCOUNT }}
+          certificate-profile-name: ${{ vars.CODESIGN_PROFILE }}
+          files: |
+            ${{ github.workspace }}\unpacked\copilotscope-win-x64\copilotscope.exe
+            ${{ github.workspace }}\unpacked\copilotscope-win-arm64\copilotscope.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      # A signing step that silently did nothing would ship an unsigned binary under a release
+      # note that says signed, so the signature is checked before anything is repacked.
+      - name: Check the signatures
+        shell: pwsh
+        run: |
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            $sig = Get-AuthenticodeSignature "unpacked/copilotscope-$rid/copilotscope.exe"
+            if ($sig.Status -ne 'Valid') { throw "copilotscope-$rid/copilotscope.exe: signature status is $($sig.Status)" }
+            Write-Host "copilotscope-$rid/copilotscope.exe: signed by $($sig.SignerCertificate.Subject)"
+          }
+
+      # Repacked the way scripts/package-native.sh packs on a Windows runner (7-Zip), with the
+      # same top-level folder, so the installers and the smoke test see the same layout.
+      - name: Repack
+        shell: bash
+        run: |
+          set -euo pipefail
+          for rid in win-x64 win-arm64; do
+            rm -f "dist/copilotscope-$rid.zip"
+            (cd unpacked && 7z a -tzip -bso0 -bsp0 "../dist/copilotscope-$rid.zip" "copilotscope-$rid")
+          done
+          ls -l dist
+
+      - name: Smoke test the signed x64 archive
+        shell: bash
+        run: scripts/smoke-native.sh dist/copilotscope-win-x64.zip
+
+      - name: Replace the unsigned win-x64 archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: copilotscope-win-x64
+          path: dist/copilotscope-win-x64.zip
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Replace the unsigned win-arm64 archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: copilotscope-win-arm64
+          path: dist/copilotscope-win-arm64.zip
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [version, build, sign-windows]
+    # Waits for signing when it runs and goes ahead when it is skipped; a failed build or a
+    # failed signing job still attaches nothing.
+    if: >-
+      always()
+      && needs.version.outputs.publish == 'true'
+      && needs.build.result == 'success'
+      && (needs.sign-windows.result == 'success' || needs.sign-windows.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write

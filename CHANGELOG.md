@@ -38,6 +38,13 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   resource carries `copilotscope.observer`, which runs set in their environment. `POST /api/import`
   refuses a registered id, which covers the scanner. `GET /api/health` counts what was dropped as
   `observerSignals`.
+- **Authenticode signing of the Windows binaries, when configured.** `release-native.yml`
+  gains a `sign-windows` job that signs `copilotscope.exe` in both Windows archives through
+  Microsoft Artifact Signing over OpenID Connect (no certificate in any secret), checks the
+  signature, repacks, smoke-tests the x64 archive again and replaces the unsigned artifacts
+  before the release job attaches them. It runs only when `vars.CODESIGN` is
+  `azure-artifact-signing` and the account, profile and Azure identity are configured; off, a
+  release goes out unsigned exactly as before.
 - **Build provenance on every release artifact** — the native archives, `SHA256SUMS`, the two
   installer scripts, the research PDFs and the container images each carry a signed SLSA
   provenance attestation (`actions/attest`, Sigstore), checkable with `gh attestation verify
