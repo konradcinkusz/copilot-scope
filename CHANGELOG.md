@@ -45,6 +45,13 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   native release workflow once the archives are attached, submits every later release with
   `wingetcreate` once `WINGET_CREATE_GITHUB_TOKEN` is set, and says so when it is not; the first
   version is submitted by hand, as `packaging/winget/README.md` describes.
+- **Authenticode signing of the Windows binaries, when configured.** `release-native.yml`
+  gains a `sign-windows` job that signs `copilotscope.exe` in both Windows archives through
+  Microsoft Artifact Signing over OpenID Connect (no certificate in any secret), checks the
+  signature, repacks, smoke-tests the x64 archive again and replaces the unsigned artifacts
+  before the release job attaches them. It runs only when `vars.CODESIGN` is
+  `azure-artifact-signing` and the account, profile and Azure identity are configured; off, a
+  release goes out unsigned exactly as before.
 - **Build provenance on every release artifact** — the native archives, `SHA256SUMS`, the two
   installer scripts, the research PDFs and the container images each carry a signed SLSA
   provenance attestation (`actions/attest`, Sigstore), checkable with `gh attestation verify

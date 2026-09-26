@@ -73,7 +73,8 @@ tar -xzf copilotscope-linux-x64.tar.gz      # osx-arm64, osx-x64, linux-arm64 th
 On Windows, download `copilotscope-win-x64.zip` (or `-win-arm64`), extract it and run
 `copilotscope.exe`. Keep the extracted folder together, because the binary serves the dashboard
 from the `wwwroot` beside it. Check the download against the release's `SHA256SUMS` file. The
-binaries are not signed yet:
+Windows binaries are signed only when the release was cut with a signing account configured
+(`.github/workflows/release-native.yml` says what to set); when they are not:
 - a download made with `curl` or `Invoke-WebRequest` runs as is;
 - a download made in a browser meets macOS Gatekeeper (`xattr -d com.apple.quarantine
   copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
