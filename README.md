@@ -284,6 +284,23 @@ biggest regressions — as the artefact a lead forwards instead of a dashboard l
 `grafana/provisioning/alerting/` provisions equivalent Grafana rules. See
 [docs/TUTORIAL.md §11](docs/TUTORIAL.md).
 
+### The review pack: the base, counted, for something else to read
+
+Once a base holds a few dozen sessions it contains more than one screen shows: what recurred,
+which tool kept failing, where the repair loops were, which sessions went best and worst and why.
+`GET /api/review/pack` serves that as one document — cohorts, the before/after comparison,
+regressions, the distribution, each assistant's signal coverage, the patterns that recurred with
+the sessions they rest on, and the best and worst sessions per stratum with the turn analysis's
+reasons — so that something else, the user's own coding assistant most likely, can read it and
+say what to do. `GET /api/review/readiness` says whether there is enough new material yet.
+
+The split is the point: the collector counts, deterministically and with every threshold stated
+in the pack; whatever reads it narrates, and cites the pack. The pack carries no prompt or
+response text and names no person; the tier that carries session ids needs Admin scope and is
+refused under privacy mode. See [docs/REVIEW.md](docs/REVIEW.md), and
+[ADR-005](docs/architecture/ADR-005-session-review.md) for the `copilotscope review` command it
+is the first step of.
+
 ## Documentation
 
 Three shapes, for three different moments. They do not repeat each other.
@@ -763,6 +780,8 @@ needed and how commit access works.
 | `DELETE /api/sessions/{id}` | remove a session (memory + Postgres) |
 | `POST /api/outcomes/github` | GitHub webhook for PR outcomes (HMAC-verified; only mapped when a secret is configured) |
 | `GET /api/health` | health incl. storage (`memory`, `postgres` or `files`) |
+| `GET /api/review/pack` | the review pack — the base counted for an outside reader; `tier=aggregate` (default) or `sessions` (admin, not under privacy mode), `format=json` or `markdown`, `days` — see [docs/REVIEW.md](docs/REVIEW.md) |
+| `GET /api/review/readiness` | whether enough eligible sessions have accrued to be worth reviewing; `coveredUntil` marks where a previous review stopped |
 | `GET /metrics` | Prometheus scrape endpoint — see below |
 
 ## Prometheus & Grafana

@@ -1,3 +1,4 @@
+using System.Reflection;
 using CopilotScope.Collector.Alerting;
 using CopilotScope.Collector.Api;
 using CopilotScope.Collector.Calibration;
@@ -8,6 +9,7 @@ using CopilotScope.Collector.Outcomes;
 using CopilotScope.Collector.Persistence;
 using CopilotScope.Collector.Privacy;
 using CopilotScope.Collector.Quality;
+using CopilotScope.Collector.Review;
 using CopilotScope.Collector.Vendor;
 using CopilotScope.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
@@ -87,6 +89,17 @@ public static class CollectorApp
         builder.Services.AddSingleton<WorkflowFrictionAnalyzer>();
         builder.Services.AddSingleton<IInsightAnalyzer>(sp => sp.GetRequiredService<WorkflowFrictionAnalyzer>());
         builder.Services.AddSingleton<InsightPipeline>();
+
+        // The review pack (docs/REVIEW.md): the deterministic half of a session review, served so an
+        // outside reader can be handed numbers this collector counted. Bound from the built container
+        // for the same reason as the friction options: an operator has to be able to switch it off and
+        // trust that it is off.
+        builder.Services.AddSingleton(sp =>
+        {
+            var options = new ReviewOptions();
+            sp.GetRequiredService<IConfiguration>().GetSection("CopilotScope:Review").Bind(options);
+            return options;
+        });
 
         // Prometheus scrape endpoint — exports the *computed* quality signals, whereas
         // OtlpForwarder relays raw OTLP upstream. Complementary, not alternatives.
@@ -262,6 +275,9 @@ public static class CollectorApp
         var redactor = app.Services.GetRequiredService<PrivacyRedactor>();
         var privacyGuard = app.Services.GetRequiredService<PrivacyGuard>();
         var audit = app.Services.GetRequiredService<AccessAuditLog>();
+        var reviewOptions = app.Services.GetRequiredService<ReviewOptions>();
+        var collectorVersion = typeof(CollectorApp).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
         // Raw forwarding relays the payload exactly as it arrived — before redaction, by design,
         // since a faithful relay is the whole point. Under privacy mode that is a hole straight
@@ -822,6 +838,96 @@ public static class CollectorApp
                     statusCode: StatusCodes.Status502BadGateway);
         });
 
+        // -------------------------------------------------------------------- review
+        // The review pack (docs/REVIEW.md): everything an outside reader — the user's own assistant,
+        // most likely — needs in order to review the base, computed here so that whatever the reader
+        // then says can be checked against numbers this collector counted. The aggregate tier serves
+        // any Read credential. The sessions tier carries session ids and exemplars and needs Admin, on
+        // the /api/digest/send precedent: an artefact whose purpose is to be handed to something else
+        // is not what a read credential — the dashboard's, Prometheus's, every MCP server's — produces.
+        static IResult ReviewDisabled() => Results.Json(new
+        {
+            enabled = false,
+            reason = "The review pack is off. Set CopilotScope:Review:Enabled=true to serve it; see docs/REVIEW.md.",
+        }, statusCode: StatusCodes.Status409Conflict);
+
+        static IResult Suppressed(AnonymityVerdict verdict) => Results.Json(
+            new { suppressed = true, reason = verdict.Reason, subjects = verdict.Subjects, required = verdict.Required },
+            statusCode: StatusCodes.Status403Forbidden);
+
+        api.MapGet("/review/readiness", async (DateTimeOffset? coveredUntil, HttpRequest request,
+            SessionQueryService sessions, CancellationToken ct) =>
+        {
+            if (!reviewOptions.Enabled) return ReviewDisabled();
+
+            var now = DateTimeOffset.UtcNow;
+            var window = await sessions.AllInWindowAsync(now.AddDays(-Math.Max(1, reviewOptions.WindowDays)), ct, now);
+
+            // Readiness is a count over one person's sessions on one machine and a count over a team's
+            // on a shared one; the floor decides which, exactly as it does for every other view.
+            var verdict = privacyGuard.Evaluate(window);
+            audit.Record(AccessAuditLog.ActorFor(request), "review.readiness",
+                coveredUntil is { } covered ? $"coveredUntil={covered:O}" : "all",
+                verdict.Allowed ? $"served over {window.Count} session(s)" : "withheld (k-anonymity)");
+            if (!verdict.Allowed) return Suppressed(verdict);
+
+            return Results.Ok(ReviewReadiness.Evaluate(window, reviewOptions, coveredUntil, now));
+        });
+
+        api.MapGet("/review/pack", async (int? days, string? tier, string? format, HttpRequest request,
+            SessionQueryService sessions, CancellationToken ct) =>
+        {
+            if (!reviewOptions.Enabled) return ReviewDisabled();
+
+            var actor = AccessAuditLog.ActorFor(request);
+            ReviewTier? requested = tier is null || string.Equals(tier, "aggregate", StringComparison.OrdinalIgnoreCase)
+                ? ReviewTier.Aggregate
+                : string.Equals(tier, "sessions", StringComparison.OrdinalIgnoreCase) ? ReviewTier.Sessions : null;
+            if (requested is not { } tierValue)
+                return Results.BadRequest(new { error = "tier must be 'aggregate' or 'sessions'." });
+
+            if (tierValue == ReviewTier.Sessions)
+            {
+                if (!KeyAuthorized(request, ApiScope.Admin)) return Results.Unauthorized();
+
+                // A session row is a group of one. The sessions tier is refused under privacy mode
+                // exactly as per-session detail is, and before anything is read.
+                if (privacyGuard.SessionDetailSuppressed)
+                {
+                    audit.Record(actor, "review.pack", "tier=sessions", "refused (privacy mode)");
+                    return Results.Json(new
+                    {
+                        error = "The sessions tier of the review pack is disabled under privacy mode.",
+                        reason = "It carries session ids and per-session rows, each a group of one, below any " +
+                                 "k-anonymity floor. Request tier=aggregate, or set " +
+                                 "CopilotScope:Privacy:SuppressSessionDetail=false only where the works agreement " +
+                                 "permits individual review.",
+                    }, statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
+
+            var window = Math.Clamp(days ?? reviewOptions.WindowDays, 1, 365);
+            var until = DateTimeOffset.UtcNow;
+            var since = until.AddDays(-window);
+            var baselineSince = since.AddDays(-window);
+
+            var currentSessions = await sessions.AllInWindowAsync(since, ct, until);
+            var baselineSessions = await sessions.AllInWindowAsync(baselineSince, ct, since);
+
+            var verdict = privacyGuard.Evaluate(currentSessions.Concat(baselineSessions));
+            audit.Record(actor, "review.pack", $"days={window} tier={tierValue.ToString().ToLowerInvariant()}",
+                verdict.Allowed ? $"served {currentSessions.Count} session(s)" : "withheld (k-anonymity)");
+            if (!verdict.Allowed) return Suppressed(verdict);
+
+            var pack = ReviewPack.Build(currentSessions, baselineSessions, quality,
+                new ReviewPackInput(since, until, baselineSince, tierValue, reviewOptions, collectorVersion));
+
+            return string.Equals(format, "markdown", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(format, "md", StringComparison.OrdinalIgnoreCase)
+                ? Results.Text(ReviewPackMarkdown.Render(pack), "text/markdown; charset=utf-8")
+                : Results.Ok(pack);
+        });
+
         // Distinct values worth filtering on, so the UI offers what exists instead of a free-text box
         // that silently matches nothing.
         api.MapGet("/facets", async (int? days, SessionQueryService sessions, CancellationToken ct) =>
@@ -942,6 +1048,16 @@ public static class CollectorApp
             saltConfigured = !app.Services.GetRequiredService<Pseudonymizer>().SaltIsEphemeral,
             auditLog = audit.Enabled,
             auditDurable = audit.Enabled && app.Services.GetService<AccessAuditRepository>() is not null,
+            // The review pack, so the works-agreement statement about it can be checked against the
+            // running deployment: whether it is served at all, and whether the tier carrying session
+            // ids is reachable.
+            review = new
+            {
+                enabled = reviewOptions.Enabled,
+                sessionTier = !reviewOptions.Enabled ? "off"
+                    : privacyGuard.SessionDetailSuppressed ? "refused (privacy mode)"
+                    : "admin scope",
+            },
             counters = new
             {
                 attributesPseudonymized = redactor.AttributesPseudonymized,
@@ -1199,6 +1315,7 @@ public static class CollectorApp
             storage = storage.Name,
             forwarding = forwarder.Enabled,
             prometheus = prometheusOptions.Enabled,
+            review = reviewOptions.Enabled,
             environment = app.Environment.EnvironmentName
         }));
 
@@ -1230,6 +1347,7 @@ public static class CollectorApp
             "Friction: GET /api/friction (aggregate; off unless CopilotScope:WorkflowFriction:Enabled)\n" +
             "Team views: GET /api/cohorts | /api/compare | /api/facets (add format=csv to export)\n" +
             "Digest: GET /api/digest | POST /api/digest/send (admin, needs CopilotScope:Alerts)\n" +
+            "Review: GET /api/review/readiness | /api/review/pack?tier=aggregate|sessions&format=json|markdown (sessions tier: admin)\n" +
             "Import: POST /api/import (admin) — tools/CopilotScope.LogImporter, no OTel setup needed\n" +
             "Labelling: GET /api/labels/rubrics | POST /api/labels | GET /api/labels/export\n" +
             "Vendor usage: GET /api/vendor/metrics (archives GitHub's 28-day window indefinitely)\n" +

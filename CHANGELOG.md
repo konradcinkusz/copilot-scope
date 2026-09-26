@@ -10,6 +10,29 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
 
 ## [Unreleased]
 
+### Added
+- **The review pack — `GET /api/review/pack` and `GET /api/review/readiness`** ([docs/REVIEW.md](docs/REVIEW.md)),
+  the first step of [ADR-005](docs/architecture/ADR-005-session-review.md): the session base,
+  counted, as one document for something else to read — the user's own coding assistant, most
+  likely. Cohorts, the before/after comparison, regressions, the score and confidence
+  distribution, each assistant's signal coverage, the patterns that recurred (tool errors, error
+  types, LLM errors, repair loops, latency stalls, model contrasts — each computed inside one
+  origin/assistant/profile stratum, with its threshold stated) and the best and worst sessions
+  per stratum with the turn analysis's reasons. `ReviewPack.Build` is a pure function of the
+  sessions it is handed and a test holds it to byte-identical output over any ordering.
+  - Two tiers. `aggregate` (default) is counts only and is served to any Read credential under
+    the k-anonymity floor like every other view. `sessions` adds session rows, exemplars and the
+    ids each pattern rests on; it needs Admin scope and is refused under privacy mode before
+    anything is read, as per-session detail is.
+  - Nothing individual leaves in it: no prompt, response or tool-argument text whatever the
+    capture setting, no subject, branch, agent name, rater or subject count, and no workflow-
+    friction figure. Tests walk the serialized keys and the text to assert it.
+  - `format=markdown` renders the pack as one document capped at 48 KB, opening with the rules a
+    score is read by. `readiness` counts eligible sessions since a `coveredUntil` watermark against
+    `CopilotScope:Review:MinSessions` (25) over `CopilotScope:Review:WindowDays` (30).
+  - Off with `CopilotScope:Review:Enabled=false`; `GET /api/privacy` reports the switch and who
+    may have the sessions tier. Every fetch is in the access audit log.
+
 ### Fixed
 - **`copilotscope` no longer writes outside `~/.copilotscope`, and its first start no longer
   warns about unencrypted keys.** ASP.NET Core kept the keys that protect the dashboard's

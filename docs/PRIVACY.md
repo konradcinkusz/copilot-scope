@@ -85,6 +85,16 @@ That is usable for a trial and useless for a deployment.
   arrived — before redaction, by design. Set `AllowRawForwarding: true` only if the
   upstream backend is covered by the same agreement.
 
+### Related: the review pack
+
+`GET /api/review/pack` ([REVIEW.md](REVIEW.md)) serves the base, counted, for an outside reader.
+Its aggregate tier is subject to the floor like every other view; its sessions tier carries
+session ids and is refused under privacy mode before anything is read, exactly as per-session
+detail is. Neither tier carries prompt or response text or names a subject. `GET /api/privacy`
+reports whether the pack is served at all (`review.enabled`) and who may have the sessions tier;
+`CopilotScope:Review:Enabled=false` switches both endpoints off for a deployment whose works
+agreement does not mention a review.
+
 ### Related: workflow-friction signals
 
 The one analyzer that reads prompt text is documented separately in

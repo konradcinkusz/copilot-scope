@@ -200,7 +200,8 @@ public static class Dto
             outcomes?.Select(OutcomeLinkDto.From).ToList()));
     }
 
-    private static string? Anonymize(string? repoUrl)
+    /// <summary>A repository as it may leave the collector: the remote URL with any embedded credential removed.</summary>
+    internal static string? Anonymize(string? repoUrl)
     {
         if (repoUrl is null) return null;
         // Strip credentials that may be embedded in a remote URL.
