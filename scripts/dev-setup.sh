@@ -32,7 +32,8 @@ set -euo pipefail
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 DOTNET_INSTALL_URL="https://dot.net/v1/dotnet-install.sh"
-TOOLS_DIR="$HOME/.dotnet/tools"
+# Where `dotnet tool install --global` puts tools: the SDK honours DOTNET_CLI_HOME over HOME.
+TOOLS_DIR="${DOTNET_CLI_HOME:-$HOME}/.dotnet/tools"
 
 DOTNET_DIR=""
 ASPIRE_CLI="true"
@@ -159,7 +160,7 @@ else
         warn "Aspire CLI ${aspire_version:-of unknown version} ($aspire_where), but the AppHost is on Aspire $ASPIRE_MAJOR."
         warn "from NuGet, it moves with: dotnet tool update --global Aspire.Cli --version \"$ASPIRE_MAJOR.*\""
     fi
-    on_path "$TOOLS_DIR" || ENV_LINES+=("export PATH=\"\$HOME/.dotnet/tools:\$PATH\"")
+    on_path "$TOOLS_DIR" || ENV_LINES+=("export PATH=\"$TOOLS_DIR:\$PATH\"")
 fi
 
 # ------------------------------------------------------ 3. container runtime

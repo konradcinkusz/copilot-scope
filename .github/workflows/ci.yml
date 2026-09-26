@@ -305,7 +305,17 @@ jobs:
           if (-not (Select-String -Path "$env:RUNNER_TEMP\first.log" -Pattern 'Installing the .NET' -Quiet)) {
             Write-Host "::error title=dev-setup::the SDK was not installed into an empty -DotnetDir"; exit 1
           }
-          & "$HOME\.dotnet\tools\aspire.exe" --version
+          # Resolved the way a user's `aspire` is, through the PATH the script left in this session,
+          # rather than from an assumed file: the shim's directory and extension are the SDK's call.
+          $aspire = Get-Command aspire -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $aspire) {
+            Write-Host "::error title=dev-setup::no aspire on the PATH after the script ran"
+            Write-Host "DOTNET_CLI_HOME=$env:DOTNET_CLI_HOME"
+            Get-ChildItem "$HOME\.dotnet\tools" -ErrorAction SilentlyContinue | Select-Object Name, Length | Format-Table | Out-String | Write-Host
+            exit 1
+          }
+          Write-Host "aspire: $($aspire.Source)"
+          & $aspire.Source --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Second run installs nothing

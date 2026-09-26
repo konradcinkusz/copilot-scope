@@ -60,7 +60,9 @@ $ErrorActionPreference = 'Continue'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $DotnetInstallUrl = 'https://dot.net/v1/dotnet-install.ps1'
-$ToolsDir = Join-Path $HOME '.dotnet\tools'
+# Where `dotnet tool install --global` puts tools: the SDK honours DOTNET_CLI_HOME over the profile.
+$ToolsDir = Join-Path (Join-Path $(if ($env:DOTNET_CLI_HOME) { $env:DOTNET_CLI_HOME } else { $HOME }) '.dotnet') 'tools'
+$Sep = [System.IO.Path]::PathSeparator
 
 function Write-Step { param([string] $Text) Write-Host ''; Write-Host $Text -ForegroundColor White }
 function Write-Ok   { param([string] $Text) Write-Host "  [ok] $Text" -ForegroundColor Green }
@@ -107,7 +109,7 @@ function Get-Sdk {
 # Directories a new terminal needs on its PATH, and DOTNET_ROOT, for what this set up.
 $PathDirs = @()
 $DotnetRoot = $null
-$OrigPath = @($env:PATH -split ';' | ForEach-Object { $_.TrimEnd('\') })
+$OrigPath = @($env:PATH -split [regex]::Escape($Sep) | ForEach-Object { $_.TrimEnd('\') })
 function Test-OnPath { param([string] $Dir) return $OrigPath -contains $Dir.TrimEnd('\') }
 
 Write-Host ''
@@ -155,7 +157,7 @@ if (-not $DotnetDir -and $onPath -and (Get-Sdk $onPath.Source)) {
     }
     # The rest of this script, and this terminal when run with .\, uses this SDK.
     $env:DOTNET_ROOT = $DotnetDir
-    if (-not (Test-OnPath $DotnetDir)) { $env:PATH = "$DotnetDir;$env:PATH" }
+    if (-not (Test-OnPath $DotnetDir)) { $env:PATH = "$DotnetDir$Sep$env:PATH" }
     $DotnetRoot = $DotnetDir
     $PathDirs += $DotnetDir
 }
@@ -194,7 +196,7 @@ if ($NoAspireCli) {
         Write-Warn "from NuGet, it moves with: dotnet tool update --global Aspire.Cli --version `"$AspireMajor.*`""
     }
     if (-not (Test-OnPath $ToolsDir)) {
-        $env:PATH = "$ToolsDir;$env:PATH"
+        $env:PATH = "$ToolsDir$Sep$env:PATH"
         $PathDirs += $ToolsDir
     }
 }
