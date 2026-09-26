@@ -27,16 +27,22 @@ seeded demo dataset (`copilotscope demo`) — which is why the sessions carry a
 `DEMO` badge. Fabricated data, real UI.</sub>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.sh | sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1 | iex
+irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.ps1 | iex
 ```
 
 That installs one self-contained program, `copilotscope`, for Windows, macOS or Linux on x64
-or arm64. The installer checks the download against the release's `SHA256SUMS` before writing
-anything, then offers to point the assistants it finds at it. Then:
+or arm64. The installer downloads the newest release, checks it against the release's
+`SHA256SUMS` before writing anything, and then offers to point the assistants it finds at it.
+The path names a release on purpose: the installer you run is the one that release shipped and
+was tested with, whereas `master` moves. To read it before running it, download it first
+(`irm … -OutFile install.ps1`, then `powershell -ExecutionPolicy Bypass -File .\install.ps1`;
+`curl -fsSLO …`, then `sh install.sh`), which is also how options are passed: `-Version v1.2.0`
+on Windows, `--version v1.2.0` elsewhere — or, without downloading, `| sh -s -- --version v1.2.0`.
+Then:
 
 ```bash
 copilotscope    # telemetry on localhost:4318, the dashboard on localhost:5200; Ctrl+C stops it
@@ -45,8 +51,8 @@ copilotscope    # telemetry on localhost:4318, the dashboard on localhost:5200; 
 **There is nothing to declare**: no Docker, no .NET, no key, no environment variable to
 export, no JSON to hand-edit ([ADR-004](docs/architecture/ADR-004-native-distribution.md)).
 It binds to `127.0.0.1` and keeps sessions in `~/.copilotscope/data`. It also reads the Claude
-Code history already on your disk, which is scored even with no telemetry configured and kept
-current as new sessions finish.
+Code history already on your disk, with no telemetry configured: every session quiet for ten
+minutes is scored on the first start, and later ones follow, once a minute, as they finish.
 
 `copilotscope setup` finds Claude Code, VS Code and Copilot CLI and shows the exact change to
 each one's own settings: `~/.claude/settings.json` for Claude Code, VS Code's user settings for
@@ -57,9 +63,7 @@ often a `claude` session started before its settings changed.
 
 **For a team or a shared server**, `--docker` installs the Docker Compose stack instead:
 Postgres, the GHCR images and the `copilotscope` control script, as before. See
-[Quick start with Docker](#quick-start-with-docker--for-a-team-or-a-shared-server). Native
-builds ship from the next release on. Until one exists, the installer falls back to the Docker
-stack if Docker is installed.
+[Quick start with Docker](#quick-start-with-docker--for-a-team-or-a-shared-server).
 
 <details><summary>Or download it yourself</summary>
 
@@ -368,16 +372,17 @@ agentforge and judgeagent (see `.github/workflows/build-containers.yml`). Users
 don't need the repository at all.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.sh | sh -s -- --docker
+curl -fsSL https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.sh | sh -s -- --docker
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/install.ps1))) -Docker
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/install.ps1))) -Docker
 ```
 
 With `--docker`, the installer:
 - checks Docker;
-- drops the compose file and a `copilotscope` control script into `~/.copilotscope`;
+- drops the compose file and a `copilotscope` control script into `~/.copilotscope` — both
+  fetched from `master`, whichever release the installer itself came from;
 - starts the stack and waits for the collector to answer;
 - offers to configure each assistant it finds.
 
@@ -393,7 +398,7 @@ copilotscope import                # the Claude Code history already on disk
 Prefer to drive compose yourself? The same posture, without the control script:
 
 ```bash
-curl -O https://raw.githubusercontent.com/konradcinkusz/copilot-scope/master/docker-compose.ghcr.yml
+curl -O https://raw.githubusercontent.com/konradcinkusz/copilot-scope/v1.2.0/docker-compose.ghcr.yml
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
