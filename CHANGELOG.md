@@ -45,6 +45,14 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   native release workflow once the archives are attached, submits every later release with
   `wingetcreate` once `WINGET_CREATE_GITHUB_TOKEN` is set, and says so when it is not; the first
   version is submitted by hand, as `packaging/winget/README.md` describes.
+- **Build provenance on every release artifact** — the native archives, `SHA256SUMS`, the two
+  installer scripts, the research PDFs and the container images each carry a signed SLSA
+  provenance attestation (`actions/attest`, Sigstore), checkable with `gh attestation verify
+  <file> --repo konradcinkusz/copilot-scope`; `SHA256SUMS` only ever said the download arrived
+  intact. `install.sh` and `install.ps1` are attached to each release and listed in `SHA256SUMS`,
+  so `releases/download/<tag>/install.sh`, run with `--version <tag>` (`-Version` on Windows),
+  installs a release with the installer it was tested with
+  ([ADR-004](docs/architecture/ADR-004-native-distribution.md) decision 7, amended).
 - **The review pack — `GET /api/review/pack` and `GET /api/review/readiness`** ([docs/REVIEW.md](docs/REVIEW.md)),
   the first step of [ADR-005](docs/architecture/ADR-005-session-review.md): the session base,
   counted, as one document for something else to read — the user's own coding assistant, most

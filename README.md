@@ -1,12 +1,12 @@
 # CopilotScope
 
-[![build containers](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml)
-[![Research Paper](https://img.shields.io/badge/PDF-Research%20Paper-blue)](https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf)
+[![build containers](https://github.com/konradcinkusz/copilot-scope/actions/workflows/build-containers.yml/badge.svg)](https://github.com/konradcinkusz/copilot-scope/actions/workflows/build-containers.yml)
+[![Research Paper](https://img.shields.io/badge/PDF-Research%20Paper-blue)](https://github.com/konradcinkusz/copilot-scope/releases/latest/download/CopilotScope_Quality_Framework.pdf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-e0a458.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=e0a458)](https://github.com/konradcinkusz/copilotscope/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilotscope/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilotscope?style=social)](https://github.com/konradcinkusz/copilotscope/stargazers)
-[![CI](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilot-scope?color=e0a458)](https://github.com/konradcinkusz/copilot-scope/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilot-scope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilot-scope/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilot-scope?style=social)](https://github.com/konradcinkusz/copilot-scope/stargazers)
+[![CI](https://github.com/konradcinkusz/copilot-scope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilot-scope/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 **Quality scoring for AI coding-assistant sessions.**
@@ -77,6 +77,33 @@ binaries are not signed yet:
 - a download made with `curl` or `Invoke-WebRequest` runs as is;
 - a download made in a browser meets macOS Gatekeeper (`xattr -d com.apple.quarantine
   copilotscope`) or Windows SmartScreen (*More info → Run anyway*).
+
+Releases after v1.2.0 also carry **build provenance**: a signed statement, stored with the
+repository, that a workflow of this repository built that exact file from that exact commit —
+something `SHA256SUMS`, which comes from the same release, cannot say. With the GitHub CLI
+(`--signer-workflow konradcinkusz/copilot-scope/.github/workflows/release-native.yml` narrows
+it to the release workflow itself):
+
+```bash
+gh attestation verify copilotscope-linux-x64.tar.gz --repo konradcinkusz/copilot-scope
+gh attestation verify oci://ghcr.io/konradcinkusz/copilotscope-collector:<version> --repo konradcinkusz/copilot-scope
+```
+
+Those releases attach `install.sh` and `install.ps1` as well, listed in `SHA256SUMS` and attested
+like the archives. The one-line install above runs whatever the path it names holds; this runs
+the installer a release was tested with, verified, and installs that release:
+
+```bash
+curl -fsSLO https://github.com/konradcinkusz/copilot-scope/releases/download/<tag>/install.sh
+gh attestation verify install.sh --repo konradcinkusz/copilot-scope
+sh install.sh --version <tag>
+```
+
+```powershell
+Invoke-WebRequest https://github.com/konradcinkusz/copilot-scope/releases/download/<tag>/install.ps1 -OutFile install.ps1
+gh attestation verify install.ps1 --repo konradcinkusz/copilot-scope
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Version <tag>
+```
 
 </details>
 

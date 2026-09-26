@@ -18,6 +18,12 @@ on:
 
 permissions:
   contents: write
+  # Build provenance for the PDFs (ADR-004, decision 7), as release-native.yml gives the
+  # archives: id-token signs, attestations stores; artifact-metadata is what actions/attest
+  # asks for and only matters for organization-owned repositories.
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   build:
@@ -52,6 +58,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: CopilotScope_Research_PDFs
+      # A signed statement that this workflow run built these PDFs from this commit, checked
+      # with `gh attestation verify <file>.pdf --repo <owner>/<repo>` like the archives.
+      - uses: actions/attest@v4
+        with:
+          subject-path: |
+            CopilotScope_Quality_Framework.pdf
+            CopilotScope_Thesis_Topics.pdf
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || (inputs.tag_name != '' && inputs.tag_name || format('manual-run-{0}', github.run_number)) }}
