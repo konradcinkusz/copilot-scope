@@ -122,4 +122,4 @@ so.
 
 ## Questions / ideas
 
-Open an [Issue](https://github.com/konradcinkusz/copilotscope/issues) for bugs, and for design questions or feature proposals — please raise one before writing a large PR, so we can agree on the approach first.
+Open an [Issue](https://github.com/konradcinkusz/copilot-scope/issues) for bugs, and for design questions or feature proposals — please raise one before writing a large PR, so we can agree on the approach first.

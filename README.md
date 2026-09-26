@@ -1,12 +1,12 @@
 # CopilotScope
 
-[![build containers](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/build-containers.yml)
-[![Research Paper](https://img.shields.io/badge/PDF-Research%20Paper-blue)](https://github.com/konradcinkusz/copilotscope/releases/latest/download/CopilotScope_Quality_Framework.pdf)
+[![build containers](https://github.com/konradcinkusz/copilot-scope/actions/workflows/build-containers.yml/badge.svg)](https://github.com/konradcinkusz/copilot-scope/actions/workflows/build-containers.yml)
+[![Research Paper](https://img.shields.io/badge/PDF-Research%20Paper-blue)](https://github.com/konradcinkusz/copilot-scope/releases/latest/download/CopilotScope_Quality_Framework.pdf)
 [![License: MIT](https://img.shields.io/badge/License-MIT-e0a458.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilotscope?color=e0a458)](https://github.com/konradcinkusz/copilotscope/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilotscope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilotscope/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilotscope?style=social)](https://github.com/konradcinkusz/copilotscope/stargazers)
-[![CI](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilotscope/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/konradcinkusz/copilot-scope?color=e0a458)](https://github.com/konradcinkusz/copilot-scope/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/konradcinkusz/copilot-scope/total?color=6cc5a1)](https://github.com/konradcinkusz/copilot-scope/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/konradcinkusz/copilot-scope?style=social)](https://github.com/konradcinkusz/copilot-scope/stargazers)
+[![CI](https://github.com/konradcinkusz/copilot-scope/actions/workflows/ci.yml/badge.svg)](https://github.com/konradcinkusz/copilot-scope/actions/workflows/ci.yml)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 **Quality scoring for AI coding-assistant sessions.**
