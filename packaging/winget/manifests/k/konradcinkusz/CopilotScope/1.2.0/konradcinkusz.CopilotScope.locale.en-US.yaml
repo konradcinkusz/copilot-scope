@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+
+PackageIdentifier: konradcinkusz.CopilotScope
+PackageVersion: 1.2.0
+PackageLocale: en-US
+Publisher: Konrad Cinkusz
+PublisherUrl: https://github.com/konradcinkusz
+PublisherSupportUrl: https://github.com/konradcinkusz/copilot-scope/issues
+PackageName: CopilotScope
+PackageUrl: https://github.com/konradcinkusz/copilot-scope
+License: MIT
+LicenseUrl: https://github.com/konradcinkusz/copilot-scope/blob/master/LICENSE
+ShortDescription: Quality scoring for AI coding-assistant sessions, on your own machine
+Description: |-
+  CopilotScope scores the quality of AI coding-assistant sessions (VS Code Copilot, Copilot CLI, Claude Code, Claude Cowork) from the OpenTelemetry they already emit, with a published, deterministic formula. One self-contained program: the collector and the dashboard on localhost, sessions kept under ~/.copilotscope, nothing leaves the machine.
+Moniker: copilotscope
+Tags:
+- claude-code
+- copilot
+- developer-tools
+- observability
+- opentelemetry
+ReleaseNotesUrl: https://github.com/konradcinkusz/copilot-scope/releases/tag/v1.2.0
+Documentations:
+- DocumentLabel: README
+  DocumentUrl: https://github.com/konradcinkusz/copilot-scope#readme
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0

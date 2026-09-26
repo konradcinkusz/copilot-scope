@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+
+PackageIdentifier: konradcinkusz.CopilotScope
+PackageVersion: 1.2.0
+InstallerType: zip
+NestedInstallerType: portable
+# The binary serves the dashboard from the wwwroot beside it, so the extracted folder goes on
+# the PATH as it is, rather than a symlink to copilotscope.exe alone.
+ArchiveBinariesDependOnPath: true
+Commands:
+- copilotscope
+ReleaseDate: 2026-09-26
+Installers:
+- Architecture: x64
+  NestedInstallerFiles:
+  - RelativeFilePath: copilotscope-win-x64\copilotscope.exe
+    PortableCommandAlias: copilotscope
+  InstallerUrl: https://github.com/konradcinkusz/copilot-scope/releases/download/v1.2.0/copilotscope-win-x64.zip
+  InstallerSha256: B7DD75033F15E7E866A2EB9EC7E7E9721AA31E857BB9F0A3E387144C0D4F0773
+- Architecture: arm64
+  NestedInstallerFiles:
+  - RelativeFilePath: copilotscope-win-arm64\copilotscope.exe
+    PortableCommandAlias: copilotscope
+  InstallerUrl: https://github.com/konradcinkusz/copilot-scope/releases/download/v1.2.0/copilotscope-win-arm64.zip
+  InstallerSha256: 2D28EC0A3774FB2F221C5458887409504E4011B0DADB6DD44BC2A7B620E51B43
+ManifestType: installer
+ManifestVersion: 1.10.0

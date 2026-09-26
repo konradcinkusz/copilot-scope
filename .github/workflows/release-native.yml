@@ -186,3 +186,17 @@ jobs:
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest
           fi
           echo "Attached $(ls dist | wc -l) file(s) to $TAG."
+
+  # Windows Package Manager: with the archives attached, the release is submitted to
+  # winget-pkgs (.github/workflows/winget.yml). Only on a tag push — a manual rebuild of an
+  # existing release re-attaches archives winget already has, and submitting them again would
+  # open a duplicate pull request.
+  winget:
+    needs: [version, release]
+    if: needs.version.outputs.publish == 'true' && github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/winget.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit

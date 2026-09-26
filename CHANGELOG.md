@@ -38,6 +38,13 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   resource carries `copilotscope.observer`, which runs set in their environment. `POST /api/import`
   refuses a registered id, which covers the scanner. `GET /api/health` counts what was dropped as
   `observerSignals`.
+- **winget** — `packaging/winget/` holds the Windows Package Manager manifests for
+  `konradcinkusz.CopilotScope` (a `zip` with a nested `portable`, x64 and arm64, hashes from the
+  release's `SHA256SUMS`), so on Windows `winget install konradcinkusz.CopilotScope` is an
+  alternative to piping the installer into a shell. `.github/workflows/winget.yml`, run by the
+  native release workflow once the archives are attached, submits every later release with
+  `wingetcreate` once `WINGET_CREATE_GITHUB_TOKEN` is set, and says so when it is not; the first
+  version is submitted by hand, as `packaging/winget/README.md` describes.
 - **The review pack — `GET /api/review/pack` and `GET /api/review/readiness`** ([docs/REVIEW.md](docs/REVIEW.md)),
   the first step of [ADR-005](docs/architecture/ADR-005-session-review.md): the session base,
   counted, as one document for something else to read — the user's own coding assistant, most
