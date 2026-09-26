@@ -3,7 +3,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml.Linq;
 using CopilotScope.Collector;
+using CopilotScope.Collector.Domain;
 using CopilotScope.Dashboard;
+using CopilotScope.Dashboard.Functions;
+using CopilotScope.Local.Connecting;
+using CopilotScope.Local.Functions;
 using CopilotScope.Local.Scanning;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
@@ -23,7 +27,8 @@ internal sealed record LocalHostOptions(
     string Token,
     bool Verbose = false,
     IReadOnlyList<IScanSource>? ScanSources = null,
-    ScannerOptions? Scan = null);
+    ScannerOptions? Scan = null,
+    string? RunsDirectory = null);
 
 /// <summary>
 /// The collector and the dashboard, running side by side in this process (ADR-004).
@@ -73,6 +78,10 @@ internal sealed class LocalHost : IAsyncDisposable
 
     /// <summary>Reading assistants' local history into the collector; null when scanning is off.</summary>
     public Scanner? Scanner { get; private set; }
+
+    /// <summary>Runs functions on this machine's assistants (docs/FUNCTIONS.md); null when there is
+    /// nowhere to keep their files.</summary>
+    public FunctionRunner? Runner { get; private set; }
 
     /// <summary>Completes when something asked this host to stop: <c>copilotscope stop</c>, or one
     /// of the two applications shutting itself down (a background service that failed).</summary>
@@ -133,6 +142,26 @@ internal sealed class LocalHost : IAsyncDisposable
         }
 
         var collectorUrl = BoundUrl(collector);
+
+        // Functions run the user's own assistant over the review pack (docs/FUNCTIONS.md). The runner
+        // lives here, in the one process that owns local state (ADR-005, decision 5), and holds the
+        // collector's observer registry so nothing it launches is ever scored. A runs directory that
+        // cannot be read costs the Functions page its Run buttons, not the whole start.
+        FunctionRunner? runner = null;
+        if (options.RunsDirectory is { } runs)
+        {
+            var runnerLogger = collector.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FunctionRunner>();
+            try
+            {
+                runner = new FunctionRunner(runs, collector.Services.GetRequiredService<ObserverRegistry>(),
+                    Machine.Current(), runnerLogger);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                runnerLogger.LogWarning("Functions cannot run: {Directory} is unreadable ({Reason}).", runs, ex.Message);
+            }
+        }
+
         WebApplication? dashboard = null;
         try
         {
@@ -152,6 +181,9 @@ internal sealed class LocalHost : IAsyncDisposable
                     ["CopilotScope:SelfTelemetry:Enabled"] = "false",
                     ["AllowedHosts"] = LoopbackHosts
                 });
+                // The dashboard declares the contract and a Compose deployment registers nothing, so its
+                // Functions page offers kits; only this host can start an assistant.
+                if (runner is not null) b.Services.AddSingleton<IFunctionRunner>(runner);
                 ConfigureShared(b, options.DashboardPort, options.Verbose);
             });
 
@@ -177,13 +209,14 @@ internal sealed class LocalHost : IAsyncDisposable
         }
         catch
         {
+            if (runner is not null) await runner.DisposeAsync();
             if (dashboard is not null) await dashboard.DisposeAsync();
             await collector.StopAsync(CancellationToken.None);
             await collector.DisposeAsync();
             throw;
         }
 
-        host = new LocalHost(collector, dashboard, collectorUrl, BoundUrl(dashboard));
+        host = new LocalHost(collector, dashboard, collectorUrl, BoundUrl(dashboard)) { Runner = runner };
         // A background service that fails stops its host; the other half must not run on alone,
         // collecting into a dashboard that is gone or serving one whose collector is.
         collector.Lifetime.ApplicationStopping.Register(() => host._stopRequested.TrySetResult());
@@ -225,6 +258,9 @@ internal sealed class LocalHost : IAsyncDisposable
 
         if (Scanner is not null) await Scanner.StopAsync();
         _scanClient?.Dispose();
+        // A run still going is stopped, not orphaned: it would keep spending the user's quota with
+        // nothing left to record its report.
+        if (Runner is not null) await Runner.DisposeAsync();
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         try { await Dashboard.StopAsync(timeout.Token); }

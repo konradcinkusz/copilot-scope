@@ -22,6 +22,9 @@ internal sealed record LocalPaths(string Home)
     /// <summary>One JSON file per session (the file store of ADR-004).</summary>
     public string Data => Path.Combine(Home, "data");
 
+    /// <summary>Function runs: each one's task, pack, agents and report (docs/FUNCTIONS.md).</summary>
+    public string Runs => Path.Combine(Home, "runs");
+
     /// <summary>What only a running process needs: which ports it took and how to stop it.</summary>
     public string Run => Path.Combine(Home, "run");
 
