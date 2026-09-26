@@ -54,6 +54,7 @@ public static class ScriptedSessionFactory
             EmitterKind = script.Emitter,
             FirstSeen = start,
         };
+        session.AddAgentName(session.AgentName);
 
         var turnCount = script.Turns.Length;
         var clock = start;

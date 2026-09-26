@@ -192,7 +192,12 @@ public sealed class SessionStore
         {
             MarkLive(s);
             if (s.EmitterKind == EmitterKind.Unknown) s.EmitterKind = DetectEmitter(span.Resource, span.Name, span.Attributes);
-            if (span.Attr(Sem.AgentName) is { } agent) s.AgentName = agent;
+            if (span.Attr(Sem.AgentName) is { } agent)
+            {
+                s.AgentName = agent;
+                // One invoke_agent span per agent and subagent: keep them all, not just the last.
+                s.AddAgentName(agent);
+            }
             if (span.Attr(Sem.GitRepository) is { } repo) s.Repository = repo;
             if (span.Attr(Sem.GitBranch) is { } branch) s.Branch = branch;
             if (span.Resource.TryGetValue(Sem.SessionId, out var sid)) s.VsCodeSessionId = sid.ToString();

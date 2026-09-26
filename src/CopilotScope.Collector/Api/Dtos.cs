@@ -38,7 +38,15 @@ public sealed record SessionSummaryDto(
     int EditsAutoAccepted = 0,
     /// <summary>Where the data came from: "otel" or "log-import". An imported session is scored
     /// on genuinely less evidence, and a reader comparing two scores needs to know which.</summary>
-    string Origin = SessionOrigin.Otel);
+    string Origin = SessionOrigin.Otel,
+    /// <summary>Every agent that took part, in the order the collector first saw each — the
+    /// companion to <see cref="Agent"/>, which names one. See <see cref="CopilotSession.AgentNames"/>.</summary>
+    IReadOnlyList<string>? AgentNames = null)
+{
+    /// <summary>Always an array, empty when no agent was named: a DTO built without the list, or
+    /// read from a collector that predates it, must not hand its reader a null.</summary>
+    public IReadOnlyList<string> AgentNames { get; init; } = AgentNames ?? [];
+}
 
 public sealed record SessionDetailDto(
     SessionSummaryDto Summary,
@@ -179,7 +187,8 @@ public static class Dto
             SessionClassifier.Classify(x),
             x.EmitterKind,
             x.EditsAutoAccepted,
-            x.Origin));
+            x.Origin,
+            x.AgentNames.ToList()));
     }
 
     public static SessionDetailDto Detail(CopilotSession s, QualityEngine quality, InsightPipeline insights,

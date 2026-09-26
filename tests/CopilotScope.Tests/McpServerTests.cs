@@ -106,6 +106,29 @@ public class McpServerTests
     }
 
     [Fact]
+    public async Task TheEmitterFilterNamesOnlyValuesTheCollectorUnderstands()
+    {
+        // The collector drops an emitter it cannot parse (CohortFilter.From), so a documented
+        // value that is not an EmitterKind widens the result to every assistant without a word.
+        // "CopilotCli" was documented here once.
+        var (server, _) = Build();
+
+        var response = await AskAsync(server, """{"jsonrpc":"2.0","id":8,"method":"tools/list"}""");
+
+        var listSessions = response["result"]!["tools"]!.AsArray()
+            .Single(t => t!["name"]!.GetValue<string>() == "list_sessions")!;
+        var description = listSessions["inputSchema"]!["properties"]!["emitter"]!["description"]!.GetValue<string>();
+
+        foreach (var value in new[] { "VSCode", "CLI", "ClaudeCode", "Cowork" })
+        {
+            Assert.Contains(value, description, StringComparison.Ordinal);
+            Assert.NotNull(CopilotScope.Collector.Api.CohortFilter.From(null, value, null, null, null).Emitter);
+        }
+        Assert.DoesNotContain("CopilotCli", description, StringComparison.Ordinal);
+        Assert.Null(CopilotScope.Collector.Api.CohortFilter.From(null, "CopilotCli", null, null, null).Emitter);
+    }
+
+    [Fact]
     public async Task ListSessionsSendsTheDefaultWindowAndEscapesFilters()
     {
         var (server, collector) = Build();

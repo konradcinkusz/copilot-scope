@@ -101,18 +101,22 @@ public static class ClaudeCodeTranscript
                 var sidechain = root.TryGetProperty("isSidechain", out var side) && side.ValueKind == JsonValueKind.True;
                 if (!sidechain) anyMainLine = true;
 
-                session ??= new CopilotSession
+                if (session is null)
                 {
-                    Id = sessionId,
-                    Origin = SessionOrigin.LogImport,
-                    EmitterKind = EmitterKind.ClaudeCode,
-                    AgentName = "claude-code",
-                    FirstSeen = at,
-                    LastSeen = at,
-                    // The transcript's own session id is the one the OTel path would use too,
-                    // which is what makes re-import idempotent instead of duplicating history.
-                    VsCodeSessionId = sessionId,
-                };
+                    session = new CopilotSession
+                    {
+                        Id = sessionId,
+                        Origin = SessionOrigin.LogImport,
+                        EmitterKind = EmitterKind.ClaudeCode,
+                        AgentName = "claude-code",
+                        FirstSeen = at,
+                        LastSeen = at,
+                        // The transcript's own session id is the one the OTel path would use too,
+                        // which is what makes re-import idempotent instead of duplicating history.
+                        VsCodeSessionId = sessionId,
+                    };
+                    session.AddAgentName(session.AgentName);
+                }
 
                 session.Repository ??= repository;
                 session.Branch ??= Str(root, "gitBranch");

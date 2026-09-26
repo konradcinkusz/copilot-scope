@@ -89,6 +89,15 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   checks. Aspire itself still arrives as NuGet packages; no workload. `install.sh` is unchanged
   and still installs no .NET. CI runs both scripts for real, on Linux and Windows, into an empty
   directory and then again to hold a re-run to installing nothing.
+- **Every agent a session reports — `agentNames` on `GET /api/sessions` and `GET /api/sessions/{id}`.**
+  Copilot CLI emits one `invoke_agent` span per agent and subagent, each naming itself in
+  `gen_ai.agent.name`, and a session kept only one of those names. `agentNames` sits beside `agent`
+  in each session row (under `summary` in the detail) and lists them all, in the order the
+  collector first saw each: distinct and case-sensitive, blank names ignored, at most 32 names of
+  at most 200 characters. `agent` itself is unchanged. Merges union the lists, whether an
+  unattributed bucket is claimed or a stored snapshot is merged back; a snapshot stored before the
+  list existed loads with an empty one, and an imported Claude Code transcript names `claude-code`.
+  The review pack still carries no agent name.
 
 ### Fixed
 - **`copilotscope` no longer writes outside `~/.copilotscope`, and its first start no longer
@@ -98,6 +107,9 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   that they "may be persisted to storage in unencrypted form". The keys now live in memory:
   nothing they protect outlives the process, because a circuit ends with it and a page left
   open across a restart has to reload either way.
+- **The MCP server's `list_sessions` tool names the `emitter` values the collector accepts:**
+  `VSCode`, `CLI`, `ClaudeCode` and `Cowork`. It suggested `CopilotCli`, which the collector cannot
+  parse and therefore ignores, so a request meant for Copilot CLI came back covering every assistant.
 
 ## [1.1.0] — 2026-09-25
 
