@@ -1,0 +1,108 @@
+# Submits each release to the Windows Package Manager community repository
+# (microsoft/winget-pkgs), so that on Windows `winget install konradcinkusz.CopilotScope`
+# installs it and `winget upgrade` keeps it current — without piping a script into a shell.
+#
+# A reusable workflow: release-native.yml calls it once its release job has attached the
+# archives, so both Windows archives exist by the time it runs. (A `release: published`
+# trigger would never fire here — the release is created with the workflow's own
+# GITHUB_TOKEN, and GitHub starts no workflow for an event that token caused.) A manual run
+# submits any existing release by tag. Submission needs a personal access token of whoever
+# owns the winget-pkgs fork (WINGET_CREATE_GITHUB_TOKEN, classic PAT with the public_repo
+# scope); without it the job reports that it submitted nothing rather than failing the
+# release. The first version of the package is submitted by hand — see
+# packaging/winget/README.md — because `wingetcreate update` can only update a package that
+# already exists.
+name: winget
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to submit (e.g. v1.2.0)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to submit (e.g. v1.2.0)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    # wingetcreate runs on Windows only.
+    runs-on: windows-latest
+    env:
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+      PACKAGE_ID: konradcinkusz.CopilotScope
+    steps:
+      - name: Resolve the release
+        id: rel
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = $env:INPUT_TAG
+          if ($tag -notmatch '^[vV](\d+\.\d+\.\d+)$') {
+            Write-Host "::error title=Unrecognised release tag::'$tag' is not v<major>.<minor>.<patch>. Nothing was submitted."
+            exit 1
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($Matches[1])" >> $env:GITHUB_OUTPUT
+          Write-Host "Submitting $($Matches[1]) from release $tag."
+
+      - name: Nothing to submit with
+        if: env.WINGET_CREATE_GITHUB_TOKEN == ''
+        shell: pwsh
+        run: Write-Host "::notice title=winget::WINGET_CREATE_GITHUB_TOKEN is not set, so ${{ steps.rel.outputs.tag }} was not submitted to winget-pkgs. See packaging/winget/README.md."
+
+      # The manifest update needs both Windows archives. They are attached before this workflow
+      # is called; a manual run names a release that had better be complete. The check reads the
+      # release's own asset list — a HEAD on a download URL answers 401 after its redirect.
+      - name: Check that the Windows archives are attached
+        if: env.WINGET_CREATE_GITHUB_TOKEN != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          $assets = @(gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($name in 'copilotscope-win-x64.zip', 'copilotscope-win-arm64.zip') {
+            if ($assets -notcontains $name) {
+              Write-Host "::error title=Release incomplete::$name is not attached to $env:TAG. Nothing was submitted."
+              exit 1
+            }
+            Write-Host "$name is attached."
+          }
+
+      - name: Submit with wingetcreate
+        if: env.WINGET_CREATE_GITHUB_TOKEN != ''
+        shell: pwsh
+        env:
+          BASE: https://github.com/${{ github.repository }}/releases/download/${{ steps.rel.outputs.tag }}
+          NOTES: https://github.com/${{ github.repository }}/releases/tag/${{ steps.rel.outputs.tag }}
+          VERSION: ${{ steps.rel.outputs.version }}
+        run: |
+          curl.exe -fsSL -o wingetcreate.exe https://aka.ms/wingetcreate/latest
+          # The architecture is stated beside each URL so wingetcreate never has to guess it from
+          # the file name, and the token comes from the environment so it is never on the
+          # command line.
+          .\wingetcreate.exe update $env:PACKAGE_ID `
+            --version $env:VERSION `
+            --urls "$env:BASE/copilotscope-win-x64.zip|x64" "$env:BASE/copilotscope-win-arm64.zip|arm64" `
+            --release-notes-url $env:NOTES `
+            --out manifests `
+            --submit
+
+      # The three manifests wingetcreate generated and submitted, kept with the run: what the
+      # winget-pkgs pull request carries, and what packaging/winget/manifests records.
+      - name: Keep the submitted manifests
+        if: env.WINGET_CREATE_GITHUB_TOKEN != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: winget-manifests-${{ steps.rel.outputs.version }}
+          path: manifests/**
+          if-no-files-found: error
