@@ -1,8 +1,7 @@
 # CopilotScope — Architecture Review
 
 > Reviewed against the working tree at `master` (merge commit `7d135c2`), August 2026.
-> Companion documents: [`AureliusPromptus/docs/architecture/ARCHITECTURE_REVIEW.md`](https://github.com/konradcinkusz/AureliusPromptus/blob/master/docs/architecture/ARCHITECTURE_REVIEW.md)
-> and the extracted blueprint in
+> Companion document: the extracted blueprint in
 > [`FSE.CORE/docs/architecture/00-REFERENCE-ARCHITECTURE.md`](https://github.com/konradcinkusz/FSE.CORE/blob/master/docs/architecture/00-REFERENCE-ARCHITECTURE.md).
 
 > **Status update (2026-08-14).** A follow-up whole-product review lives in
@@ -227,8 +226,8 @@ package. Consequences:
 - No `AddStandardResilienceHandler` on the HTTP clients that call the collector and
   Azure AI Foundry, so a Foundry blip surfaces as an unretried 5xx.
 
-This is the largest structural gap relative to AureliusPromptus, which has exactly this
-library. See §5.
+This is the largest structural gap relative to the reference architecture, which has exactly
+this library. See §5.
 
 ### 3.6 — MEDIUM · One API key does three jobs
 
@@ -267,12 +266,12 @@ references. A shared `CopilotScope.Contracts` (DTOs) plus `CopilotScope.ServiceD
 
 `architecture.mmd` and `README.md` describe an Azure deployment (Container Apps, Static
 Web App, Key Vault, Entra ID). `infra/main.bicep` deploys only the collector — no
-dashboard, no Postgres, no Key Vault, no auth. Meanwhile the sibling repo has moved to
-Fly.io and CopilotScope has no Fly configuration at all.
+dashboard, no Postgres, no Key Vault, no auth. Meanwhile the reference architecture deploys
+to Fly.io and CopilotScope has no Fly configuration at all.
 
 **Fix:** either mark the Azure blocks in `architecture.mmd` as *planned* consistently
 (the Bicep is genuinely partial), or bring CopilotScope onto the same Fly.io deployment
-model as AureliusPromptus so the two systems share one operational runbook. The blueprint
+model as the reference architecture, so the project shares its operational runbook. The blueprint
 in §5 assumes the latter.
 
 ### 3.10 — LOW · Mixed-language comments and docs
@@ -313,10 +312,10 @@ Ordered so that each step is independently shippable.
 | 2 | Apply the ingest key to `/api/*`, or introduce a separate read key | HIGH | S |
 | 3 | Pin `minReplicas`/`maxReplicas` to 1 in `infra/main.bicep`; document the single-instance constraint | HIGH | S |
 | 4 | Align `Aspire.AppHost.Sdk` with `Aspire.Hosting.*` | MEDIUM | S |
-| 5 | Add `CopilotScope.ServiceDefaults` (OTel, health, discovery, resilience) modelled on AureliusPromptus; call it from all four services; add `WithHttpHealthCheck` in the AppHost | MEDIUM | M |
+| 5 | Add `CopilotScope.ServiceDefaults` (OTel, health, discovery, resilience) modelled on the reference architecture's shared kernel; call it from all four services; add `WithHttpHealthCheck` in the AppHost | MEDIUM | M |
 | 6 | Extract `CopilotScope.Contracts` + a single `CollectorClient`; drop the Collector-source copy from the agent Dockerfiles | LOW | M |
 | 7 | Split scrape and ingest credentials | MEDIUM | S |
-| 8 | Decide the cloud target — Fly.io (aligning with AureliusPromptus) or finish the Azure Bicep — and make `architecture.mmd` match | LOW | M |
+| 8 | Decide the cloud target — Fly.io (aligning with the reference architecture) or finish the Azure Bicep — and make `architecture.mmd` match | LOW | M |
 | 9 | Normalize build/deploy comments to English | LOW | S |
 
 Items 5 and 6 are the ones that carry CopilotScope onto the shared blueprint described in
