@@ -13,7 +13,7 @@ public static class Fixtures
 
     public static readonly string[] Repositories =
     [
-        "https://github.com/acme/aurelius-promptus",
+        "https://github.com/acme/search-service",
         "https://github.com/acme/billing-service",
         "https://github.com/acme/frontend-shell",
         "https://github.com/acme/infra-terraform",

@@ -97,7 +97,7 @@ for (var turn = 1; turn <= 5; turn++)
             ("gen_ai.agent.name", "copilot"),
             ("gen_ai.conversation.id", conversationId),
             ("gen_ai.request.model", model),
-            ("github.copilot.git.repository", "https://github.com/example/aurelius-promptus"),
+            ("github.copilot.git.repository", "https://github.com/example/search-service"),
             ("github.copilot.git.branch", "feature/otel-dashboard"),
             ("copilot_chat.turn_count", 2L)
         ]));
