@@ -100,6 +100,12 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   The review pack still carries no agent name.
 
 ### Fixed
+- **The demo data and its screenshots name only invented projects.** The seeder and the telemetry
+  generator called one of their pretend repositories after a project that is not part of
+  CopilotScope; the entry is now `acme/search-service`. The three screenshots that showed the
+  old name (Sessions, Overview, one session in the Advanced view) are retaken from the same
+  seeded dataset (`copilotscope demo demo --days 60`, seed 42), so every figure in them is
+  unchanged.
 - **`copilotscope` no longer writes outside `~/.copilotscope`, and its first start no longer
   warns about unencrypted keys.** ASP.NET Core kept the keys that protect the dashboard's
   antiforgery tokens and Blazor circuits in `~/.aspnet/DataProtection-Keys`. Deleting
