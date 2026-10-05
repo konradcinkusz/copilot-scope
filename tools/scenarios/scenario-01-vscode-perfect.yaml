@@ -1,0 +1,42 @@
+# scenario-01-vscode-perfect.yaml
+# VS Code Copilot Chat: clean session, good latency, high acceptance
+
+metadata:
+  name: "vscode-perfect"
+  description: "VS Code session: clean, good latency, high acceptance"
+  version: "1"
+  assistants:
+    - "vscode"
+
+generator:
+  seed: 42
+  protocol: "protobuf"
+  compressed: false
+  endpoint: "http://localhost:4318"
+
+session:
+  id: "vscode-perfect-001"
+  duration_seconds: 300
+
+  # Reliability: chat + tool signals
+  chat_calls: 10
+  chat_errors: 0
+  tool_calls: 8
+  tool_errors: 0
+
+  # Latency: TTFT samples (milliseconds)
+  ttft_ms: [350, 400, 450, 380, 420]
+
+  # Acceptance: edit signals (VS Code only)
+  edits_accepted: 7
+  edits_rejected: 0
+  edits_with_survival: 6
+
+expected:
+  score_range: [85, 95]
+  confidence_min: 0.80
+  components:
+    reliability: [0.90, 1.0]
+    acceptance: [0.90, 1.0]
+    latency: [0.75, 0.90]
+    friction: [0.85, 1.0]
