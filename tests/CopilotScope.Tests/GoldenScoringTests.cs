@@ -33,7 +33,7 @@ public class GoldenScoringTests
         Assert.True(report.Confidence > 0.5, $"Expected confidence > 0.5, got {report.Confidence}");
         Assert.NotEmpty(report.Components);
 
-        var reliability = report.Components.FirstOrDefault(c => c.Name == "reliability");
+        var reliability = report.Components.FirstOrDefault(c => c.Name == "Reliability");
         Assert.NotNull(reliability);
         Assert.True(reliability.Value > 0.95, $"Expected high reliability, got {reliability.Value}");
     }
@@ -58,7 +58,7 @@ public class GoldenScoringTests
         Assert.True(report.Score < 70, $"Expected score < 70, got {report.Score}");
         Assert.True(report.Confidence > 0.5, $"Expected confidence > 0.5, got {report.Confidence}");
 
-        var reliability = report.Components.FirstOrDefault(c => c.Name == "reliability");
+        var reliability = report.Components.FirstOrDefault(c => c.Name == "Reliability");
         Assert.NotNull(reliability);
         Assert.True(reliability.Value < 0.8, $"Expected low reliability, got {reliability.Value}");
     }
@@ -106,7 +106,7 @@ public class GoldenScoringTests
 
         // Clean high-volume session: should score reasonably well despite token usage
         Assert.True(report.Score > 50, $"Expected score > 50, got {report.Score}");
-        Assert.Contains(report.Components, c => c.Name == "reliability");
+        Assert.Contains(report.Components, c => c.Name == "Reliability");
     }
 
     [Fact]
@@ -146,9 +146,9 @@ public class GoldenScoringTests
         var report = engine.Evaluate(session);
 
         // Verify key components are present
-        var reliability = report.Components.FirstOrDefault(c => c.Name == "reliability");
-        var acceptance = report.Components.FirstOrDefault(c => c.Name == "acceptance");
-        var latency = report.Components.FirstOrDefault(c => c.Name == "latency");
+        var reliability = report.Components.FirstOrDefault(c => c.Name == "Reliability");
+        var acceptance = report.Components.FirstOrDefault(c => c.Name == "Acceptance");
+        var latency = report.Components.FirstOrDefault(c => c.Name == "Latency");
 
         Assert.NotNull(reliability);
         Assert.NotNull(acceptance);
@@ -178,8 +178,8 @@ public class GoldenScoringTests
         // Should evaluate successfully
         Assert.True(!double.IsNaN(report.Score));
         // Autonomous mode should have 0 weight for acceptance and latency
-        var acceptance = report.Components.FirstOrDefault(c => c.Name == "acceptance");
-        var latency = report.Components.FirstOrDefault(c => c.Name == "latency");
+        var acceptance = report.Components.FirstOrDefault(c => c.Name == "Acceptance");
+        var latency = report.Components.FirstOrDefault(c => c.Name == "Latency");
 
         if (acceptance is not null) Assert.True(acceptance.Weight < 0.001, $"Expected acceptance weight ~0 in autonomous, got {acceptance.Weight}");
         if (latency is not null) Assert.True(latency.Weight < 0.001, $"Expected latency weight ~0 in autonomous, got {latency.Weight}");
