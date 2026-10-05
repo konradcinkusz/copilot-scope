@@ -100,6 +100,12 @@ also publishes five images to GHCR: `ghcr.io/konradcinkusz/copilotscope-collecto
   The review pack still carries no agent name.
 
 ### Fixed
+- **An imported Claude Code transcript names the subagents it started.** A session keeps every
+  agent that took part in it in `agentNames`, but one read from a transcript listed only
+  `claude-code`, however many subagents it had started. The import now adds the `subagent_type`
+  of each `Task` (called `Agent` in later Claude Code versions) call. A call with no
+  `subagent_type` names nothing. The scanner reads transcripts it has already imported again, so history
+  imported before this release gains the names.
 - **The demo data and its screenshots name only invented projects.** The seeder and the telemetry
   generator called one of their pretend repositories after a project that is not part of
   CopilotScope; the entry is now `acme/search-service`. The three screenshots that showed the

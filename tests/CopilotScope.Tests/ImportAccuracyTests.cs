@@ -177,6 +177,67 @@ public sealed class ImportAccuracyTests
         Assert.Equal(10, session.InputTokens);
     }
 
+    // ------------------------------------------------------------------ subagent names
+
+    private static JsonArray SubagentCall(string id, string tool, string? subagentType)
+    {
+        var input = new JsonObject { ["description"] = "d", ["prompt"] = "p" };
+        if (subagentType is not null) input["subagent_type"] = subagentType;
+        return new(new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = tool, ["input"] = input });
+    }
+
+    [Theory]
+    [InlineData("Task")]
+    [InlineData("Agent")]
+    public void ASubagentCalledByEitherToolNameIsNamedInTheSession(string tool)
+    {
+        var session = Parse(
+            User("u1", "2026-09-01T10:00:00Z", "review this"),
+            Assistant("a1", "2026-09-01T10:00:01Z", "msg_1", 100, 10, SubagentCall("t1", tool, "code-reviewer")));
+
+        Assert.Equal(["claude-code", "code-reviewer"], session.Snapshot(s => s.AgentNames.ToList()));
+        // AgentName stays the main agent: the one the session is attributed to.
+        Assert.Equal("claude-code", session.AgentName);
+    }
+
+    [Fact]
+    public void ASubagentStartedTwiceOrFromInsideASubagentIsNamedOnce()
+    {
+        var session = Parse(
+            User("u1", "2026-09-01T10:00:00Z", "review this"),
+            Assistant("a1", "2026-09-01T10:00:01Z", "msg_1", 100, 10, SubagentCall("t1", "Agent", "code-reviewer")),
+            Assistant("s1", "2026-09-01T10:00:02Z", "msg_s1", 100, 10, SubagentCall("t2", "Agent", "explorer"), sidechain: true),
+            Assistant("a2", "2026-09-01T10:00:03Z", "msg_2", 100, 10, SubagentCall("t3", "Agent", "code-reviewer")));
+
+        Assert.Equal(["claude-code", "code-reviewer", "explorer"], session.Snapshot(s => s.AgentNames.ToList()));
+    }
+
+    [Fact]
+    public void AnAgentCallWithoutASubagentTypeNamesNothingAndOtherToolsAreNotAgents()
+    {
+        // Inventing a name for a call that does not carry one would put a guess in the record.
+        var session = Parse(
+            User("u1", "2026-09-01T10:00:00Z", "review this"),
+            Assistant("a1", "2026-09-01T10:00:01Z", "msg_1", 100, 10, SubagentCall("t1", "Agent", null)),
+            Assistant("a2", "2026-09-01T10:00:02Z", "msg_2", 100, 10, SubagentCall("t2", "Read", "not-an-agent")));
+
+        Assert.Equal(["claude-code"], session.Snapshot(s => s.AgentNames.ToList()));
+    }
+
+    [Fact]
+    public void ATranscriptCapturedFromClaudeCodeNamesItsSubagents()
+    {
+        // tests/transcripts/claude-code/subagent-session.jsonl has the shape Claude Code 2.1.289
+        // wrote for a real session: the Agent tool_use carries `subagent_type`, and the
+        // subagent's own lines are sidechain lines under the parent's session id.
+        var path = Path.Combine(Path.GetDirectoryName(LogImportTests.FixturePath())!, "subagent-session.jsonl");
+        var session = ClaudeCodeTranscript.Parse(File.ReadLines(path))!.Session;
+
+        Assert.Equal(["claude-code", "code-reviewer", "test-analyst"], session.Snapshot(s => s.AgentNames.ToList()));
+        Assert.Equal(1, session.Turns);
+        Assert.Equal(4, session.ChatCalls);
+    }
+
     // ------------------------------------------------------------------ the files
 
     [Fact]
