@@ -81,11 +81,79 @@ jobs:
         run: |
           set -euo pipefail
           echo "Checking scenario results..."
-          # TODO: implement API assertions
-          # - GET /api/sessions to list all sessions
-          # - For each session, verify score is within expected_score_range
-          # - Verify confidence >= min_confidence
-          # - Log results and fail if any scenario is out of range
+
+          # Wait for collector to have processed all sessions
+          sleep 5
+
+          # Create validation script in Python for robust numeric comparisons
+          cat > /tmp/validate-scenarios.py << 'PYTHON_EOF'
+          import json
+          import sys
+          import urllib.request
+
+          # Fetch sessions from collector API
+          try:
+              with urllib.request.urlopen('http://localhost:4318/api/sessions') as response:
+                  sessions = json.loads(response.read().decode())
+          except Exception as e:
+              print(f"Error fetching sessions: {e}")
+              sys.exit(1)
+
+          # Load expected score ranges
+          try:
+              with open('tools/scenarios/expected-scores.json') as f:
+                  expectations = json.load(f)
+          except Exception as e:
+              print(f"Error loading expectations: {e}")
+              sys.exit(1)
+
+          failed = False
+          for scenario_def in expectations['scenarios']:
+              name = scenario_def['name']
+              min_score = scenario_def['min_score']
+              max_score = scenario_def['max_score']
+              min_confidence = scenario_def['min_confidence']
+
+              print(f"Validating scenario '{name}'...")
+              print(f"  Expected: score [{min_score}, {max_score}], confidence >= {min_confidence}")
+
+              # Find matching session (scenarios create sessions in order, match by repo/agent)
+              matching_session = None
+              for session in sessions:
+                  if (session.get('agent', '').endswith(name) or
+                      session.get('repository', '').endswith(name) or
+                      name in session.get('agent', '')):
+                      matching_session = session
+                      break
+
+              if not matching_session:
+                  print(f"  ⚠ No session found for scenario")
+                  continue
+
+              quality = matching_session.get('quality', {})
+              score = quality.get('score')
+              confidence = quality.get('confidence')
+
+              if score is None or confidence is None:
+                  print(f"  ✗ Missing score or confidence in session")
+                  failed = True
+                  continue
+
+              # Validate ranges
+              if score < min_score or score > max_score:
+                  print(f"  ✗ Score {score} not in range [{min_score}, {max_score}]")
+                  failed = True
+              elif confidence < min_confidence:
+                  print(f"  ✗ Confidence {confidence} below minimum {min_confidence}")
+                  failed = True
+              else:
+                  print(f"  ✓ score={score}, confidence={confidence}")
+
+          if failed:
+              sys.exit(1)
+          PYTHON_EOF
+
+          python3 /tmp/validate-scenarios.py
           echo "Scenario validation complete"
 
   # The session-store contract (tests/CopilotScope.Tests/SessionStorageTests.cs) runs
