@@ -99,6 +99,52 @@ public class FixtureGoldenTests
             Assert.True(kinds.Contains(expected),
                 $"{relativePath} classified as [{string.Join(", ", kinds)}], expected {expected}.");
         }
+
+        // Golden file assertions: beyond just "decodes", check structure consistency
+        AssertFixtureQuality(store, relativePath);
+    }
+
+    /// <summary>
+    /// Validates that a fixture produces sessions with the expected structure for its assistant.
+    /// This catches silent failures: a renamed attribute keeps ingest returning 200 while counters go to zero.
+    /// </summary>
+    private void AssertFixtureQuality(SessionStore store, string relativePath)
+    {
+        var assistant = relativePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)[0];
+
+        // Every golden fixture must produce at least one session
+        Assert.NotEmpty(store.All, $"{relativePath} produced no sessions after ingestion.");
+
+        // Assistant-specific checks
+        switch (assistant.ToLowerInvariant())
+        {
+            case "vscode":
+                // VS Code sends chat calls and edit metrics
+                var vsChatSessions = store.All.Where(s => s.ChatCalls > 0 || s.EditsAccepted + s.EditsRejected > 0).ToList();
+                Assert.NotEmpty(vsChatSessions,
+                    "VS Code fixture has no chat calls or edits. Check that 'copilot_chat.*' or 'edit.*' attributes are present in payload.");
+                break;
+
+            case "claude-code":
+                // Claude Code sends tool decisions and prompt calls
+                var ccToolSessions = store.All.Where(s => s.ToolCalls > 0).ToList();
+                Assert.NotEmpty(ccToolSessions,
+                    "Claude Code fixture has no tool calls. Check that 'tool_decision' spans or 'tool.*' attributes are present.");
+                break;
+
+            case "cli":
+                // CLI sends completions
+                var cliCompletions = store.All.Where(s => s.ChatCalls > 0).ToList();
+                Assert.NotEmpty(cliCompletions,
+                    "CLI fixture has no completions. Check that 'copilot.completion' spans are present.");
+                break;
+
+            case "cowork":
+                // Cowork emits logs with specific structure
+                Assert.NotEmpty(store.All,
+                    "Cowork fixture produced sessions but may lack expected log-based signals. Verify log payloads.");
+                break;
+        }
     }
 
     [Fact]
