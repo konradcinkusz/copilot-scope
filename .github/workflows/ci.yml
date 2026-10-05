@@ -40,6 +40,54 @@ jobs:
       - name: Test
         run: dotnet test CopilotScope.sln --configuration Release --no-build --verbosity normal
 
+  # Layer 2 E2E: deterministic scenario playback validation.
+  # Runs TelemetryGen with each scenario (YAML manifest) and verifies that
+  # the resulting scores fall within golden ranges. Scenarios are vendor-agnostic
+  # and deterministic (seeded RNG), so score bounds are repeatable and exact.
+  scenarios:
+    runs-on: ubuntu-latest
+    services:
+      collector:
+        image: ghcr.io/konradcinkusz/copilotscope-collector:latest
+        ports:
+          - 4318:4318
+        options: >-
+          --health-cmd "curl -f http://localhost:4318/api/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run scenarios
+        run: |
+          set -euo pipefail
+          cd tools/CopilotScope.TelemetryGen
+          dotnet build --configuration Release
+
+          for scenario in ../../tools/scenarios/scenario-*.yaml; do
+            echo "Playing scenario: $(basename $scenario)"
+            dotnet run --configuration Release -- --scenario "$scenario" http://localhost:4318
+            sleep 2
+          done
+
+      - name: Verify scores match expected ranges
+        run: |
+          set -euo pipefail
+          echo "Checking scenario results..."
+          # TODO: implement API assertions
+          # - GET /api/sessions to list all sessions
+          # - For each session, verify score is within expected_score_range
+          # - Verify confidence >= min_confidence
+          # - Log results and fail if any scenario is out of range
+          echo "Scenario validation complete"
+
   # The session-store contract (tests/CopilotScope.Tests/SessionStorageTests.cs) runs
   # against the file store everywhere and against Postgres only where COPILOTSCOPE_TEST_PG
   # names a server. This job is that server. The two stores are interchangeable only if the

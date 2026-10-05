@@ -3,6 +3,7 @@
 // and posts it to the collector over OTLP/HTTP protobuf.
 //
 //   dotnet run --project tools/CopilotScope.TelemetryGen -- [endpoint] [conversationId]
+//   dotnet run --project tools/CopilotScope.TelemetryGen -- --scenario <file> [endpoint]
 //
 // Default endpoint: http://localhost:4318
 
@@ -10,15 +11,42 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
-var endpoint = (args.Length > 0 ? args[0] : "http://localhost:4318").TrimEnd('/');
-var conversationId = args.Length > 1 ? args[1] : $"conv-{Guid.NewGuid().ToString()[..8]}";
+// Parse arguments: support both old (endpoint conversationId) and new (--scenario file) modes
+string? scenarioFile = null;
+string endpoint = "http://localhost:4318";
+string? conversationId = null;
+
+if (args.Length > 0 && args[0] == "--scenario")
+{
+    if (args.Length < 2) { Console.WriteLine("Usage: dotnet run -- --scenario <file> [endpoint]"); return 1; }
+    scenarioFile = args[1];
+    endpoint = (args.Length > 2 ? args[2] : endpoint).TrimEnd('/');
+}
+else
+{
+    endpoint = (args.Length > 0 ? args[0] : endpoint).TrimEnd('/');
+    conversationId = args.Length > 1 ? args[1] : $"conv-{Guid.NewGuid().ToString()[..8]}";
+}
+
 var apiKey = Environment.GetEnvironmentVariable("COPILOTSCOPE_API_KEY");
 
 var http = new HttpClient();
-var rng = Random.Shared;
+var rng = new Random(42); // Use seed for deterministic scenario playback
 var vsCodeSession = Guid.NewGuid().ToString();
 
-Console.WriteLine($"Simulating Copilot Chat session '{conversationId}' → {endpoint}");
+// Load scenario if provided
+Scenario? scenario = null;
+if (scenarioFile is not null)
+{
+    scenario = LoadScenario(scenarioFile);
+    if (scenario == null) return 1;
+    conversationId = scenario.SessionId;
+    Console.WriteLine($"Playing back scenario '{scenario.Name}' → {endpoint}");
+}
+else
+{
+    Console.WriteLine($"Simulating Copilot Chat session '{conversationId}' → {endpoint}");
+}
 
 string[] tools = ["readFile", "editFile", "runCommand", "grepSearch", "listDirectory"];
 string[] models = ["gpt-4o", "claude-sonnet-4.5"];
@@ -43,6 +71,21 @@ string[] sampleResponses =
     "A gauge reports the last value; a sum accumulates deltas or cumulative totals over time."
 ];
 
+// Generate telemetry: either scenario-based or random
+if (scenario != null)
+{
+    await GenerateScenarioTelemetry(scenario, conversationId!);
+}
+else
+{
+    await GenerateRandomTelemetry();
+}
+
+Console.WriteLine("Done. Open the dashboard to inspect the session.");
+return 0;
+
+async Task GenerateRandomTelemetry()
+{
 for (var turn = 1; turn <= 5; turn++)
 {
     var traceId = RandomBytes(16);
@@ -130,9 +173,70 @@ for (var turn = 1; turn <= 5; turn++)
     Console.WriteLine($"  turn {turn}/5 sent");
     await Task.Delay(1500);
 }
+}
 
-Console.WriteLine("Done. Open the dashboard to inspect the session.");
-return;
+async Task GenerateScenarioTelemetry(Scenario scenario, string conversationId)
+{
+    var traceId = RandomBytes(16);
+    var now = DateTimeOffset.UtcNow;
+    var spans = new List<byte[]>();
+
+    // Generate chat call spans
+    for (int i = 0; i < scenario.ChatCalls; i++)
+    {
+        var spanId = RandomBytes(8);
+        var spanStart = now.AddMilliseconds(i * 100);
+        var ttftMs = scenario.TtftMs.Count > i ? scenario.TtftMs[i] : 400;
+        var hasError = i < scenario.ChatErrors;
+
+        spans.Add(Span(traceId, spanId, null, "chat",
+            spanStart, spanStart.AddMilliseconds(ttftMs + 200),
+            error: hasError ? "ChatError" : null,
+            attrs: [
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.usage.input_tokens", 1000 + i * 100),
+                ("gen_ai.usage.output_tokens", 200 + i * 50),
+                ("llm_request.ttft_ms", (long)ttftMs)
+            ]));
+    }
+
+    // Generate tool call spans (Claude Code specific)
+    for (int i = 0; i < scenario.ToolCalls; i++)
+    {
+        var spanId = RandomBytes(8);
+        var spanStart = now.AddMilliseconds(1000 + i * 200);
+        var hasError = i < scenario.ToolErrors;
+
+        spans.Add(Span(traceId, spanId, null, "execute_tool",
+            spanStart, spanStart.AddMilliseconds(100),
+            error: hasError ? "ToolError" : null,
+            attrs: [
+                ("gen_ai.tool.name", "Edit"),
+                ("gen_ai.tool.type", "function")
+            ]));
+    }
+
+    // Generate edit acceptance signals (VS Code specific)
+    var metrics = new List<byte[]>();
+    for (int i = 0; i < scenario.EditsAccepted; i++)
+    {
+        metrics.Add(SumMetric("copilot_chat.edit.acceptance.count", 1,
+            [("copilot_chat.edit.action", "accepted")]));
+    }
+    for (int i = 0; i < scenario.EditsRejected; i++)
+    {
+        metrics.Add(SumMetric("copilot_chat.edit.acceptance.count", 1,
+            [("copilot_chat.edit.action", "rejected")]));
+    }
+
+    if (spans.Count > 0)
+        await Post("/v1/traces", TracesRequest(vsCodeSession, spans));
+
+    if (metrics.Count > 0)
+        await Post("/v1/metrics", MetricsRequest(vsCodeSession, metrics));
+
+    Console.WriteLine($"  scenario session with {scenario.ChatCalls} chat calls, {scenario.ToolCalls} tool calls sent");
+}
 
 // ============================================================== HTTP =========
 
@@ -308,6 +412,79 @@ static byte[] KeyValue(string key, object value)
     kv.String(1, key);
     kv.Message(2, any.ToArray());
     return kv.ToArray();
+}
+
+// ========================================================= Scenario loading ===
+
+Scenario? LoadScenario(string path)
+{
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"Error: scenario file '{path}' not found");
+        return null;
+    }
+
+    try
+    {
+        var lines = File.ReadAllLines(path);
+        var scenario = new Scenario();
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith("#")) continue;
+
+            // Simple YAML parsing: look for key: value patterns
+            if (line.Contains(':'))
+            {
+                var parts = line.Split(':', 2);
+                var key = parts[0].Trim();
+                var value = parts[1].Trim();
+
+                // Parse session fields
+                if (key == "id" && !value.StartsWith("[")) scenario.SessionId = value.Trim('"');
+                else if (key == "chat_calls") scenario.ChatCalls = int.Parse(value);
+                else if (key == "chat_errors") scenario.ChatErrors = int.Parse(value);
+                else if (key == "tool_calls") scenario.ToolCalls = int.Parse(value);
+                else if (key == "tool_errors") scenario.ToolErrors = int.Parse(value);
+                else if (key == "edits_accepted") scenario.EditsAccepted = int.Parse(value);
+                else if (key == "edits_rejected") scenario.EditsRejected = int.Parse(value);
+                else if (key == "name" && value.StartsWith("\"")) scenario.Name = value.Trim('"');
+                else if (key == "ttft_ms")
+                {
+                    // Parse array: [350, 400, 450, ...]
+                    var arrayStr = line.Substring(line.IndexOf('[') + 1, line.LastIndexOf(']') - line.IndexOf('[') - 1);
+                    var ttftParts = arrayStr.Split(',');
+                    foreach (var part in ttftParts)
+                    {
+                        if (int.TryParse(part.Trim(), out var ttft))
+                            scenario.TtftMs.Add(ttft);
+                    }
+                }
+            }
+        }
+
+        return scenario;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error loading scenario: {ex.Message}");
+        return null;
+    }
+}
+
+/// <summary>Scenario definition from YAML manifest.</summary>
+file sealed class Scenario
+{
+    public string Name { get; set; } = "unknown";
+    public string SessionId { get; set; } = $"scenario-{Guid.NewGuid().ToString()[..8]}";
+    public int ChatCalls { get; set; }
+    public int ChatErrors { get; set; }
+    public int ToolCalls { get; set; }
+    public int ToolErrors { get; set; }
+    public int EditsAccepted { get; set; }
+    public int EditsRejected { get; set; }
+    public List<int> TtftMs { get; } = new();
 }
 
 /// <summary>Minimal protobuf wire-format writer.</summary>
