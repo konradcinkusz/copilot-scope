@@ -130,9 +130,9 @@ jobs:
                   print(f"  ⚠ No session found for scenario")
                   continue
 
-              quality = matching_session.get('quality', {})
-              score = quality.get('score')
-              confidence = quality.get('confidence')
+              quality = matching_session.get('Quality', {})
+              score = quality.get('Score')
+              confidence = quality.get('Confidence')
 
               if score is None or confidence is None:
                   print(f"  ✗ Missing score or confidence in session")
