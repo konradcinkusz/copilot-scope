@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "name": "vscode-perfect",
+      "min_score": 85,
+      "max_score": 95,
+      "min_confidence": 0.80,
+      "description": "VS Code clean session with good latency and high edit acceptance"
+    },
+    {
+      "name": "claude-code-errors",
+      "min_score": 20,
+      "max_score": 40,
+      "min_confidence": 0.70,
+      "description": "Claude Code error-prone session with slow responses"
+    },
+    {
+      "name": "cli-balanced",
+      "min_score": 65,
+      "max_score": 80,
+      "min_confidence": 0.70,
+      "description": "Copilot CLI balanced completion quality"
+    }
+  ]
+}

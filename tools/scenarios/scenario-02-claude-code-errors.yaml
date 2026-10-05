@@ -1,0 +1,41 @@
+# scenario-02-claude-code-errors.yaml
+# Claude Code: many errors, slow latency, low acceptance → low score
+
+metadata:
+  name: "claude-code-errors"
+  description: "Claude Code session: error-prone, slow responses, low acceptance"
+  version: "1"
+  assistants:
+    - "claude-code"
+
+generator:
+  seed: 100
+  protocol: "protobuf"
+  compressed: false
+  endpoint: "http://localhost:4318"
+
+session:
+  id: "claude-code-errors-001"
+  duration_seconds: 600
+
+  # Reliability: chat + tool signals
+  chat_calls: 10
+  chat_errors: 4
+  tool_calls: 10
+  tool_errors: 3
+
+  # Latency: TTFT samples (milliseconds)
+  ttft_ms: [5000, 6000, 7000, 5500, 6500]
+
+  # Tool decision signals (Claude Code specific)
+  tool_decisions_accepted: 1
+  tool_decisions_rejected: 7
+
+expected:
+  score_range: [20, 40]
+  confidence_min: 0.70
+  components:
+    reliability: [0.20, 0.40]
+    acceptance: [0.10, 0.25]
+    latency: [0.15, 0.30]
+    friction: [0.20, 0.50]
