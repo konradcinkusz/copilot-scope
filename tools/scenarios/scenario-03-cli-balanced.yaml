@@ -1,0 +1,36 @@
+# scenario-03-cli-balanced.yaml
+# Copilot CLI: balanced mix of completions, moderate quality
+
+metadata:
+  name: "cli-balanced"
+  description: "Copilot CLI session: typical completion latency and accuracy"
+  version: "1"
+  assistants:
+    - "cli"
+
+generator:
+  seed: 200
+  protocol: "protobuf"
+  compressed: false
+  endpoint: "http://localhost:4318"
+
+session:
+  id: "cli-balanced-001"
+  duration_seconds: 180
+
+  # CLI: chat_calls = completions
+  chat_calls: 15
+  chat_errors: 2
+
+  # Latency: TTFT samples (milliseconds)
+  ttft_ms: [800, 900, 1000, 850, 950, 1100]
+
+  # No edit acceptance (CLI doesn't have explicit accept/reject)
+
+expected:
+  score_range: [65, 80]
+  confidence_min: 0.70
+  components:
+    reliability: [0.80, 0.95]
+    latency: [0.75, 0.90]
+    friction: [0.70, 0.90]
