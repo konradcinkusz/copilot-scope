@@ -94,7 +94,8 @@ jobs:
           # Fetch sessions from collector API
           try:
               with urllib.request.urlopen('http://localhost:4318/api/sessions') as response:
-                  sessions = json.loads(response.read().decode())
+                  data = json.loads(response.read().decode())
+                  sessions = data.get('Sessions', []) if isinstance(data, dict) else data
           except Exception as e:
               print(f"Error fetching sessions: {e}")
               sys.exit(1)
