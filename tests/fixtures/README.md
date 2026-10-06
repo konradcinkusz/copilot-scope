@@ -39,9 +39,26 @@ tests/fixtures/<assistant>/<version>/NNNN-<signal>.pb     # or .json for JSON ex
 as `EmitterKind.ClaudeCode` — which is exactly the assertion that breaks when a vendor changes
 what it sends.
 
+## Test Harness
+
+`tests/CopilotScope.Tests/FixtureGoldenTests.cs` discovers all fixtures in this directory,
+decodes them through the real OTLP decoder and session store, and asserts:
+- Emitter kind matches the directory name (vscode, cli, claude-code, cowork, cursor)
+- The decoded session is non-empty (has signals: chat calls, tool calls, tokens, etc.)
+- Round-trip through persistence (JSONB serialization) preserves integrity
+
+Run with: `dotnet test FixtureGoldenTests.cs`
+
+When no fixtures exist, the test returns 0 cases (passes without running anything).
+When fixtures are added, the test automatically discovers and validates them.
+
 ## Status
 
-**No real captures are committed yet.** Capturing requires a machine running the assistants;
-this directory and the harness exist so that a capture is a `git add` away rather than a project.
-Until then the multi-assistant compatibility claim rests on hand-built payloads, and the README's
-supported-assistant list should be read accordingly.
+**Layer 0 infrastructure is in place.** Real captures are next. Capturing requires:
+- A machine with the assistant installed and telemetry enabled
+- `copilotscope capture-fixture` running as a proxy (blocks content batches for privacy)
+- Using the assistant normally to generate real sessions
+
+The multi-assistant compatibility claim currently rests on hand-built payloads in
+CollectorTests, ClaudeCodeTests, etc. Adding real captures here will replace assumption
+with evidence.

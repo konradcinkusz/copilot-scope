@@ -62,7 +62,7 @@ jobs:
 
       - name: Start collector in background
         run: |
-          nohup /tmp/collector-build/CopilotScope.Collector > /tmp/collector.log 2>&1 &
+          ASPNETCORE_URLS=http://localhost:4318 nohup /tmp/collector-build/CopilotScope.Collector > /tmp/collector.log 2>&1 &
           echo "Collector started, waiting for health check..."
 
           # Wait for collector to be ready (max 30 seconds)
