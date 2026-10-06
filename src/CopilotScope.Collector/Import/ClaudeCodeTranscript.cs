@@ -31,7 +31,7 @@ public static class ClaudeCodeTranscript
     /// scanner records which version read each session and reads them all again when this
     /// moves, so a fix reaches the history imported before it, not only what comes after.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>
     /// Parses a transcript file. Malformed lines are counted and skipped rather than aborting:
@@ -328,6 +328,12 @@ public static class ClaudeCodeTranscript
                     // call would hide exactly that.
                     if (Str(block, "id") is { } id)
                         pendingTools[id] = (Str(block, "name") ?? "unknown", at);
+
+                    // The subagent this call hands work to. A session keeps every agent that took
+                    // part in it; without this the import named only the main one.
+                    if (IsSubagentCall(Str(block, "name")) && block.TryGetProperty("input", out var toolInput)
+                        && Str(toolInput, "subagent_type") is { } subagent)
+                        session.AddAgentName(subagent);
                     break;
 
                 // A subagent's replies are addressed to the agent that briefed it, not to the
@@ -339,6 +345,10 @@ public static class ClaudeCodeTranscript
             }
         }
     }
+
+    /// <summary>The tool Claude Code starts a subagent with: <c>Task</c>, called <c>Agent</c> from
+    /// later versions on. A transcript written by either is read the same way.</summary>
+    private static bool IsSubagentCall(string? toolName) => toolName is "Task" or "Agent";
 
     /// <summary>Mirrors the collector's own distribution bound. A transcript can hold a year
     /// of a heavy user's work, and an unbounded list of every call's duration would make one

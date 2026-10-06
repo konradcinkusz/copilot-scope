@@ -92,6 +92,10 @@ public partial class Home : ComponentBase, IDisposable
     private ElementReference _chatScrollRef;
     private ElementReference _chatWindowRef;
 
+    private bool _showIssueModal;
+    private string _issueTitle = string.Empty;
+    private string _issueBody = string.Empty;
+
     private enum ViewMode { Basic, Advanced, Full }
     // Basic is the default: the first screen answers "was it good, what do I fix" in a
     // few lines instead of opening on the full firehose. A returning user's saved
@@ -670,6 +674,23 @@ public partial class Home : ComponentBase, IDisposable
         var meanLabel = q.HistoryMean?.ToString("0.0") ?? "?";
         var context = repo is not null ? $"{n} repo sessions" : $"last {n} sessions";
         return $"/ 100 · {pctLabel}{zLabel} vs {context} (mean {meanLabel})";
+    }
+
+    private void OpenIssueModal() => _showIssueModal = true;
+
+    private void CloseIssueModal()
+    {
+        _showIssueModal = false;
+        _issueTitle = string.Empty;
+        _issueBody = string.Empty;
+    }
+
+    private string GenerateGitHubIssueUrl()
+    {
+        const string repoUrl = "https://github.com/konradcinkusz/copilot-scope";
+        var encodedTitle = Uri.EscapeDataString(_issueTitle);
+        var encodedBody = Uri.EscapeDataString(_issueBody);
+        return $"{repoUrl}/issues/new?title={encodedTitle}&body={encodedBody}";
     }
 
     public void Dispose()
