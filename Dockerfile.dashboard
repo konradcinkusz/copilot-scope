@@ -1,6 +1,6 @@
 # CopilotScope.Dashboard — Blazor Server frontend.
 # The image major version tracks the TFM (net10.0) — see the comment in ./Dockerfile.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY nuget.config .
 # ServiceDefaults is a ProjectReference of the dashboard — see the comment in
