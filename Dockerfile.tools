@@ -33,7 +33,7 @@ RUN dotnet publish tools/CopilotScope.Seeder      -c Release -o /app/seeder \
  && dotnet publish tools/CopilotScope.TelemetryGen -c Release -o /app/telemetrygen \
  && dotnet publish tools/CopilotScope.Mcp         -c Release -o /app/mcp
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
 WORKDIR /app
 COPY --from=build /app/ /app/

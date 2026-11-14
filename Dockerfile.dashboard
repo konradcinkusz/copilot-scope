@@ -21,7 +21,7 @@ COPY src/CopilotScope.Dashboard/ src/CopilotScope.Dashboard/
 # nobody could click. Re-running restore here costs one cached-package layer.
 RUN dotnet publish src/CopilotScope.Dashboard -c Release -o /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
 WORKDIR /app
 RUN apt-get update \
