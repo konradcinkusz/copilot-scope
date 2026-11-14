@@ -23,7 +23,7 @@ COPY src/CopilotScope.ServiceDefaults/ src/CopilotScope.ServiceDefaults/
 COPY src/CopilotScope.Collector/ src/CopilotScope.Collector/
 RUN dotnet publish src/CopilotScope.Collector -c Release -o /app/publish --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/konradcinkusz/copilot-scope
 WORKDIR /app
 # curl for the container healthcheck — the aspnet image ships neither curl nor wget.
