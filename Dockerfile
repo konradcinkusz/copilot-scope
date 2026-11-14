@@ -9,7 +9,7 @@
 # Dependabot is configured to ignore major bumps of either image
 # (.github/dependabot.yml) until the projects are retargeted first, and the CI
 # smoke test (build-containers.yml) now catches a TFM/runtime mismatch before publish.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 COPY nuget.config .
 # Restore against the project files first so a source-only change keeps the
